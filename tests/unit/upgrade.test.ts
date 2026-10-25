@@ -5,6 +5,7 @@ import { ConnectionMonitor } from '../../src/main/ai/connection';
 import { ProviderError, type LLMProvider } from '../../src/main/ai/providers';
 import { offlineReply } from '../../src/main/ai/offline';
 import { chooseDestination, nextAutoDelay } from '../../src/main/desktop/teleport';
+import { modelPoseFor } from '../../src/renderer/character/poseMap';
 import { TeleportController } from '../../src/main/desktop/teleportController';
 import { prepareAction, runAction, EMOTES } from '../../src/main/actions/registry';
 import { redact, nullLogger } from '../../src/main/log';
@@ -233,6 +234,18 @@ describe('teleport destination selection', () => {
   // on screen down to her seat line (below it the window may overlap the taskbar, which never shows anything)
   const inside = (r: { x: number; y: number; width: number; height: number }, a: { x: number; y: number; width: number; height: number }) => r.x >= a.x && r.y >= a.y && r.x + r.width <= a.x + a.width + 1 && r.y + r.height * SEAT_RATIO <= a.y + a.height + 1;
 
+  it('"left" / "right" mean a seat on the taskbar on that side, not floating', () => {
+    const a = primary.workArea;
+    for (const side of ['left', 'right'] as const) {
+      for (let i = 0; i < 60; i++) {
+        const from = side === 'left' ? { ...cur, x: 1100 } : { ...cur, x: 40 };
+        const r = chooseDestination(side, { displays: [primary], current: from, cursor: { x: 768, y: 100 }, avoid: null, rand: Math.random })!;
+        expect(Math.abs(r.y + r.height * SEAT_RATIO - (a.y + a.height)), `${side} #${i} seated`).toBeLessThanOrEqual(1);
+        expect(side === 'left' ? r.x + r.width / 2 < a.width / 2 : r.x + r.width / 2 >= a.width / 2).toBe(true);
+      }
+    }
+  });
+
   it('always lands fully inside a work area, away from the current spot and the cursor', () => {
     for (let i = 0; i < 50; i++) {
       const r = chooseDestination('auto', { displays: [primary, second], current: cur, cursor: { x: 200, y: 600 }, avoid: null, rand: Math.random })!;
@@ -344,5 +357,26 @@ describe('AI → character structured actions', () => {
     expect(offlineReply('teleport')).toMatch(/"tool":"teleport"/);
     expect(offlineReply('come here')).toMatch(/"where":"near_cursor"/);
     expect(offlineReply('move to the other monitor')).toMatch(/"where":"other_monitor"/);
+  });
+});
+
+describe('model pose: she never lies or sits on thin air', () => {
+  const postures = ['stand', 'contrapposto', 'sit_edge', 'air_sit', 'recline', 'power_stance', 'peek_left', 'peek_right', 'balance'];
+  it('lies down only on the taskbar or a window top; with nothing under her she floats', () => {
+    for (const surface of ['taskbar', 'window', 'air', 'edge_left', 'edge_right'])
+      for (const posture of postures)
+        for (const sleeping of [false, true])
+          for (const variant of [0, 0.3, 0.59, 0.61, 0.99]) {
+            const pose = modelPoseFor({ surface, posture, sleeping, dragging: false, variant });
+            const ledge = surface === 'taskbar' || surface === 'window';
+            if (!ledge) expect(pose, `${surface}/${posture}/${sleeping}`).toBe('crouch');
+            if (pose === 'lie' || pose === 'sit') expect(ledge).toBe(true);
+          }
+  });
+  it('reclining or asleep on a ledge she lies down; dragged she dangles', () => {
+    expect(modelPoseFor({ surface: 'window', posture: 'recline', sleeping: false, dragging: false, variant: 0.9 })).toBe('lie');
+    expect(modelPoseFor({ surface: 'taskbar', posture: 'stand', sleeping: true, dragging: false, variant: 0.9 })).toBe('lie');
+    expect(modelPoseFor({ surface: 'window', posture: 'sit_edge', sleeping: false, dragging: false, variant: 0.2 })).toBe('sit');
+    expect(modelPoseFor({ surface: 'taskbar', posture: 'recline', sleeping: false, dragging: true, variant: 0 })).toBe('crouch');
   });
 });

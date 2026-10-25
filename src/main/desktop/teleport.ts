@@ -117,7 +117,11 @@ export function chooseDestination(target: TeleportTarget, c: TeleportContext): D
     .filter((s) => dist(centre(s), here) > Math.min(w, 220)) // a real move
     .map((s) => {
       const cover = c.avoid ? overlap(s, c.avoid) / area(s) : 0;
-      const score = -cover * 3 + (target === 'random' ? rand() * 2 : rand() * 0.6) + (s.kind === 'corner' ? 0.25 : 0) + Math.min(1, dist(centre(s), here) / 1500) * 0.3;
+      // she rests on ledges: a seat on the taskbar beats floating, and "go left/right" always means
+      // sitting on that side's stretch of taskbar (floating there only if no seat is free)
+      const seated = s.kind === 'corner' || s.kind === 'edge';
+      const ledge = seated ? (target === 'left' || target === 'right' ? 2 : target === 'random' ? 0 : 0.35) : 0;
+      const score = -cover * 3 + ledge + (target === 'random' ? rand() * 2 : rand() * 0.6) + (s.kind === 'corner' ? 0.25 : 0) + Math.min(1, dist(centre(s), here) / 1500) * 0.3;
       return { s, score };
     })
     .sort((a, b) => b.score - a.score);

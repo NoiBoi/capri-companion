@@ -11,6 +11,7 @@ import { POSTURES, type PostureName, type Surface } from './postures';
 import { clipByName } from './clips';
 import type { Reaction } from './behavior';
 import { CapriModel, type PoseName } from './model';
+import { modelPoseFor } from './poseMap';
 
 /** Model-requested emotes → validated reactions/clips (the model never touches the renderer directly). */
 const EMOTE_MAP: Record<string, { react?: Reaction; clip?: string; posture?: PostureName }> = {
@@ -47,23 +48,10 @@ let dashing = 0; // pose override for previews/tests only
 
 const fx = new TeleportFx(() => document.createElement('canvas'));
 const model = new CapriModel();
-/**
- * Which pose of the model fits what she is doing. On a ledge she sits (or lies on her side when
- * reclining or asleep); in the air she floats with her knees drawn up, or sits on nothing (B 0:23),
- * or lounges on her side (B 0:48). Held by the cursor she dangles in the floating pose.
- */
 let variantFor = '', variant = 0;
 function modelPose(): PoseName {
-  const ledge = surface === 'taskbar' || surface === 'window';
   if (variantFor !== behavior.posture) { variantFor = behavior.posture; variant = Math.random(); }
-  if (dragging) return 'crouch';
-  if (behavior.state === 'sleeping') return ledge ? 'lie' : 'crouch';
-  if (behavior.posture === 'recline') return 'lie';
-  // on the taskbar a dangling leg would hang off the bottom of the screen: lie along it or hover above it
-  if (surface === 'taskbar') return variant < 0.6 ? 'lie' : 'crouch';
-  if (ledge) return 'sit';
-  if (behavior.posture === 'air_sit') return 'crouch';
-  return variant < 0.55 ? 'crouch' : 'sit';
+  return modelPoseFor({ surface, posture: behavior.posture, sleeping: behavior.state === 'sleeping', dragging, variant });
 }
 const anim = new Animator();
 const behavior = new Behavior();
