@@ -6,10 +6,10 @@ import { Endpointer, encodeWav, resample, rms } from '../../src/renderer/charact
 import { pickVoice } from '../../src/renderer/character/speaker';
 import { prng } from '../../src/renderer/character/geometry';
 import { applyClip, CLIPS, ClipInstance, REACTION_CLIPS, clipByName } from '../../src/renderer/character/clips';
-import * as R from '../../src/renderer/character/rigData';
 import { clampToDisplays, displayFor, restorePosition, type DisplayLike } from '../../src/main/desktop/displays';
 import { inQuietHours, mayInterrupt } from '../../src/shared/behaviorRules';
 import { DEFAULT_SETTINGS } from '../../src/shared/settings';
+import { SEAT_RATIO } from '../../src/shared/framing';
 
 const base: BehaviorInputs = { phase: 'idle', speechLevel: 0, speaking: false, pointer: null, idleSec: 0, sleepAfterSec: 600, quiet: false, intensity: 1 };
 const run = (b: Behavior, secs: number, inp: Partial<BehaviorInputs> = {}, dt = 1 / 30) => { let p!: Params; for (let t = 0; t < secs; t += dt) p = b.update(dt, { ...base, ...inp }); return p; };
@@ -186,26 +186,6 @@ describe('audio utilities', () => {
   });
 });
 
-describe('rig data integrity', () => {
-  it('every polygon is well-formed and inside a sane frame', () => {
-    const polys = [R.HEAD, ...R.CROWN, ...R.BANGS, R.MASK_L, R.MASK_R, R.CHEEK_L, R.CHEEK_R, R.NECK, R.TORSO, ...R.GREEN_PANELS, ...R.RED_GLYPHS, ...R.HAIR_INK, ...R.HAIR_BACK.flatMap((g) => g.slabs)];
-    for (const p of polys) {
-      expect(p.length).toBeGreaterThanOrEqual(3);
-      for (const [x, y] of p) { expect(Number.isFinite(x) && Number.isFinite(y)).toBe(true); expect(Math.abs(x)).toBeLessThan(160); expect(Math.abs(y)).toBeLessThan(300); }
-    }
-  });
-  it('the whole figure fits the window frame (feet and hair not cropped)', () => {
-    const headY = R.FRAME.hip[1] + R.HEAD_OFFSET;
-    const hairTop = Math.min(...R.HAIR_BACK.flatMap((g) => g.slabs.flat().map(([, y]) => y))) + headY;
-    const feet = R.FRAME.hip[1] + R.LEG_L.toe[1];
-    expect(hairTop).toBeGreaterThanOrEqual(4);
-    expect(feet + 8).toBeLessThanOrEqual(R.FRAME.height); // + bob/float headroom
-  });
-  it('face is mirrored-ish (mask panels symmetric within tolerance)', () => {
-    R.MASK_L.forEach(([x, y], i) => { const [rx, ry] = R.MASK_R[(R.MASK_R.length - i + 1) % R.MASK_R.length]; expect(Math.abs(-x - rx)).toBeLessThanOrEqual(2); expect(Math.abs(y - ry)).toBeLessThanOrEqual(1); });
-  });
-});
-
 describe('multi-monitor positioning', () => {
   const d = (id: number, x: number, y: number, w: number, h: number, scale = 1): DisplayLike => ({ id, bounds: { x, y, width: w, height: h }, workArea: { x, y, width: w, height: h - 40 }, scaleFactor: scale });
   const primary = d(1, 0, 0, 1920, 1080, 1.25);
@@ -214,7 +194,7 @@ describe('multi-monitor positioning', () => {
   it('defaults to bottom-right of the primary work area', () => {
     const r = restorePosition(null, size, [primary], 1);
     expect(r.x + r.width).toBeLessThanOrEqual(1920);
-    expect(r.y + r.height).toBe(1040);
+    expect(Math.round(r.y + r.height * SEAT_RATIO)).toBe(1040); // resting on the taskbar's top edge
   });
   it('keeps a saved spot on a secondary monitor', () => {
     const r = restorePosition({ x: 3000, y: 300, displayId: 2 }, size, [primary, right], 1);

@@ -1,25 +1,24 @@
-# Capri art pack (real footage)
+# Capri character model
 
-These poses are cut-outs of Capri taken directly from *Cyberpunk: Edgerunners 2* footage. The footage is © CD PROJEKT, Studio Trigger and Netflix.
+`model.json` is Capri's vector model, reconstructed from reference frames of *Cyberpunk: Edgerunners 2* (© CD PROJEKT, Studio Trigger and Netflix). It's traced from those frames, so it's **for private, personal use only**; don't distribute builds that contain it.
 
-The pack is for **private, personal use only**, so builds that include it must not be distributed. To get a shareable build, set `character.art` to `vector`; that mode uses the original procedural rig and contains no studio artwork.
+Build it with `python -P tools/build_model.py` (needs opencv-python-headless and numpy). The source cut-outs are in `reference/cutouts/`.
 
-| Pose | Source clip | Time |
+| Pose | Source | Used when |
 |---|---|---|
-| `stand` | "The Moment D Meets Capri", Netflix (YouTube `5wGdjjwoDbY`) | 1:49–1:54 |
-| `sit` | same | 2:21–2:25 |
-| `lie` | same | 0:29–0:31 |
-| `lounge` | same | 1:27–1:37 |
-| `glitch` | "Capri is a baddie" compilation of Netflix footage (YouTube `Nli_SZ-DBco`) | 4:19–4:21 |
+| `sit` | Official still, wiki `Capri_01` (1920×1080): seated on the edge of a bed, one leg along it, one dangling | sitting on a window's top edge; sitting in mid-air (B 0:23) |
+| `lie` | Netflix clip `5wGdjjwoDbY` 0:29–0:31: lying on her side on the bed | lounging or asleep on the taskbar or a window edge; reclining in mid-air (B 0:48) |
+| `crouch` | Netflix footage via `Nli_SZ-DBco` 0:23–0:25: knees drawn up, floating | floating; hovering just above the taskbar; being dragged |
 
-**How they were made:**
-1. Every frame of the clips was scanned for her palette (crimson, pink glitter, green, violet).
-2. In the chosen shots, each unique drawing was kept along with its original hold, since the show animates on twos and threes.
-3. Each drawing was cut out with a palette key, plus the isnet-anime segmentation model run on a tight crop around her.
-4. Edges where the original shot cropped her were feathered.
+The face references are the official close-ups `Capri_Infobox` and `Capri_03`.
 
-`poses.json` lists, for each pose:
-- its frames and holds
-- the anchor point that rests on a ledge
-- which way she faces
-- its kind and size
+## How the model is made
+
+1. **Trace:** `tools/vectorize.py` snaps each pixel of a cut-out to her palette, then traces every colour region into polygons, keeping holes. The palette is crimson, a dark crimson shade, ink black, mask green and the violet offset outline.
+2. **Hair:** the hair's glitter speckle is detected and replaced by a `hair` region, because the renderer draws a crisp glitter texture there.
+3. **Cleanup:** scene shadows on the hair, and anti-aliasing slivers along outlines, are cleaned out.
+4. **Reconstruct crops:** `tools/build_model.py` continues each spike tip the shot cut off, with its violet offset, and extends a leg that leaves the frame to a point along its own direction.
+5. **Live face:** the traced eyes, irises and teeth are dropped. The renderer draws her face live (`src/renderer/character/face.ts`) so she can blink, look, squint, grin, go blank, bloom many eyes, and talk while audio plays.
+6. **Normalize:** every pose is scaled to one unit, where 26 units is the distance between her eyes. That keeps her the same size in every pose. Coordinates are relative to the pose's anchor: the seat, contact point, or centre.
+
+`src/shared/framing.ts` sizes her window from these bounds: every pose, mirrored too, plus room for sway, bob and effects. `tests/unit/model.test.ts` checks that nothing can be cropped.

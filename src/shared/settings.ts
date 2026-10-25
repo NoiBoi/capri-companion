@@ -40,7 +40,6 @@ export const SettingsSchema = z.object({
     animationIntensity: z.number().min(0).max(1.5),
     fpsCap: z.number().int().min(15).max(144),
     glitchEffects: z.boolean(),
-    art: z.enum(['footage', 'vector']), // real cut-outs from the show, or the procedural vector rig
     alwaysOnTop: z.boolean(),
     clickThrough: z.boolean(),
     hideOnFullscreen: z.boolean(),
@@ -127,7 +126,6 @@ export const DEFAULT_SETTINGS: Settings = {
     animationIntensity: 1,
     fpsCap: 60,
     glitchEffects: true,
-    art: 'footage',
     alwaysOnTop: true,
     clickThrough: false,
     hideOnFullscreen: true,

@@ -1,18 +1,16 @@
 import type { AssistantPhase, CharacterCue } from '../../shared/ipc';
 import type { Settings } from '../../shared/settings';
 import type { CapriApi } from '../../preload/preload';
-import { CapriRig } from './rig';
 import { Animator, Blinker, NEUTRAL, type Params } from './params';
 import { Behavior } from './behavior';
 import { Speaker } from './speaker';
 import { MicRecorder } from './audio';
-import { FRAME } from './rigData';
+import { FRAME_SIZE } from '../../shared/framing';
 import { TeleportFx } from './teleportFx';
 import { POSTURES, type PostureName, type Surface } from './postures';
 import { clipByName } from './clips';
 import type { Reaction } from './behavior';
-import { SpriteCapri, type PosePack } from './sprite';
-import posePack from '../../../assets/capri/poses.json';
+import { CapriModel, type PoseName } from './model';
 
 /** Model-requested emotes → validated reactions/clips (the model never touches the renderer directly). */
 const EMOTE_MAP: Record<string, { react?: Reaction; clip?: string; posture?: PostureName }> = {
@@ -39,7 +37,6 @@ let phase: AssistantPhase = 'idle';
 let idleSec = 0;
 let quiet = false;
 let paused = false;
-let interactHint = false;
 let pointer: { x: number; y: number } | null = null;
 let lastPointerAt = 0;
 let hit = false;
@@ -49,27 +46,25 @@ let surface: Surface = 'taskbar';
 let dashing = 0; // pose override for previews/tests only
 
 const fx = new TeleportFx(() => document.createElement('canvas'));
-const sprite = new SpriteCapri(posePack as unknown as PosePack, 'capri');
-const useSprites = () => settings?.character.art !== 'vector' && Object.keys(posePack).length > 0;
-/** Which real-footage pose fits what she is doing right now. */
+const model = new CapriModel();
+/**
+ * Which pose of the model fits what she is doing. On a ledge she sits (or lies on her side when
+ * reclining or asleep); in the air she floats with her knees drawn up, or sits on nothing (B 0:23),
+ * or lounges on her side (B 0:48). Held by the cursor she dangles in the floating pose.
+ */
 let variantFor = '', variant = 0;
-function spritePose(): string {
-  const pick = (...names: string[]) => names.find((n) => sprite.has(n)) ?? Object.keys(posePack)[0];
+function modelPose(): PoseName {
+  const ledge = surface === 'taskbar' || surface === 'window';
   if (variantFor !== behavior.posture) { variantFor = behavior.posture; variant = Math.random(); }
-  const either = (a: string, b: string) => (variant < 0.5 ? pick(a, b) : pick(b, a));
-  if (dragging) return pick('dangle', 'stand');
-  if (behavior.state === 'sleeping') return pick('lie', 'sit', 'crouch');
-  if (behavior.state === 'reacting' && behavior.reaction === 'surprised') return pick('power', 'stand');
-  switch (behavior.posture) {
-    case 'sit_edge': return either('sit', 'lounge');
-    case 'air_sit': return pick('crouch', 'sit');
-    case 'recline': return either('lounge', 'lie');
-    case 'power_stance': return pick('power', 'stand');
-    case 'peek_left': case 'peek_right': return pick('peek', 'stand');
-    default: return pick('stand');
-  }
+  if (dragging) return 'crouch';
+  if (behavior.state === 'sleeping') return ledge ? 'lie' : 'crouch';
+  if (behavior.posture === 'recline') return 'lie';
+  // on the taskbar a dangling leg would hang off the bottom of the screen: lie along it or hover above it
+  if (surface === 'taskbar') return variant < 0.6 ? 'lie' : 'crouch';
+  if (ledge) return 'sit';
+  if (behavior.posture === 'air_sit') return 'crouch';
+  return variant < 0.55 ? 'crouch' : 'sit';
 }
-const rig = new CapriRig((w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; });
 const anim = new Animator();
 const behavior = new Behavior();
 const blinker = new Blinker();
@@ -77,7 +72,7 @@ const mic = new MicRecorder();
 const speaker = new Speaker(() => settings, (id, state) => void api.invoke('char:speechState', { utteranceId: id, state }), (t) => api.invoke('tts:fetch', t));
 
 // ---------------------------------------------------------------- sizing (DPI aware)
-let dpr = 1, W = FRAME.width, H = FRAME.height;
+let dpr = 1, W = FRAME_SIZE.width, H = FRAME_SIZE.height;
 function resize() {
   dpr = window.devicePixelRatio || 1;
   W = window.innerWidth; H = window.innerHeight;
@@ -139,37 +134,19 @@ function tick(dt: number) {
   p.mouthOpen = Math.max(0, speaker.speaking ? level : p.mouthOpen); // lip-sync wins over gesture clips
 
   const teleporting = fx.active || fx.hidden;
-  if (useSprites()) { drawSprite(p, dt, teleporting, intensity); return; }
-  if (rig.stutter > 0 && !teleporting) { rig.stutter--; return; } // glitch stutter: hold the last image a few frames
-  const glitch = !teleporting && settings.character.glitchEffects && (p.glitch > 0.05 || rig.burst > 0 || Math.random() < 0.0015 * intensity);
+  model.faceToward(Math.abs(p.turn) > 0.2 ? p.turn : pointer ? p.gazeX : 0);
+  if (model.stutter > 0 && !teleporting) { model.stutter--; return; } // glitch stutter: hold the last image a few frames
+  const glitch = !teleporting && settings.character.glitchEffects && (p.glitch > 0.05 || model.burst > 0);
   const g = glitch || teleporting ? offCtx : ctx;
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, canvas.width, canvas.height);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  rig.draw(g, p, dt, { glitchEnabled: settings.character.glitchEffects, micActive: mic.active, interactHint, scale: W / FRAME.width });
+  model.draw(g, p, dt, { pose: modelPose(), ledge: surface === 'taskbar' || surface === 'window', dragging, glitchEnabled: settings.character.glitchEffects }, W, H);
   if (glitch) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(off, 0, 0);
-    rig.glitch(ctx, off, Math.max(0.3, p.glitch, rig.burst * 0.9));
-  }
-  if (teleporting) fx.render(ctx, off, dt, dpr);
-}
-
-function drawSprite(p: Params, dt: number, teleporting: boolean, intensity: number) {
-  sprite.faceToward(Math.abs(p.turn) > 0.15 ? p.turn : p.gazeX);
-  if (sprite.stutter > 0 && !teleporting) { sprite.stutter--; return; } // glitch stutter: hold the last image
-  const glitch = !teleporting && settings.character.glitchEffects && (p.glitch > 0.05 || sprite.burst > 0 || Math.random() < 0.0015 * intensity);
-  const g = glitch || teleporting ? offCtx : ctx;
-  g.setTransform(1, 0, 0, 1, 0, 0);
-  g.clearRect(0, 0, canvas.width, canvas.height);
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  sprite.draw(g, p, dt, { pose: spritePose(), surface, dragging, speaking: speaker.speaking ? p.mouthOpen : 0, glitchEnabled: settings.character.glitchEffects, scale: H / FRAME.height }, W, H);
-  if (glitch) {
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(off, 0, 0);
-    sprite.post(ctx, off, Math.max(0.3, p.glitch, sprite.burst * 0.9));
+    model.post(ctx, off, Math.max(0.3, p.glitch, model.burst * 0.9));
   }
   if (teleporting) fx.render(ctx, off, dt, dpr);
 }
@@ -186,7 +163,7 @@ function trackPat(x: number, y: number) {
   patTurns = patTurns.filter((t) => now - t < 1400);
   if (patTurns.length >= 4 && now > patCool) {
     patTurns = []; patCool = now + 2500;
-    sprite.pat();
+    model.pat();
     behavior.react('happy');
   }
 }
@@ -218,7 +195,7 @@ window.addEventListener('mousemove', (e) => {
   lastPointerAt = performance.now();
   // gaze target relative to her head (≈ 34% down the frame)
   pointer = { x: (e.clientX - W / 2) / (W * 0.45), y: (e.clientY - H * 0.34) / (H * 0.35) };
-  if (!dragging) setHit(!fx.active && !fx.hidden && (useSprites() ? sprite.hitTest(ctx, e.clientX, e.clientY, dpr) : rig.hitTest(ctx, e.clientX, e.clientY)));
+  if (!dragging) setHit(!fx.active && !fx.hidden && model.hitTest(ctx, e.clientX, e.clientY, dpr));
   trackPat(e.clientX, e.clientY);
 });
 window.addEventListener('mouseleave', () => { pointer = null; if (!dragging) setHit(false); });
@@ -266,7 +243,7 @@ api.on('cue', (raw) => {
   const c = raw as CharacterCue;
   switch (c.type) {
     case 'phase': phase = c.phase; if (c.phase !== 'idle') behavior.wake(); break;
-    case 'react': behavior.react(c.reaction); if (c.reaction === 'happy' || c.reaction === 'surprised') sprite.poke(); break;
+    case 'react': behavior.react(c.reaction); if (c.reaction === 'happy' || c.reaction === 'surprised') model.poke(); break;
     case 'speak': behavior.wake(); speaker.enqueue(c.utteranceId, c.text); break;
     case 'stopSpeech': speaker.stopAll(); break;
     case 'wake': wakeAuto = true; behavior.react('surprised'); break;
@@ -275,7 +252,7 @@ api.on('cue', (raw) => {
       else void micStop(c.command === 'cancel');
       break;
     case 'pause': setPaused(c.paused); if (c.paused) speaker.stopAll(); break;
-    case 'interact': interactHint = c.enabled; break;
+    case 'interact': canvas.style.filter = c.enabled ? 'drop-shadow(0 0 1.5px #22f27a) drop-shadow(0 0 1px #22f27a)' : ''; break; // click-through lifted for a moment
     case 'presence': idleSec = c.idleSec; quiet = c.quiet; break;
     case 'remark': behavior.react('wave'); showBubble(c.text); break;
     case 'teleport': onTeleport(c.phase, c.id, c.effects); break;
@@ -301,13 +278,13 @@ api.on('settings:changed', (s) => { settings = s as Settings; });
   anim.snap({ ...NEUTRAL });
   raf = requestAnimationFrame(loop);
   window.__capriDebug = {
-    behavior, anim, speaker, rig, sprite, mic, fx, postures: POSTURES,
-    get spritePose() { return useSprites() ? spritePose() : null; },
+    behavior, anim, speaker, model, mic, fx, postures: POSTURES,
+    get pose() { return modelPose(); },
     get surface() { return surface; },
     get hit() { return hit; },
     get paused() { return paused; },
     force(p: Partial<Params> | null) { forced = p; },
-    hitAt: (x: number, y: number) => (useSprites() ? sprite.hitTest(ctx, x, y, dpr) : rig.hitTest(ctx, x, y)),
+    hitAt: (x: number, y: number) => model.hitTest(ctx, x, y, dpr),
     // ---- deterministic capture mode (trailer / docs): stop the clock, advance exact frames, export pixels
     manual(on: boolean) { if (on) { cancelAnimationFrame(raf); paused = true; } else { paused = false; last = performance.now(); raf = requestAnimationFrame(loop); } },
     step(dt: number, n = 1) { for (let i = 0; i < n; i++) tick(dt); },
@@ -319,11 +296,11 @@ api.on('settings:changed', (s) => { settings = s as Settings; });
     lips(on: boolean) { if (on) speaker.lips.start(); else speaker.lips.stop(); },
     teleportFx(ph: 'out' | 'in', id = 1) { fx.start(ph, id, { x: W / 2, y: H * 0.38, w: W * 0.8, h: H * 0.7 }); },
     canvasSize: () => [canvas.width, canvas.height],
-    grab(crop?: { x: number; y: number; w: number; h: number }, q = 0.9) {
+    grab(crop?: { x: number; y: number; w: number; h: number }, q = 0.9, type = 'image/webp') {
       const r = crop ?? { x: 0, y: 0, w: canvas.width, h: canvas.height };
       const c = document.createElement('canvas'); c.width = r.w; c.height = r.h;
       c.getContext('2d')!.drawImage(canvas, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
-      return c.toDataURL('image/webp', q);
+      return c.toDataURL(type, q);
     },
   };
 })();

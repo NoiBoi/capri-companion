@@ -77,7 +77,7 @@ function computeSurface(b: DRect): 'taskbar' | 'window' | 'air' | 'edge_left' | 
   const a = displayFor(b, displaysNow()).workArea;
   if (b.x < a.x - 10) return 'edge_left';
   if (b.x + b.width > a.x + a.width + 10) return 'edge_right';
-  if (Math.abs(b.y + b.height - (a.y + a.height)) <= 12) return 'taskbar';
+  if (Math.abs(b.y + b.height * SEAT_RATIO - (a.y + a.height)) <= 12) return 'taskbar';
   return 'air';
 }
 function sendSurface(force = false) {
@@ -244,8 +244,8 @@ function settleAfterDrop() {
   if (fg && cx > fg.x && cx < fg.x + fg.width && Math.abs(seat - fg.y) < 70 && fg.y - b.height * SEAT_RATIO >= work.y - b.height * 0.1) {
     charWin.setBounds({ ...b, y: Math.round(fg.y - b.height * SEAT_RATIO) });
     perchRect = fg;
-  } else if (work.y + work.height - (b.y + b.height) < 90 && b.y + b.height > work.y + work.height - 90) {
-    charWin.setBounds({ ...b, y: work.y + work.height - b.height });
+  } else if (Math.abs(work.y + work.height - seat) < 90) {
+    charWin.setBounds({ ...b, y: Math.round(work.y + work.height - b.height * SEAT_RATIO) }); // rest on the taskbar
   }
   savePosition();
   sendSurface();
@@ -269,7 +269,7 @@ function throwCharacter(v0: { x: number; y: number }) {
     if (x < area.x - b.width * 0.3) { x = area.x - b.width * 0.3; vx = Math.abs(vx) * 0.55; }
     if (x > area.x + area.width - b.width * 0.7) { x = area.x + area.width - b.width * 0.7; vx = -Math.abs(vx) * 0.55; }
     if (y < area.y - b.height * 0.2) { y = area.y - b.height * 0.2; vy = Math.abs(vy) * 0.55; }
-    if (y > area.y + area.height - b.height) { y = area.y + area.height - b.height; vy = -Math.abs(vy) * 0.45; }
+    if (y > area.y + area.height - b.height * SEAT_RATIO) { y = area.y + area.height - b.height * SEAT_RATIO; vy = -Math.abs(vy) * 0.45; }
     const f = Math.pow(0.08, dt); // she floats: air friction, no gravity
     vx *= f; vy *= f;
     w.setBounds({ x: Math.round(x), y: Math.round(y), width: b.width, height: b.height });
@@ -303,7 +303,7 @@ function createCharacter() {
   let settled = false;
   charWin.once('ready-to-show', () => {
     if (!charWin) return;
-    const size = characterSize(s0.character.scale, s0.character.art);
+    const size = characterSize(s0.character.scale);
     charWin.setBounds(clampToDisplays({ ...target, ...size }, displaysNow()));
     setTimeout(() => { settled = true; }, 500);
     if (!userHidden && charWin) reveal(charWin);
@@ -410,7 +410,7 @@ function onSettingsChanged(s: Settings) {
   if (tsig !== lastTpSig) { lastTpSig = tsig; teleporter?.rearm(); }
   log.setLevel(s.privacy.logLevel);
   if (charWin && !charWin.isDestroyed()) {
-    const size = characterSize(s.character.scale, s.character.art);
+    const size = characterSize(s.character.scale);
     const b = charWin.getBounds();
     if (b.width !== size.width || b.height !== size.height) {
       // keep her feet planted: anchor bottom-centre

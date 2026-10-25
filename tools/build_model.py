@@ -1,0 +1,125 @@
+"""Build Capri's character model (assets/capri/model.json) from the reference cut-outs.
+
+    python -P tools/build_model.py [--preview docs/previews/model]
+
+For each pose: trace the cut-out (tools/vectorize.py), drop the traced face (the renderer draws a live,
+expressive face in its place), clean up scene artefacts, reconstruct anything the original shot cropped
+off (hair tips, the end of a leg), then normalise to one shared unit: 26 units = the distance between
+her eyes, the same unit the live face is drawn in. Every pose therefore has the same head size, and
+coordinates are relative to the pose's anchor (the seat / contact point, or the centre when floating).
+"""
+import json, math, os, sys
+import numpy as np
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from vectorize import vectorize, ORDER, longpath
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REF = os.path.join(ROOT, 'reference', 'cutouts')
+EYE_UNITS = 26.0
+
+# Per pose: source cut-out, eye centres (crop px, measured by hand where detection is unreliable),
+# anchor (crop px), kind, which crop sides were cut by the original shot, cleanup rules.
+POSES = {
+    'sit': dict(src='sit_wiki01.png', eyes=[(489, 426), (541, 425)], anchor=(538, 786), kind='sit',
+                cut={'top': 'hair', 'bottom': 'leg'}, note='Official still (wiki Capri_01): seated on the edge of a bed, one leg along it'),
+    'lie': dict(src='lie_5wG_0030.png', eyes=[(1117.3, 436.7), (1150.0, 484.0)], anchor=(760, 548), kind='lie',
+                cut={'right': 'hair'}, note='Netflix clip 5wGdjjwoDbY 0:29-0:31: lying on her side on the bed'),
+    'crouch': dict(src='crouch_Nli_0023.png', eyes=[(227.5, 297.5), (256.0, 291.0)], anchor=(232, 330), kind='float',
+                   cut={}, drop_ink_above=0.33, note='Netflix footage (Nli_SZ-DBco 0:23-0:25): knees drawn up, sitting on nothing in mid-air'),
+}
+KEEP = ['violet', 'hair', 'crimson', 'shade', 'ink', 'green']  # eyes, irises and teeth come from the live face
+
+
+def centroid(p):
+    a = np.array(p, float); return a[:, 0].mean(), a[:, 1].mean()
+
+
+def extend_cut(layers, side, kind, w, h, rng):
+    """Rebuild what the shot cropped: jagged hair spikes, or a tapering leg tip, past the cut edge."""
+    vertical = side in ('top', 'bottom')          # the cut runs horizontally
+    edge = {'top': 0.0, 'bottom': float(h), 'left': 0.0, 'right': float(w)}[side]
+    out = -1.0 if side in ('top', 'left') else 1.0  # direction away from the picture
+    def P(along, across):  # point from (position along the cut, distance past it)
+        return [round(along, 1), round(edge + out * across, 1)] if vertical else [round(edge + out * across, 1), round(along, 1)]
+    add = {}
+    for cls in ('hair', 'violet', 'crimson', 'ink'):
+        for poly in layers.get(cls, []):
+            a = np.array(poly, float)
+            c_across, c_along = (a[:, 1], a[:, 0]) if vertical else (a[:, 0], a[:, 1])
+            on = np.abs(c_across - edge) <= 2.5
+            if on.sum() < 2: continue
+            lo, hi = c_along[on].min(), c_along[on].max()
+            if hi - lo < 6: continue
+            if kind == 'hair' and cls == 'hair':
+                # each spike tip the frame cut off gets its own continuation (contiguous runs of the
+                # outline lying on the cut), a little longer than it is wide, with the violet offset
+                runs, cur = [], []
+                for i in range(len(a) + 1):
+                    if i < len(a) and on[i]: cur.append(c_along[i])
+                    elif cur: runs.append((min(cur), max(cur))); cur = []
+                for b0, b1 in runs:
+                    if b1 - b0 < 6: continue
+                    L = (b1 - b0) * (0.7 + rng.random() * 0.8)
+                    tip = (b0 + b1) / 2 + (rng.random() - 0.5) * (b1 - b0) * 0.8
+                    shard = [P(b0, -2), P(b1, -2), P(tip, L)]
+                    add.setdefault('violet', []).append([[x - 3.5, y + 4.5] for x, y in shard])
+                    add.setdefault('hair', []).append(shard)
+            elif kind == 'leg' and cls in ('crimson', 'ink', 'violet') and vertical:
+                # continue the limb along its own direction to a point, the way her legs end (W2, N 1:51)
+                near = a[np.abs(c_across - edge) < 140]
+                if len(near) < 3: continue
+                slope = np.polyfit(near[:, 1], near[:, 0], 1)[0]  # dx/dy of the limb near the cut
+                L = (hi - lo) * 2.4
+                add.setdefault(cls, []).append([P(lo, -2), P(hi, -2), P((lo + hi) / 2 + slope * L * out, L)])
+    for k, v in add.items(): layers.setdefault(k, []).extend(v)
+
+
+def build():
+    model = {'unit': 'eye spacing = 26', 'poses': {}}
+    rng = np.random.default_rng(7)
+    for name, P in POSES.items():
+        m = vectorize(os.path.join(REF, P['src']))
+        w, h = m['size']
+        ox, oy = m['origin']
+        layers = {k: v for k, v in m['layers'].items() if k in KEEP}
+        if 'drop_ink_above' in P:
+            layers['ink'] = [p for p in layers.get('ink', []) if centroid(p)[1] > P['drop_ink_above'] * h]
+        # which crop sides really were cut by the original shot: only where the cut-out touches the frame edge
+        src_w, src_h = 1920, 1080
+        for side, kind in P['cut'].items():
+            touching = {'top': oy <= 1, 'bottom': oy + h >= src_h - 1, 'left': ox <= 1, 'right': ox + w >= src_w - 1}[side]
+            if touching: extend_cut(layers, side, kind, w, h, rng)
+        (e1, e2) = P['eyes']
+        dist = math.dist(e1, e2)
+        k = EYE_UNITS / dist
+        ang = math.atan2(e2[1] - e1[1], e2[0] - e1[0])
+        mx, my = (e1[0] + e2[0]) / 2, (e1[1] + e2[1]) / 2
+        # live-face origin: the head centre sits 5 units below the eye line, in face space
+        fx, fy = mx - math.sin(ang) * 5 / k, my + math.cos(ang) * 5 / k
+        ax, ay = P['anchor']
+        tx = lambda x, y: [round((x - ax) * k, 2), round((y - ay) * k, 2)]
+        out_layers = {}
+        allpts = []
+        for cls in ORDER:
+            if cls not in layers: continue
+            polys = []
+            for p in layers[cls]:
+                q = [tx(x, y) for x, y in p]
+                polys.append(q); allpts += q
+            out_layers[cls] = polys
+        a = np.array(allpts)
+        model['poses'][name] = {
+            'kind': P['kind'], 'note': P['note'],
+            'face': {'x': round((fx - ax) * k, 2), 'y': round((fy - ay) * k, 2), 'angle': round(ang, 4)},
+            'bounds': [round(float(a[:, 0].min()), 1), round(float(a[:, 1].min()), 1), round(float(a[:, 0].max()), 1), round(float(a[:, 1].max()), 1)],
+            'layers': out_layers,
+        }
+        print(f"{name:7s} bounds {model['poses'][name]['bounds']}  face {model['poses'][name]['face']}  polys {sum(len(v) for v in out_layers.values())}")
+    return model
+
+
+if __name__ == '__main__':
+    model = build()
+    out = os.path.join(ROOT, 'assets', 'capri', 'model.json')
+    with open(longpath(out), 'w') as f: json.dump(model, f, separators=(',', ':'))
+    print('wrote', out, f'{os.path.getsize(longpath(out)) / 1024:.0f} KB')

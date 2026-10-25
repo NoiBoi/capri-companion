@@ -1,3 +1,4 @@
+import { SEAT_RATIO } from '../../shared/framing';
 export interface Rect { x: number; y: number; width: number; height: number }
 export interface DisplayLike { id: number; workArea: Rect; bounds: Rect; scaleFactor: number }
 
@@ -37,10 +38,10 @@ export function clampToDisplays(r: Rect, displays: DisplayLike[], minVisible = 8
   return { ...r, x: Math.round(x), y: Math.round(y) };
 }
 
-/** Default spot: bottom-right of the primary work area, standing on the taskbar. */
+/** Default spot: bottom-right of the primary work area, resting on the taskbar. */
 export function defaultPosition(size: { width: number; height: number }, primary: DisplayLike): Rect {
   const w = primary.workArea;
-  return { x: Math.round(w.x + w.width - size.width - 24), y: Math.round(w.y + w.height - size.height), ...size };
+  return { x: Math.round(w.x + w.width - size.width - 24), y: Math.round(w.y + w.height - size.height * SEAT_RATIO), ...size };
 }
 
 /** Restore a saved position; if its display is gone or the spot is invalid, fall back sensibly. */

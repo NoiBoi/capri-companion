@@ -1,3 +1,4 @@
+import { SEAT_RATIO } from '../../src/shared/framing';
 import { describe, expect, it, vi } from 'vitest';
 import { classifyGeminiError, GeminiProvider } from '../../src/main/ai/gemini';
 import { ConnectionMonitor } from '../../src/main/ai/connection';
@@ -169,7 +170,8 @@ describe('teleport destination selection', () => {
   const second = d(2, 1536, -200, 1920, 1080);
   const cur = { x: 1212, y: 296, width: 300, height: 520 };
   const rnd = () => 0.5;
-  const inside = (r: { x: number; y: number; width: number; height: number }, a: { x: number; y: number; width: number; height: number }) => r.x >= a.x && r.y >= a.y && r.x + r.width <= a.x + a.width + 1 && r.y + r.height <= a.y + a.height + 1;
+  // on screen down to her seat line (below it the window may overlap the taskbar, which never shows anything)
+  const inside = (r: { x: number; y: number; width: number; height: number }, a: { x: number; y: number; width: number; height: number }) => r.x >= a.x && r.y >= a.y && r.x + r.width <= a.x + a.width + 1 && r.y + r.height * SEAT_RATIO <= a.y + a.height + 1;
 
   it('always lands fully inside a work area, away from the current spot and the cursor', () => {
     for (let i = 0; i < 50; i++) {
@@ -197,7 +199,7 @@ describe('teleport destination selection', () => {
   });
   it('corner / left / right respect the request', () => {
     const c = chooseDestination('corner', { displays: [primary], current: { ...cur, x: 600 }, cursor: { x: 0, y: 0 }, avoid: null, rand: rnd })!;
-    expect(c.y + c.height).toBe(816);
+    expect(Math.abs(c.y + c.height * SEAT_RATIO - 816)).toBeLessThanOrEqual(1); // seat on the taskbar's top edge
     const l = chooseDestination('left', { displays: [primary], current: cur, cursor: { x: 1500, y: 0 }, avoid: null, rand: rnd })!;
     expect(l.x + l.width / 2).toBeLessThan(768);
   });

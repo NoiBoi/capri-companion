@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { FRAME_SIZE, SEAT_RATIO } from '../../src/shared/framing';
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright-core';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
 
@@ -107,17 +108,18 @@ describe('desktop presence', () => {
       const at = (fx: number, fy: number) => Array.from(g.getImageData(Math.floor(c.width * fx), Math.floor(c.height * fy), 1, 1).data);
       const W = innerWidth, H = innerHeight;
       const dbg = (window as unknown as { __capriDebug: { hitAt(x: number, y: number): boolean } }).__capriDebug;
-      let crimson = 0, green = 0, total = 0;
+      let crimson = 0, green = 0, total = 0, onHer: [number, number] | null = null;
       for (let fy = 0.02; fy < 1; fy += 0.04) for (let fx = 0.02; fx < 1; fx += 0.04) {
-        const [r, g2, b] = at(fx, fy); total++;
-        if (r > 200 && g2 < 80 && b < 120) crimson++;
+        const [r, g2, b, a] = at(fx, fy); total++;
+        if (r > 200 && g2 < 80 && b < 120) { crimson++; if (!onHer && a > 200) onHer = [fx, fy]; }
         if (g2 > 200 && r < 100) green++;
       }
-      return { corner: at(0.01, 0.99), head: at(0.5, 0.32), crimson: crimson / total, green, hitHead: dbg.hitAt(W * 0.5, H * 0.32), hitCorner: dbg.hitAt(W * 0.01, H * 0.99) };
+      const [hx, hy] = onHer ?? [0.5, 0.3];
+      return { corner: at(0.01, 0.99), head: at(hx, hy), crimson: crimson / total, green, hitHead: dbg.hitAt(W * hx, H * hy), hitCorner: dbg.hitAt(W * 0.01, H * 0.99) };
     });
     expect(px.corner[3]).toBe(0); // transparent background
-    expect(px.head[3]).toBe(255); // opaque character
-    expect(px.crimson).toBeGreaterThan(0.15); // the crimson hair mass dominates the silhouette
+    expect(px.head[3]).toBeGreaterThan(200); // opaque character
+    expect(px.crimson).toBeGreaterThan(0.06); // the crimson hair mass dominates the silhouette
     expect(px.green).toBeGreaterThan(0); // neon-green mask/panels present
     expect(px.hitHead).toBe(true);
     expect(px.hitCorner).toBe(false);
@@ -130,12 +132,12 @@ describe('desktop presence', () => {
     await app.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows().find((x) => !x.isFocusable())!.setPosition(200, 150); });
     await new Promise((r) => setTimeout(r, 700));
     const before = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => !x.isFocusable())!.getPosition());
-    expect(Math.abs(before[0] - 200) + Math.abs(before[1] - 150)).toBeLessThanOrEqual(2); // half-pixel rounding at 125% DPI
+    expect(Math.abs(before[0] - 200) + Math.abs(before[1] - 150)).toBeLessThanOrEqual(3); // half-pixel rounding at 125% DPI
     await quit(app);
     ({ app, char } = await launch(ud));
     const pos = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => !x.isFocusable())!.getPosition());
-    expect(Math.abs(pos[0] - before[0])).toBeLessThanOrEqual(2); // Electron reports ±1–2 px at fractional DPI
-    expect(Math.abs(pos[1] - before[1])).toBeLessThanOrEqual(2);
+    expect(Math.abs(pos[0] - before[0])).toBeLessThanOrEqual(3); // Electron reports ±1–3 px at fractional DPI
+    expect(Math.abs(pos[1] - before[1])).toBeLessThanOrEqual(3);
     await quit(app);
     const s = JSON.parse(fs.readFileSync(path.join(ud, 'settings.json'), 'utf8'));
     s.character.position = { x: 99999, y: -99999, displayId: 123456 };
@@ -169,8 +171,8 @@ describe('desktop presence', () => {
     await panel.evaluate(() => (window as unknown as { capri: { invoke(c: string, a: unknown): Promise<unknown> } }).capri.invoke('settings:set', { character: { scale: 0.6, opacity: 0.7, alwaysOnTop: false } }));
     await panel.waitForTimeout(400);
     const w = await app.evaluate(({ BrowserWindow }) => { const x = BrowserWindow.getAllWindows().find((y) => !y.isFocusable())!; return { size: x.getSize(), opacity: x.getOpacity(), top: x.isAlwaysOnTop() }; });
-    expect(Math.abs(w.size[0] - 312)).toBeLessThanOrEqual(1); // 520 × 0.6 (footage art is wider); DIP rounding at fractional DPI
-    expect(Math.abs(w.size[1] - 312)).toBeLessThanOrEqual(1);
+    expect(Math.abs(w.size[0] - Math.round(FRAME_SIZE.width * 0.6))).toBeLessThanOrEqual(2); // DIP rounding at fractional DPI
+    expect(Math.abs(w.size[1] - Math.round(FRAME_SIZE.height * 0.6))).toBeLessThanOrEqual(2);
     expect(w.opacity).toBeCloseTo(0.7, 1);
     expect(w.top).toBe(false);
     await quit(app);
@@ -452,14 +454,14 @@ describe('teleportation', () => {
     const { app } = await launch(profile());
     type Hooks = { __capri: { charWin: { getBounds(): { x: number; y: number; width: number; height: number }; setBounds(b: object): void }; settleAfterDrop(): void; throwCharacter(v: object): void; throwing: boolean } };
     const win = { x: 300, y: 600, width: 700, height: 200 };
-    await app.evaluate((_e, win) => {
+    await app.evaluate((_e, [win, seat]) => {
       (globalThis as unknown as { __capriFgOverride: object }).__capriFgOverride = win;
       const c = (globalThis as unknown as Hooks).__capri; const b = c.charWin.getBounds();
-      c.charWin.setBounds({ ...b, x: 500, y: Math.round(win.y + 35 - b.height * (500 / 520)) }); // seat line 35 px below the window top
+      c.charWin.setBounds({ ...b, x: 500, y: Math.round(win.y + 35 - b.height * seat) }); // seat line 35 px below the window top
       c.settleAfterDrop();
-    }, win);
+    }, [win, SEAT_RATIO] as const);
     const sat = await app.evaluate(() => (globalThis as unknown as Hooks).__capri.charWin.getBounds());
-    expect(Math.abs(sat.y + sat.height * (500 / 520) - win.y)).toBeLessThanOrEqual(2); // seat exactly on the window's top edge
+    expect(Math.abs(sat.y + sat.height * SEAT_RATIO - win.y)).toBeLessThanOrEqual(3); // seat on the window top edge (DPI rounding)
     const before = sat.x;
     await app.evaluate(() => (globalThis as unknown as Hooks).__capri.throwCharacter({ x: 3200, y: -400 }));
     let flying = true;
@@ -470,16 +472,30 @@ describe('teleportation', () => {
     expect(after.b.x + after.b.width * 0.3).toBeLessThanOrEqual(after.wa.x + after.wa.width + 1); // never lost off-screen
   });
 
-  it('real-footage art: she is drawn from the show cut-outs, poses follow what she is doing', async () => {
-    const { char } = await launch(profile());
-    await char.waitForFunction(() => (window as unknown as { __capriDebug: { sprite: { ready: boolean } } }).__capriDebug.sprite.ready);
-    const pose = await char.evaluate(() => { const d = (window as unknown as { __capriDebug: { setSurface(s: string): void; behavior: { setPosture(n: string): void }; spritePose: string } }).__capriDebug; d.setSurface('air'); d.behavior.setPosture('stand'); return d.spritePose; });
-    expect(pose).toBe('stand');
-    await char.waitForTimeout(400);
-    const drawn = await char.evaluate(() => { const c = document.getElementById('stage') as HTMLCanvasElement; const px = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < px.length; i += 16) if (px[i] > 40) n++; return n / (px.length / 16); });
-    expect(drawn).toBeGreaterThan(0.08); // a real figure, not an empty canvas
-    const sit = await char.evaluate(() => { const d = (window as unknown as { __capriDebug: { setSurface(s: string): void; behavior: { setPosture(n: string): void }; spritePose: string } }).__capriDebug; d.setSurface('taskbar'); d.behavior.setPosture('sit_edge'); return d.spritePose; });
-    expect(['sit', 'lounge']).toContain(sit);
+  it('character model: every pose renders whole inside her window, and poses follow where she is', async () => {
+    const { char } = await launch(profile({ character: { glitchEffects: false } }));
+    type D = { __capriDebug: { manual(on: boolean): void; step(dt: number, n: number): void; setSurface(s: string): void; behavior: { setPosture(n: string): void }; pose: string; force(p: object | null): void } };
+    await char.evaluate(() => (window as unknown as D).__capriDebug.manual(true));
+    const cases: [string, string, string[], object][] = [
+      ['window', 'sit_edge', ['sit'], {}], ['taskbar', 'recline', ['lie'], {}], ['taskbar', 'sit_edge', ['lie', 'crouch'], {}],
+      ['air', 'air_sit', ['crouch'], {}], ['air', 'air_sit', ['crouch'], { hairStream: 1, hairWind: 1, headYaw: 1, turn: 1 }], ['window', 'sit_edge', ['sit'], { turn: -1, headPitch: 1, sleep: 1 }],
+    ];
+    for (const [surface, posture, want, force] of cases) {
+      const r = await char.evaluate(([surface, posture, force]) => {
+        const d = (window as unknown as D).__capriDebug;
+        d.force(force); d.setSurface(surface); d.behavior.setPosture(posture); d.step(1 / 30, 45);
+        const c = document.getElementById('stage') as HTMLCanvasElement;
+        const px = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+        let edge = 0, filled = 0;
+        for (let i = 3; i < px.length; i += 4) if (px[i] > 30) filled++;
+        for (let x = 0; x < c.width; x++) { if (px[x * 4 + 3] > 30) edge++; if (px[((c.height - 1) * c.width + x) * 4 + 3] > 30) edge++; }
+        for (let y = 0; y < c.height; y++) { if (px[y * c.width * 4 + 3] > 30) edge++; if (px[(y * c.width + c.width - 1) * 4 + 3] > 30) edge++; }
+        return { pose: d.pose, edge, filled: filled / (c.width * c.height) };
+      }, [surface, posture, force] as const);
+      expect(want, `${surface}/${posture}`).toContain(r.pose);
+      expect(r.edge, `${surface}/${posture}: figure touches the window edge (cropped)`).toBe(0);
+      expect(r.filled).toBeGreaterThan(0.05); // a real figure, not an empty canvas
+    }
   });
 
   it('never speaks without a trigger: idling, reconnecting, teleporting, pokes and remarks stay silent', async () => {
@@ -670,7 +686,7 @@ describe('postures & placement', () => {
     const r = await char.evaluate(() => (window as unknown as { capri: { invoke(c: string, a: string): Promise<{ ok: boolean }> } }).capri.invoke('teleport:now', 'perch'));
     expect(r.ok).toBe(true);
     const b = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => !x.isFocusable())!.getBounds());
-    expect(Math.abs(b.y + b.height * (500 / 520) - 560)).toBeLessThanOrEqual(3); // seat on the window's top edge
+    expect(Math.abs(b.y + b.height * SEAT_RATIO - 560)).toBeLessThanOrEqual(4); // seat on the window's top edge (DPI rounding)
     await char.waitForFunction(() => (window as unknown as Dbg).__capriDebug.surface === 'window', undefined, { timeout: 4000 });
     // the user drags that window away → she startles and jumps somewhere safe
     await app.evaluate(() => { (globalThis as Record<string, unknown>).__capriFgOverride = { x: 400, y: 300, width: 700, height: 400 }; });

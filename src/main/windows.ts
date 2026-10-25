@@ -1,3 +1,4 @@
+import { FRAME_SIZE } from '../shared/framing';
 import path from 'node:path';
 import { BrowserWindow, screen, shell, type Rectangle } from 'electron';
 import type { Settings } from '../shared/settings';
@@ -5,7 +6,6 @@ import { clampToDisplays, restorePosition, type DisplayLike } from './desktop/di
 import { leftButtonDown } from './desktop/win32';
 import type { Logger } from './log';
 
-export const BASE_SIZE = { width: 340, height: 520 }; // wide enough for the hair cloud + a leg laid along a ledge
 /** Test-only: render windows off-screen so automated runs never appear on the user's desktop. */
 export const OFFSCREEN = process.env.CAPRI_TEST === '1' && process.env.CAPRI_OFFSCREEN === '1';
 
@@ -22,12 +22,11 @@ export function conceal(win: BrowserWindow) {
 export const shown = (win: BrowserWindow | null | undefined) => !!win && !win.isDestroyed() && (OFFSCREEN ? (win as unknown as { capriShown?: boolean }).capriShown === true : win.isVisible());
 const RENDERER_DIR = path.join(__dirname, '..', 'renderer');
 
-/** Real-footage poses include wide ones (lying on her side), so that art gets a wider window. */
-export const FOOTAGE_WIDTH = 520;
-export function characterSize(scale: number, art: 'footage' | 'vector' = 'vector') {
+/** Window size: the model's own framing (every pose and effect fits), times the user's scale. */
+export function characterSize(scale: number) {
   // capture harness only: oversize the window for high-resolution trailer close-ups
   if (process.env.CAPRI_TEST === '1' && process.env.CAPRI_CAPTURE_SCALE) scale = Number(process.env.CAPRI_CAPTURE_SCALE) || scale;
-  return { width: Math.round((art === 'footage' ? FOOTAGE_WIDTH : BASE_SIZE.width) * scale), height: Math.round(BASE_SIZE.height * scale) };
+  return { width: Math.round(FRAME_SIZE.width * scale), height: Math.round(FRAME_SIZE.height * scale) };
 }
 
 export function displaysNow(): DisplayLike[] {
@@ -47,7 +46,7 @@ function harden(win: BrowserWindow, log: Logger) {
 }
 
 export function createCharacterWindow(s: Settings, preload: string, log: Logger): BrowserWindow {
-  const size = characterSize(s.character.scale, s.character.art);
+  const size = characterSize(s.character.scale);
   const pos = restorePosition(s.character.position, size, displaysNow(), screen.getPrimaryDisplay().id);
   const win = new BrowserWindow({
     ...pos,

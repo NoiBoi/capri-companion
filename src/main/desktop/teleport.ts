@@ -4,8 +4,9 @@ export type TeleportTarget = 'auto' | 'near_cursor' | 'corner' | 'left' | 'right
 export const TELEPORT_TARGETS: TeleportTarget[] = ['auto', 'near_cursor', 'corner', 'left', 'right', 'other_monitor', 'random', 'perch', 'peek'];
 export type DestKind = 'spot' | 'perch' | 'peek_left' | 'peek_right';
 export type Destination = Rect & { kind: DestKind };
-/** Fraction of the window height where her seat is when sitting on a ledge (sit_edge posture). */
-export const SEAT_RATIO = 500 / 520;
+import { SEAT_RATIO } from '../../shared/framing';
+/** Fraction of the window height where she rests on a ledge (derived from the character model). */
+export { SEAT_RATIO };
 
 /** Sit on the top edge of the active window (B 0:18: she stands on top of D's head). */
 export function perchSpot(win: Rect, size: { width: number; height: number }, displays: DisplayLike[], cursor: { x: number; y: number }, rand: () => number): Destination | null {
@@ -26,7 +27,7 @@ export function perchSpot(win: Rect, size: { width: number; height: number }, di
 export function peekSpot(d: DisplayLike, size: { width: number; height: number }, side: 'left' | 'right'): Destination {
   const a = d.workArea;
   const x = side === 'left' ? Math.round(a.x - size.width * 0.42) : Math.round(a.x + a.width - size.width * 0.58);
-  return { x, y: a.y + a.height - size.height, width: size.width, height: size.height, kind: side === 'left' ? 'peek_left' : 'peek_right' };
+  return { x, y: Math.round(a.y + a.height - size.height * SEAT_RATIO), width: size.width, height: size.height, kind: side === 'left' ? 'peek_left' : 'peek_right' };
 }
 
 export interface TeleportContext {
@@ -48,7 +49,7 @@ const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.
 function spots(d: DisplayLike, w: number, h: number): (Rect & { kind: 'corner' | 'left' | 'right' | 'edge' })[] {
   const a = d.workArea;
   const m = 16;
-  const bottom = a.y + a.height - h;
+  const bottom = Math.round(a.y + a.height - h * SEAT_RATIO); // resting on the taskbar's top edge
   const top = a.y + m;
   const out: (Rect & { kind: 'corner' | 'left' | 'right' | 'edge' })[] = [
     { x: a.x + m, y: bottom, width: w, height: h, kind: 'corner' },
@@ -59,8 +60,9 @@ function spots(d: DisplayLike, w: number, h: number): (Rect & { kind: 'corner' |
     { x: a.x + a.width - w - m, y: Math.round(a.y + (a.height - h) / 2), width: w, height: h, kind: 'right' },
   ];
   for (const f of [0.25, 0.5, 0.75]) out.push({ x: Math.round(a.x + (a.width - w) * f), y: bottom, width: w, height: h, kind: 'edge' });
-  // only spots that fit entirely in the work area (tiny/portrait screens may reject some)
-  return out.filter((r) => r.x >= a.x && r.y >= a.y && r.x + r.width <= a.x + a.width + 1 && r.y + r.height <= a.y + a.height + 1);
+  // only spots where she fits the work area down to her seat line (below it, the window may overlap the
+  // taskbar: that part only ever holds legs dangling over a window edge, never anything on the taskbar)
+  return out.filter((r) => r.x >= a.x && r.y >= a.y && r.x + r.width <= a.x + a.width + 1 && r.y + r.height * SEAT_RATIO <= a.y + a.height + 1);
 }
 
 /**
