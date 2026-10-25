@@ -1,19 +1,8 @@
 # Trailer assets
 
-A private, unofficial fan trailer. All third-party media is downloaded from its original source. Nothing in the soundtrack is synthesised.
+## Footage — `public/demo/` (not committed)
 
-## Show footage — `public/show/` (not committed, private use only)
-
-Real *Cyberpunk: Edgerunners 2* shots of Capri, © CD PROJEKT, Studio Trigger and Netflix:
-- `o.mp4`: "The Moment D Meets Capri" (Netflix, YouTube `5wGdjjwoDbY`)
-- `n.mp4`: "Capri is a baddie in Cyberpunk Edgerunners 2" (YouTube `Nli_SZ-DBco`), a compilation of Netflix footage
-- `e.mp4`: "Capri's Best Moments" (YouTube `EFGpu_pYEao`), a compilation of Netflix footage
-
-They were downloaded with yt-dlp and transcoded to H.264 at 23.976 fps. The compilations carry a credit watermark in their bottom corners, so the trailer frames those clips from the top with a zoom that keeps it out of the picture.
-
-## Capri cut-outs — `public/capri/` (copy of the app's `assets/capri`, not committed)
-
-These are the same real-footage cut-outs the app uses. See `../assets/capri/SOURCES.md`.
+One take of the real app on the author's own Windows desktop, recorded by `../scripts/record-demo.mjs`. There's no show footage, stock footage or third-party art in the trailer. Re-record it locally; it's git-ignored because it shows a personal desktop.
 
 ## Music — `public/audio/score.mp3`
 
@@ -49,26 +38,6 @@ These are the same real-footage cut-outs the app uses. See `../assets/capri/SOUR
 | drone_deep | [Dragon Studio — deep haunting drone](https://cdn.pixabay.com/download/audio/2026/02/10/audio_3309cf5b66.mp3?filename=dragon-studio-deep-haunting-drone-482880.mp3) |
 | drone_dark | [u_n1up2g5sdg — dark drone](https://cdn.pixabay.com/download/audio/2025/05/28/audio_98299bd0d5.mp3?filename=u_n1up2g5sdg-dark-drone-351092.mp3) |
 
-## Stock footage — `public/video/` (Pexels License, not committed)
-
-Run `node scripts/fetch-assets.mjs` to download it. The files are:
-- `aerial_fog`
-- `cyber_city`
-- `cyber_scape`
-- `neon_scape`
-- `taxi_rain`
-
-The URLs are in that script.
-
-## Logos and key art — `public/img/`
-
-From [cyberpunk.net](https://www.cyberpunk.net/), © CD PROJEKT RED:
-- `logo_edgerunners2.png`: the Edgerunners 2 logo
-- `logo_cyberpunk_yellow.png`: the franchise logo
-- `keyart_er2.jpg`: the Edgerunners 2 cover art
-
-They're used only on the "fan project based on" end card and as blurred backgrounds. This is a private fan work, and it isn't affiliated with CD PROJEKT RED, Studio Trigger or Netflix.
-
 ## Fonts
 
-Chakra Petch, JetBrains Mono and Inter, all via `@remotion/google-fonts` (SIL OFL).
+Inter, via `@remotion/google-fonts` (SIL OFL).
