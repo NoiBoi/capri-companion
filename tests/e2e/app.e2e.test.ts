@@ -271,7 +271,7 @@ describe('voice', () => {
       await char.waitForTimeout(50);
     }
     expect(maxMouth).toBeGreaterThan(0.2);
-    await panel.waitForSelector('#phaseText >> text=ready', { timeout: 30_000 });
+    await panel.waitForSelector('#phaseChip[data-phase="idle"]', { state: 'attached', timeout: 30_000 }); // idle shows no badge
   });
 
   it('interrupting speech stops it immediately', async () => {
@@ -280,7 +280,7 @@ describe('voice', () => {
     await panel.fill('textarea', 'help'); await panel.press('textarea', 'Enter');
     await panel.waitForSelector('#phaseText >> text=speaking', { timeout: 15_000 });
     await panel.keyboard.press('Escape');
-    await panel.waitForSelector('#phaseText >> text=ready', { timeout: 3000 });
+    await panel.waitForSelector('#phaseChip[data-phase="idle"]', { state: 'attached', timeout: 3000 });
     expect(await char.evaluate(() => (window as unknown as { __capriDebug: { speaker: { speaking: boolean } } }).__capriDebug.speaker.speaking)).toBe(false);
   });
 
@@ -340,7 +340,7 @@ describe('persistence & reliability', () => {
     const ud = profile();
     let { app, char } = await launch(ud);
     let panel = await openPanel(app, char, 'memory');
-    await panel.fill('input[placeholder^="Add something"]', 'My cat is called Delta');
+    await panel.fill('input[placeholder="Something to remember"]', 'My cat is called Delta');
     await panel.getByText('Add', { exact: true }).click();
     await panel.waitForSelector('text=My cat is called Delta');
     await quit(app);
@@ -560,16 +560,16 @@ describe('teleportation', () => {
 describe('connection status & failure handling', () => {
   const chip = (panel: Page) => panel.evaluate(() => ({ state: document.getElementById('connChip')!.dataset.state, text: document.getElementById('connText')!.textContent }));
 
-  it('shows "no AI" for offline mode and "online" only after a real check', async () => {
+  it('shows "No AI" for offline mode and "Online" only after a real check', async () => {
     let { app, char } = await launch(profile());
     let panel = await openPanel(app, char);
-    expect((await chip(panel)).text).toBe('no AI');
+    expect((await chip(panel)).text).toBe('No AI');
     await quit(app);
     const ollama = await mockOllama();
     ({ app, char } = await launch(profile({ ai: { provider: 'ollama', ollama: { baseUrl: ollama.url, model: 'llama3.2' } } })));
     panel = await openPanel(app, char);
     await panel.waitForFunction(() => document.getElementById('connChip')!.dataset.state === 'connected');
-    expect((await chip(panel)).text).toBe('online');
+    expect((await chip(panel)).text).toBe('Online');
     await ollama.close();
   });
 
@@ -601,9 +601,9 @@ describe('interface', () => {
     const panel = await openPanel(app, char);
     for (const size of [[340, 420], [420, 620], [900, 900]]) {
       await app.evaluate(({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows().find((x) => x.isFocusable())!.setSize(w, h), size);
-      for (const t of ['chat', 'model', 'voice', 'look', 'move', 'behavior', 'memory', 'permissions', 'privacy', 'diagnostics']) {
+      for (const t of ['chat', 'model', 'voice', 'character', 'memory', 'privacy', 'system']) {
         await panel.evaluate((x) => (window as unknown as { capri: { invoke(c: string, a: string): Promise<unknown> } }).capri.invoke('panel:open', x), t);
-        await panel.waitForTimeout(t === 'diagnostics' || t === 'move' || t === 'model' ? 900 : 250);
+        await panel.waitForTimeout(t === 'system' || t === 'character' || t === 'model' || t === 'privacy' ? 900 : 250);
         const o = await panel.evaluate(() => { const r = document.getElementById('closeBtn')!.getBoundingClientRect(); return { sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, close: r.width > 0 && r.right <= innerWidth + 1 }; });
         expect(o.sw, `${t} @ ${size}`).toBeLessThanOrEqual(o.cw + 1);
         expect(o.close, `close button visible on ${t} @ ${size}`).toBe(true);
@@ -616,7 +616,7 @@ describe('interface', () => {
     const s = JSON.parse(fs.readFileSync(path.join(d, 'settings.json'), 'utf8')); s.firstRunComplete = false; fs.writeFileSync(path.join(d, 'settings.json'), JSON.stringify(s));
     const { app } = await launch(d);
     const panel = await app.waitForEvent('window');
-    await panel.waitForSelector('text=Pick a brain');
+    await panel.waitForSelector('text=Choose her brain');
     expect(await panel.locator('.choice', { hasText: 'Google Gemini' }).count()).toBe(1);
     await panel.locator('.choice', { hasText: 'No AI' }).click();
     await panel.waitForSelector('textarea');

@@ -43,19 +43,3 @@ export function icon(name: keyof typeof ICONS | string, cls = ''): SVGSVGElement
   }
   return svg;
 }
-
-/** Brand mark: green mask with two almond eyes (blue iris, white pupil). */
-export function brandMark(): SVGSVGElement {
-  const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('viewBox', '0 0 44 28');
-  svg.setAttribute('aria-hidden', 'true');
-  const add = (tag: string, attrs: Record<string, string>) => { const e = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); svg.append(e); };
-  add('polygon', { points: '2,4 21,1 23,1 42,4 40,24 23,27 21,27 4,24', fill: '#22f27a' });
-  for (const [cx, rot] of [[12, -12], [32, 12]]) {
-    add('path', { d: 'M-8 0 Q0 -7 8 0 Q0 6 -8 0Z', fill: '#0a0710', transform: `translate(${cx} 13) rotate(${rot})` });
-    add('circle', { cx: String(cx), cy: '13', r: '2.8', fill: '#1d6cff' });
-    add('circle', { cx: String(cx), cy: '13', r: '1', fill: '#ffffff' });
-  }
-  add('rect', { x: '21', y: '0', width: '2', height: '28', fill: '#0a0710' });
-  return svg;
-}

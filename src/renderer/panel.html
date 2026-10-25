@@ -10,9 +10,9 @@
   <header class="titlebar">
     <div class="wordmark" id="wordmark">CAPRI</div>
     <span class="spacer"></span>
-    <span class="chip" id="connChip" data-state="disconnected" title="AI connection"><span class="gem"></span><span id="connText">offline</span></span>
-    <span class="chip" id="phaseChip" data-phase="idle" title="What Capri is doing"><span class="gem"></span><span id="phaseText">ready</span></span>
-    <button class="win-btn" id="closeBtn" title="Close panel (Esc)" aria-label="Close panel"></button>
+    <span class="status-pill" id="connChip" data-state="disconnected"><span class="dot"></span><span id="connText">Offline</span></span>
+    <span id="phaseChip" data-phase="idle"><span id="phaseText">ready</span></span>
+    <button class="win-btn" id="closeBtn" aria-label="Close"></button>
   </header>
   <div class="shell">
     <nav class="rail" id="rail" role="tablist" aria-label="Sections"></nav>

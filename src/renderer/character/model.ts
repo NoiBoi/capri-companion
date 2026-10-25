@@ -128,7 +128,7 @@ export class CapriModel {
     const flip = this.face;
     const f = P.face;
     // head turn (look toward cursor / around), sleep droop
-    const hx = (p.headYaw * 7 + p.turn * 3) * flip, hy = p.headPitch * 6 + p.sleep * 5;
+    const hx = (p.headYaw * 12 + p.turn * 4) * flip, hy = p.headPitch * 9 + p.sleep * 6;
     const sway = (0.35 + p.hairWind) * 5, stream = -p.hairStream * 34 * flip;
     const breath = (p.breathe - 0.5) * 1.6;
 
