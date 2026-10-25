@@ -58,6 +58,8 @@ const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((res, rej) 
 export class GeminiProvider implements LLMProvider {
   readonly name = 'gemini';
   readonly local = false;
+  /** Models that rejected the configured thinking level; they get the model's own default instead. */
+  private noThinkingLevel = new Set<string>();
   constructor(private c: GeminiConfig) {}
 
   private client(timeoutMs: number) {
@@ -77,7 +79,7 @@ export class GeminiProvider implements LLMProvider {
         model, input, stream: true, store: false,
         ...(system ? { system_instruction: system } : {}),
         // Gemini 3.6+ ignore temperature; still sent for models that honour it
-        generation_config: { max_output_tokens: o.maxTokens, temperature: o.temperature, thinking_level: this.c.thinkingLevel },
+        generation_config: { max_output_tokens: o.maxTokens, temperature: o.temperature, ...(this.noThinkingLevel.has(model) ? {} : { thinking_level: this.c.thinkingLevel }) },
       } as never,
       { timeout_ms: o.timeoutMs, retries: { strategy: 'none' }, fetch_options: { signal: o.signal }, ...(this.c.serverUrl ? { server_url: this.c.serverUrl } : {}) },
     ) as unknown as Promise<AsyncIterable<{ event_type: string; delta?: { type: string; text?: string }; error?: { code?: string; message?: string } }>>;
@@ -90,17 +92,36 @@ export class GeminiProvider implements LLMProvider {
       const model = models[mi];
       for (let attempt = 0; attempt < 3; attempt++) {
         let yielded = false;
+        // inactivity watchdog: the SDK timeout only covers the response headers and its body reader ignores
+        // abort signals, so every read is raced against the watchdog or a quiet stream leaves her "thinking"
+        const ac = new AbortController(); let stalled = false; let timer: ReturnType<typeof setTimeout> | undefined;
+        const arm = () => { clearTimeout(timer); timer = setTimeout(() => { stalled = true; ac.abort(); }, o.timeoutMs); };
+        const relay = () => ac.abort();
+        o.signal.addEventListener('abort', relay, { once: true });
+        const cut = new Promise<never>((_, rej) => ac.signal.addEventListener('abort', () => rej(new ProviderError('cut', 'aborted')), { once: true }));
+        cut.catch(() => {});
+        let it: AsyncIterator<{ event_type: string; delta?: { type: string; text?: string }; error?: { code?: string; message?: string } }> | undefined;
         try {
-          const stream = await this.request(model, messages, o);
+          arm();
+          const stream = await Promise.race([this.request(model, messages, { ...o, signal: ac.signal }), cut]);
           this.c.onModelUsed?.(model, mi > 0);
-          for await (const ev of stream) {
-            if (o.signal.aborted) throw new ProviderError('aborted', 'aborted');
+          it = stream[Symbol.asyncIterator]();
+          for (;;) {
+            arm();
+            const r = await Promise.race([it.next(), cut]);
+            clearTimeout(timer); // the consumer's time between reads doesn't count
+            if (r.done) break;
+            const ev = r.value;
             if (ev.event_type === 'step.delta' && ev.delta?.type === 'text' && ev.delta.text) { yielded = true; yield ev.delta.text; }
             else if (ev.event_type === 'error') throw new ProviderError(`Gemini stream error: ${ev.error?.message ?? ev.error?.code ?? 'unknown'}`, 'server');
           }
           return;
         } catch (e) {
-          const pe = o.signal.aborted ? new ProviderError('aborted', 'aborted') : classifyGeminiError(e, this.c.apiKey);
+          if (o.signal.aborted) throw new ProviderError('aborted', 'aborted');
+          if (!yielded && !o.signal.aborted && !this.noThinkingLevel.has(model) && /thinking level/i.test(String((e as Error)?.message ?? e))) {
+            this.noThinkingLevel.add(model); attempt--; continue; // e.g. gemini-3.8-flash has no 'minimal'
+          }
+          const pe = o.signal.aborted ? new ProviderError('aborted', 'aborted') : stalled ? new ProviderError('Gemini stopped responding', 'timeout') : classifyGeminiError(e, this.c.apiKey);
           if (pe.kind === 'aborted' || pe.kind === 'auth' || pe.kind === 'config' || yielded) throw pe; // never duplicate partial output
           lastErr = pe;
           if (pe.kind === 'model') break; // try the fallback model
@@ -112,6 +133,9 @@ export class GeminiProvider implements LLMProvider {
           }
           if (pe.kind === 'server' || pe.kind === 'rate_limit') break; // persistent → fallback model
           throw pe;
+        } finally {
+          clearTimeout(timer); o.signal.removeEventListener('abort', relay); ac.abort();
+          void it?.return?.()?.catch?.(() => {}); // release the connection without waiting on it
         }
       }
     }
