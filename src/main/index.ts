@@ -4,7 +4,7 @@ import {
   app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, globalShortcut, screen, safeStorage, shell, dialog,
   Notification, powerMonitor, session, desktopCapturer, type IpcMainInvokeEvent, type MenuItemConstructorOptions,
 } from 'electron';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import { runTask, type Screen } from './agent/computer';
 import { claudeSignIn, claudeSignOut, claudeStatus, claudeSubmitCode } from './ai/claudeAccount';
 import { newId } from './store/jsonFile';
@@ -554,16 +554,17 @@ function raiseTick() {
 // vision models in order of click accuracy; each has its own per-minute quota on free keys
 const COMPUTER_MODELS = ['gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
 const cooldown = new Map<string, number>();
+const noThinkingLevel = new Set<string>(); // models that reject thinkingLevel
 let agentCtrl: AbortController | null = null;
 async function captureScreen(): Promise<Screen> {
   const d = screen.getPrimaryDisplay();
   const pw = Math.round(d.size.width * d.scaleFactor), ph = Math.round(d.size.height * d.scaleFactor);
-  const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1280, height: Math.round((1280 * ph) / pw) } });
+  const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1024, height: Math.round((1024 * ph) / pw) } });
   const src = sources.find((x) => x.display_id === String(d.id)) ?? sources[0];
-  return { jpegBase64: src.thumbnail.toJPEG(80).toString('base64'), width: pw, height: ph, x: Math.round(d.bounds.x * d.scaleFactor), y: Math.round(d.bounds.y * d.scaleFactor) };
+  return { jpegBase64: src.thumbnail.toJPEG(70).toString('base64'), width: pw, height: ph, x: Math.round(d.bounds.x * d.scaleFactor), y: Math.round(d.bounds.y * d.scaleFactor) };
 }
-/** She carries out a task with the real mouse and keyboard. Esc (held), the stop button or (while exploring)
- * any mouse movement or keypress of the user's own ends it at once. */
+/** She carries out a task with the real mouse and keyboard. Only Esc stops a task the user asked for; while
+ * exploring, any mouse movement or keypress of the user's own ends it too. */
 async function useComputer(task: string, opts: { explore?: boolean; maxSteps?: number } = {}): Promise<{ ok: boolean; summary: string; steps: number }> {
   const key = secretFor('gemini');
   if (!key) return { ok: false, summary: 'Using the computer needs a Gemini API key (Model → Gemini API key).', steps: 0 };
@@ -573,6 +574,7 @@ async function useComputer(task: string, opts: { explore?: boolean; maxSteps?: n
   const ai = new GoogleGenAI({ apiKey: key });
   // the user taking the mouse back: the cursor is somewhere she didn't put it, or (exploring) a key went down
   let expected = hands.cursor(), moving = false, lastOwn = Date.now();
+  hands.escapeDown(); // forget an Esc tap from before the task
   const escWatch = setInterval(() => {
     if (hands.escapeDown()) ctrl.abort();
     const c = hands.cursor();
@@ -580,9 +582,11 @@ async function useComputer(task: string, opts: { explore?: boolean; maxSteps?: n
     if (opts.explore && Date.now() - lastOwn > 1500 && powerMonitor.getSystemIdleTime() === 0 && Date.now() - started > 3000) { log.info('agent: user is back'); ctrl.abort(); }
   }, 80);
   const started = Date.now();
-  // the chat stays open: hiding it looked like the app had closed. She knows it is hers and leaves it be.
+  // the chat gets out of her way (minimized, not closed) and comes back when she's done
+  const panelWasOpen = !!panelWin && !panelWin.isDestroyed() && panelWin.isVisible() && !panelWin.isMinimized();
+  if (panelWasOpen) panelWin!.minimize();
   applyMouseMode(false);
-  cue({ type: 'bubble', text: opts.explore ? 'Going for a look around.' : 'On it. Hold Esc to stop me.' });
+  cue({ type: 'bubble', text: opts.explore ? 'Going for a look around.' : 'On it. Press Esc to stop me.' });
   cue({ type: 'workPose', pose: 'back' });
   log.info('agent: start', { chars: task.length });
   try {
@@ -605,11 +609,16 @@ async function useComputer(task: string, opts: { explore?: boolean; maxSteps?: n
             const res = await ai.models.generateContent({
               model,
               contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: s.jpegBase64 } }] }],
-              config: { responseMimeType: 'application/json', temperature: 0.2, abortSignal: signal },
+              config: {
+                responseMimeType: 'application/json', temperature: 0.2, maxOutputTokens: 600, abortSignal: signal,
+                // speed over deliberation: she looks again after every batch anyway
+                ...(noThinkingLevel.has(model) ? {} : { thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL } }),
+              },
             });
             return res.text ?? '';
           } catch (e) {
             const msg = String((e as Error).message ?? e);
+            if (!noThinkingLevel.has(model) && /\b400\b|INVALID_ARGUMENT/i.test(msg) && /think/i.test(msg)) { noThinkingLevel.add(model); continue; }
             if (/\b404\b|NOT_FOUND|no longer available/i.test(msg)) { cooldown.set(model, Number.MAX_SAFE_INTEGER); log.info('agent: model unavailable', { model }); continue; }
             if (!/\b(429|503)\b|RESOURCE_EXHAUSTED|UNAVAILABLE|high demand/i.test(msg)) throw e;
             const retry = /retry in ([\d.]+)s|"retryDelay":"(\d+)s"/.exec(msg);
@@ -657,7 +666,7 @@ async function useComputer(task: string, opts: { explore?: boolean; maxSteps?: n
     agentCtrl = null;
     cue({ type: 'workPose', pose: null });
     applyMouseMode(false);
-
+    if (panelWasOpen && panelWin && !panelWin.isDestroyed()) panelWin.restore();
   }
 }
 // ---------------------------------------------------------------- autonomous exploring
@@ -872,7 +881,7 @@ function registerIpc() {
     lastInteraction = Date.now();
     return { messageId: await convo.send(text) };
   });
-  handle('chat:stop', 'any', none, () => { agentCtrl?.abort(); convo.stop(); });
+  handle('chat:stop', 'any', none, () => { convo.stop(); }); // a computer task stops only on Esc
   handle('chat:history', 'panel', z.object({ limit: z.number().int().min(1).max(2000).optional() }).optional(), (a) => history.recent(a?.limit ?? 200));
   handle('chat:clear', 'panel', none, () => history.clear());
 

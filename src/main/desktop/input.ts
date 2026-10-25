@@ -50,7 +50,7 @@ export function cursor(): { x: number; y: number } | null {
 }
 
 /** Glide the cursor to a point (so it's visible where she's working). */
-export async function moveTo(x: number, y: number, ms_ = 380) {
+export async function moveTo(x: number, y: number, ms_ = 200) {
   const a = load(); if (!a) return false;
   const from = cursor() ?? { x, y };
   const n = Math.max(2, Math.round(ms_ / 12));
@@ -96,6 +96,6 @@ export async function keys(combo: string) {
   return true;
 }
 
-/** True while the physical Esc key is held (the user's stop key during computer control). */
-export function escapeDown(): boolean { const a = load(); return !!a && ((a.GetAsyncKeyState(0x1b) as number) & 0x8000) !== 0; }
+/** True if Esc is down or was tapped since the last check (the user's stop key during computer control). */
+export function escapeDown(): boolean { const a = load(); return !!a && ((a.GetAsyncKeyState(0x1b) as number) & 0x8001) !== 0; }
 export const inputAvailable = () => !!load();
