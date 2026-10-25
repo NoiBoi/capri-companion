@@ -11,14 +11,7 @@ npm ci
 node scripts/fetch-assets.mjs
 ```
 
-The rig footage in `public/cap/` comes from the app itself. Run these from the app folder; they launch off-screen:
-
-```bash
-node scripts/capture-trailer.mjs full
-```
-```bash
-node scripts/capture-trailer.mjs face
-```
+The show clips in `public/show/` (`o`, `n` and `e`, listed in ASSETS.md) are downloaded with yt-dlp and transcoded to H.264. The real-footage cut-outs in `public/capri/` are a copy of the app's `assets/capri`.
 
 ## Preview and render
 
@@ -35,9 +28,10 @@ On Windows, a project in a very deep folder can push Remotion's bundled browser 
 
 ## Structure
 
-- `src/Trailer.tsx`: scene timing on the beat grid, glitch-hit schedule, score edit and sound-effect cues. Cue times are aligned to each effect's measured peak.
-- `src/scenes.tsx`: the ten scenes (cold open → reveal → host → desktop arrival → feature montage → expression barrage → Gemini chat → build → drop 2 → end card).
-- `src/desktop.tsx`: a stylised Windows 11 desktop, taskbar and editor window.
-- `src/lib.tsx`: frame-sequence player, graded footage, decode/typed text, grain, scanlines, letterbox, and the SVG glitch filter.
+- `src/Trailer.tsx`: the edit on the beat grid. It covers the cold open, drop 1, the show montage, the zap section, the close-up barrage, the breakdown, the build, drop 2 with the title, and the end card. It also holds the glitch hits on cuts, the score edit and the sound-effect cues.
+- `src/show.tsx`: real show shots fitted to beat slots, real-footage cut-outs of her (original drawings and holds), the red zap bolt, and her glitch-out drawings.
+- `src/lib.tsx`: graded footage, decode text, grain, scanlines, letterbox, and the SVG glitch filter.
+
+Text is kept to one title and a few lines of five words or fewer, always in front of the picture.
 
 Credits and licences for every asset are in [ASSETS.md](ASSETS.md).

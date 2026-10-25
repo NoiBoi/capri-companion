@@ -9,3 +9,6 @@ out
 # Large regenerable assets (see ASSETS.md / scripts/fetch-assets.mjs)
 public/video/
 public/cap/
+
+public/show/
+public/capri/

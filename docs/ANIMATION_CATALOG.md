@@ -52,3 +52,24 @@ The rig's legs are now two-bone chains (thigh/shin/foot) with foreshortening, so
 **AI control:** the AI can request postures through the validated `emote` action (`sit`, `stand`, `recline`, `curl_up`, `power_stance`). It can also move her through `teleport` with `perch` / `peek`. The right-click menu has a *Pose* submenu.
 
 **Not observed in the footage, so not implemented:** walking. She floats, dashes and appears by hard cuts. Crouching, kneeling and lying flat aren't in the sampled footage either.
+
+## v4: real-footage poses (default art)
+
+She is now drawn from cut-outs of the show itself (`assets/capri`, see its SOURCES.md). This is how desktop-pet projects like Shimeji and Desktop Mate work: a set of poses, each a short run of drawings, chosen by what she is doing.
+
+| Pose | From | Used when |
+|---|---|---|
+| `stand` | N 1:49–1:54 (67 drawings) | standing or floating; contrapposto, balance, being dragged |
+| `sit` | N 2:21–2:25 | sitting on the taskbar or a window top (alternates with `lounge`) |
+| `lounge` | N 1:27–1:37 (48 drawings): on her front, chin propped, legs up | on a ledge; reclining |
+| `lie` | N 0:29–0:31: lying on her side | asleep; reclining |
+| `glitch` | B 4:19–4:21: her glitch-out drawings | flashed in her place during tear and ghost glitch bursts |
+
+The show's own drawings and holds are kept; it runs on twos and threes. On top of them she gets:
+- a float bob and breathing
+- mirroring to face where she's looking (the snap round is a glitch frame, like a cut)
+- dangling and swinging from the grab point while dragged
+- glitch bursts: band-slice dislocation, flying shards, a hue-shifted ghost and stutter frames
+- a squash on a poke and sparkles on a head pat
+
+The vector rig (v1–v3) remains as `character.art = 'vector'`.

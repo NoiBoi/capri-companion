@@ -2,9 +2,18 @@
 
 A private, unofficial fan trailer. All third-party media is downloaded from its original source. Nothing in the soundtrack is synthesised.
 
-## Capri footage — `public/cap/` (not committed, 255 MB)
+## Show footage — `public/show/` (not committed, private use only)
 
-These are frames of the app's real character rig. They're rendered off-screen and frame by frame by [`../scripts/capture-trailer.mjs`](../scripts/capture-trailer.mjs) through the same behavior, clip, posture, teleport-FX and lip-sync code the app runs.
+Real *Cyberpunk: Edgerunners 2* shots of Capri, © CD PROJEKT, Studio Trigger and Netflix:
+- `o.mp4`: "The Moment D Meets Capri" (Netflix, YouTube `5wGdjjwoDbY`)
+- `n.mp4`: "Capri is a baddie in Cyberpunk Edgerunners 2" (YouTube `Nli_SZ-DBco`), a compilation of Netflix footage
+- `e.mp4`: "Capri's Best Moments" (YouTube `EFGpu_pYEao`), a compilation of Netflix footage
+
+They were downloaded with yt-dlp and transcoded to H.264 at 23.976 fps. The compilations carry a credit watermark in their bottom corners, so the trailer frames those clips from the top with a zoom that keeps it out of the picture.
+
+## Capri cut-outs — `public/capri/` (copy of the app's `assets/capri`, not committed)
+
+These are the same real-footage cut-outs the app uses. See `../assets/capri/SOURCES.md`.
 
 ## Music — `public/audio/score.mp3`
 
