@@ -113,6 +113,21 @@ describe('Gemini provider (Interactions API, mocked server)', () => {
     await srv.close();
   }, 10_000);
 
+  it('a request that never starts streaming is retried after the first-event deadline, not the full timeout', async () => {
+    let n = 0;
+    const srv = await mockServer((_q, res) => {
+      if (n++ === 0) return; // first request: no headers, no events, held open
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end(sse([{ event_type: 'step.delta', index: 0, delta: { type: 'text', text: 'ok' } }]));
+    });
+    const t = Date.now();
+    const p = new GeminiProvider({ apiKey: KEY, model: 'm', fallbackModel: '', thinkingLevel: 'minimal', serverUrl: srv.url, firstEventTimeoutMs: 300 });
+    expect(await collect(p.stream([{ role: 'user', content: 'hi' }], { ...opts(), timeoutMs: 60_000 }))).toBe('ok');
+    expect(n).toBe(2);
+    expect(Date.now() - t).toBeLessThan(5000);
+    await srv.close();
+  }, 15_000);
+
   it('a model that rejects the thinking level is retried with its own default', async () => {
     const bodies: { generation_config: Record<string, unknown> }[] = [];
     const srv = await mockServer((_q, res, body) => {

@@ -2,7 +2,8 @@
 // would drive it (real mouse moves and clicks, typing in the real panel, live Gemini replies, a real
 // window move, a real app launch). Nothing is staged inside the app: it runs without CAPRI_TEST.
 //   node scripts/record-demo.mjs
-// Output: trailer/public/demo/desktop.mp4 (full screen, 30 fps) and marks.json (event times in seconds).
+// Output: trailer/public/demo/desktop.mp4 (full screen, constant 30 fps) and marks.json (event times in
+// seconds on the video clock).
 // Needs the local Gemini key in .env.local (loaded by the app itself; this script never reads it).
 // Minimises every window for the take and restores them afterwards.
 import { _electron as electron } from 'playwright-core';
@@ -53,15 +54,12 @@ fs.writeFileSync(path.join(ud, 'settings.json'), JSON.stringify({
   actions: { approvedApps: [{ name: 'Calculator', path: CALC }] },
 }));
 
-// --- recorder ------------------------------------------------------------------------------
+// --- recorder: Chromium desktop capture (GDI grabbing only manages ~12 fps at 1080p) ------------
 const video = path.join(out, 'desktop.mp4');
-const rec = spawn(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'gdigrab', '-framerate', '30', '-draw_mouse', '1', '-i', 'desktop',
-  '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '14', '-pix_fmt', 'yuv420p', '-progress', 'pipe:1', video], { stdio: ['pipe', 'pipe', 'inherit'] });
+const webm = path.join(out, 'desktop.webm');
+const rec = spawn(createRequire(import.meta.url)('electron'), [path.join(root, 'scripts', 'screen-recorder.cjs'), webm], { stdio: ['ignore', 'pipe', 'inherit'] });
 let t0 = 0;
-rec.stdout.on('data', (b) => {
-  const m = /frame=(\d+)/.exec(String(b));
-  if (!t0 && m && +m[1] > 0) t0 = Date.now() - (+m[1] / 30) * 1000;
-});
+rec.stdout.on('data', (b) => { const m = /REC_START (\d+)/.exec(String(b)); if (m) t0 = +m[1]; });
 while (!t0) await sleep(20);
 const marks = {};
 const mark = (name) => { marks[name] = +((Date.now() - t0) / 1000).toFixed(2); console.log(`${marks[name].toFixed(2).padStart(6)}s  ${name}`); };
@@ -108,11 +106,12 @@ try {
     await panel.press('textarea', 'Enter');
     await panel.waitForFunction((n) => document.querySelectorAll('.msg.assistant:not(.cursor)').length > n || !!document.querySelector('.confirm'), before, { timeout: 60_000 });
   }
+  const settled = () => panel.waitForSelector('#phaseChip[data-phase="idle"]', { state: 'attached', timeout: 60_000 });
 
   // a real conversation
   mark('chat');
   await say('hey capri. what are you doing on my desktop?');
-  await panel.waitForSelector('#phaseChip[data-phase="idle"]', { state: 'attached', timeout: 60_000 });
+  await settled();
   await sleep(2600);
 
   // teleport on request: the window really moves
@@ -121,7 +120,8 @@ try {
   await say('come sit on the left side of my screen');
   for (let i = 0; i < 100; i++) { const now = await bounds('character.html'); if (now.x !== before.x || now.y !== before.y) break; await sleep(100); }
   mark('moved');
-  await sleep(3500);
+  await settled();
+  await sleep(3000);
 
   // a real desktop action, through the permission prompt
   mark('ask_app');
@@ -149,12 +149,22 @@ try {
   mark('idle');
   await sleep(7000);
   mark('end');
+} catch (e) {
+  // the app's own log says why (it never contains the key)
+  for (const f of fs.existsSync(path.join(ud, 'logs')) ? fs.readdirSync(path.join(ud, 'logs')) : []) {
+    console.log(fs.readFileSync(path.join(ud, 'logs', f), 'utf8').split('\n').slice(-40).join('\n'));
+  }
+  throw e;
 } finally {
   await app?.close().catch(() => {});
-  rec.stdin.write('q');
+  fs.writeFileSync(webm + '.stop', '');
   await new Promise((r) => rec.on('close', r));
   ps('(New-Object -ComObject Shell.Application).UndoMinimizeAll()');
   fs.rmSync(ud, { recursive: true, force: true });
 }
+// MediaRecorder writes variable-rate WebM (frames only when the screen changes): resample to a
+// constant 30 fps on the same clock so the marks line up with the edit
+execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', '-i', webm, '-fps_mode', 'cfr', '-r', '30', '-c:v', 'libx264', '-preset', 'slow', '-crf', '14', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', video]);
+fs.rmSync(webm, { force: true });
 fs.writeFileSync(path.join(out, 'marks.json'), JSON.stringify(marks, null, 2) + '\n');
 console.log('wrote', path.relative(root, video), 'and marks.json');

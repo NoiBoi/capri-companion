@@ -14,6 +14,8 @@ export interface GeminiConfig {
   thinkingLevel: 'minimal' | 'low' | 'medium' | 'high';
   serverUrl?: string; // tests / proxies only
   onModelUsed?: (model: string, fallback: boolean) => void;
+  /** Gemini sends interaction.created before any thinking: no first event this soon means a stuck request. */
+  firstEventTimeoutMs?: number;
 }
 
 interface ApiErrorLike { status?: number; statusCode?: number; body?: unknown; message?: string; name?: string; headers?: { get?(k: string): string | null } }
@@ -95,7 +97,8 @@ export class GeminiProvider implements LLMProvider {
         // inactivity watchdog: the SDK timeout only covers the response headers and its body reader ignores
         // abort signals, so every read is raced against the watchdog or a quiet stream leaves her "thinking"
         const ac = new AbortController(); let stalled = false; let timer: ReturnType<typeof setTimeout> | undefined;
-        const arm = () => { clearTimeout(timer); timer = setTimeout(() => { stalled = true; ac.abort(); }, o.timeoutMs); };
+        let started = false; // a stuck request is caught fast; a long gap mid-stream (thinking) gets the full timeout
+        const arm = () => { clearTimeout(timer); timer = setTimeout(() => { stalled = true; ac.abort(); }, started ? o.timeoutMs : Math.min(o.timeoutMs, this.c.firstEventTimeoutMs ?? 15_000)); };
         const relay = () => ac.abort();
         o.signal.addEventListener('abort', relay, { once: true });
         const cut = new Promise<never>((_, rej) => ac.signal.addEventListener('abort', () => rej(new ProviderError('cut', 'aborted')), { once: true }));
@@ -111,6 +114,7 @@ export class GeminiProvider implements LLMProvider {
             const r = await Promise.race([it.next(), cut]);
             clearTimeout(timer); // the consumer's time between reads doesn't count
             if (r.done) break;
+            started = true;
             const ev = r.value;
             if (ev.event_type === 'step.delta' && ev.delta?.type === 'text' && ev.delta.text) { yielded = true; yield ev.delta.text; }
             else if (ev.event_type === 'error') throw new ProviderError(`Gemini stream error: ${ev.error?.message ?? ev.error?.code ?? 'unknown'}`, 'server');
