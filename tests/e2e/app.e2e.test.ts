@@ -132,7 +132,8 @@ describe('desktop presence', () => {
     await app.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows().find((x) => !x.isFocusable())!.setPosition(200, 150); });
     await new Promise((r) => setTimeout(r, 700));
     const before = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => !x.isFocusable())!.getPosition());
-    expect(Math.abs(before[0] - 200) + Math.abs(before[1] - 150)).toBeLessThanOrEqual(3); // half-pixel rounding at 125% DPI
+    expect(Math.abs(before[0] - 200)).toBeLessThanOrEqual(3); // Electron rounds DIP↔px at fractional DPI (±1–3 px per axis)
+    expect(Math.abs(before[1] - 150)).toBeLessThanOrEqual(3);
     await quit(app);
     ({ app, char } = await launch(ud));
     const pos = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => !x.isFocusable())!.getPosition());

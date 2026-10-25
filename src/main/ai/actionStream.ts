@@ -1,5 +1,9 @@
-const OPEN = '<action>';
-const CLOSE = '</action>';
+import { TOOL_NAMES } from '../../shared/settings';
+
+// <action>{"tool":…,"args":…}</action> is the documented form; models also improvise
+// <emote>{"emotion":"smug"}</emote>, so a known tool name works as the tag, with the JSON as its args
+const TAGS = ['action', ...TOOL_NAMES];
+const OPENS = TAGS.map((t) => `<${t}>`);
 const MAX_ACTION_CHARS = 4000;
 
 export type StreamPiece = { type: 'text'; text: string } | { type: 'action'; raw: string; parsed: unknown; error?: string };
@@ -11,30 +15,34 @@ export type StreamPiece = { type: 'text'; text: string } | { type: 'action'; raw
 export class ActionStreamParser {
   private buf = '';
   private inAction = false;
+  private tag = 'action';
 
   push(chunk: string): StreamPiece[] {
     this.buf += chunk;
     const out: StreamPiece[] = [];
     for (;;) {
       if (!this.inAction) {
-        const i = this.buf.indexOf(OPEN);
+        let i = -1, open = '';
+        for (const o of OPENS) { const k = this.buf.indexOf(o); if (k >= 0 && (i < 0 || k < i)) { i = k; open = o; } }
         if (i >= 0) {
           if (i > 0) out.push({ type: 'text', text: this.buf.slice(0, i) });
-          this.buf = this.buf.slice(i + OPEN.length);
+          this.buf = this.buf.slice(i + open.length);
+          this.tag = open.slice(1, -1);
           this.inAction = true;
           continue;
         }
         // hold back a possible partial "<act" at the end
-        const keep = partialSuffix(this.buf, OPEN);
+        const keep = Math.max(...OPENS.map((o) => partialSuffix(this.buf, o)));
         const emit = this.buf.slice(0, this.buf.length - keep);
         if (emit) out.push({ type: 'text', text: emit });
         this.buf = this.buf.slice(this.buf.length - keep);
         return out;
       }
-      const j = this.buf.indexOf(CLOSE);
+      const close = `</${this.tag}>`;
+      const j = this.buf.indexOf(close);
       if (j >= 0) {
-        out.push(parseAction(this.buf.slice(0, j)));
-        this.buf = this.buf.slice(j + CLOSE.length);
+        out.push(parseAction(this.buf.slice(0, j), this.tag));
+        this.buf = this.buf.slice(j + close.length);
         this.inAction = false;
         continue;
       }
@@ -52,7 +60,7 @@ export class ActionStreamParser {
     const out: StreamPiece[] = [];
     if (this.inAction) {
       // tolerate a missing close tag if the JSON is complete; otherwise it's reported as invalid
-      if (this.buf.trim()) out.push(parseAction(this.buf));
+      if (this.buf.trim()) out.push(parseAction(this.buf, this.tag));
     } else if (this.buf) out.push({ type: 'text', text: this.buf });
     this.buf = '';
     this.inAction = false;
@@ -65,10 +73,13 @@ function partialSuffix(s: string, tag: string): number {
   return 0;
 }
 
-function parseAction(raw: string): StreamPiece {
+function parseAction(raw: string, tag: string): StreamPiece {
   const body = raw.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
   try {
-    return { type: 'action', raw: body, parsed: JSON.parse(body) };
+    const parsed = JSON.parse(body);
+    // <emote>{"emotion":"smug"}</emote> → {tool:"emote", args:{emotion:"smug"}}
+    const asTool = tag !== 'action' && !(parsed && typeof parsed === 'object' && 'tool' in parsed);
+    return { type: 'action', raw: body, parsed: asTool ? { tool: tag, args: parsed ?? {} } : parsed };
   } catch {
     return { type: 'action', raw: body.slice(0, 200), parsed: null, error: 'invalid JSON' };
   }

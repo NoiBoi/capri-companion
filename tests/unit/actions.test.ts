@@ -187,3 +187,20 @@ describe('offline command brain', () => {
 });
 
 it('vi is available (sanity)', () => { expect(vi).toBeDefined(); });
+
+describe('streaming action parser: improvised tool tags', () => {
+  const run = (chunks: string[]) => {
+    const p = new ActionStreamParser();
+    const out = chunks.flatMap((c) => p.push(c)).concat(p.end());
+    return { text: out.filter((x) => x.type === 'text').map((x) => (x as { text: string }).text).join(''), actions: out.filter((x) => x.type === 'action').map((x) => (x as { parsed: unknown }).parsed) };
+  };
+  it('treats <emote>{…}</emote> as the emote action and keeps it out of the chat', () => {
+    const r = run(['Just watching, choom. <emo', 'te>{"emotion":"smug"}</em', 'ote>']);
+    expect(r.text).toBe('Just watching, choom. ');
+    expect(r.actions).toEqual([{ tool: 'emote', args: { emotion: 'smug' } }]);
+  });
+  it('a tool tag that already names its tool is passed through; unknown tags stay text', () => {
+    expect(run(['<teleport>{"tool":"teleport","args":{"where":"left"}}</teleport>']).actions).toEqual([{ tool: 'teleport', args: { where: 'left' } }]);
+    expect(run(['a <b>bold</b> <hack>{"x":1}</hack>']).text).toBe('a <b>bold</b> <hack>{"x":1}</hack>');
+  });
+});
