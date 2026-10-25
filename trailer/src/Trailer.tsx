@@ -17,6 +17,7 @@ const b = (n: number) => n * BEAT;
 const f = (s: number) => Math.round(s * FPS);
 const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;
 export const SITE = 'theagencymge.github.io/capri';
+export const REPO = 'github.com/TheAgencyMGE/capri-companion';
 
 type Rect = [number, number, number, number];
 const { layout: L, ...times } = clipMarks as unknown as Record<string, number> & { layout: Record<string, { her: Rect; panel: Rect | null }> };
@@ -146,9 +147,10 @@ const EndCard: React.FC = () => {
     <AbsoluteFill style={{ background: C.bg, justifyContent: 'center', padding: '0 110px' }}>
       <div style={{ opacity: a }}><Wordmark size={300} glitchUntil={6} /></div>
       <div style={{ marginTop: 56, opacity: u, transform: `translateY(${(1 - u) * 14}px)`, fontFamily, fontWeight: 600, fontSize: 56, color: C.text }}>
-        Join the beta or build her with us
+        Beta testers wanted
       </div>
       <div style={{ marginTop: 18, opacity: u, fontFamily, fontWeight: 700, fontSize: 56, color: C.accent }}>{SITE}</div>
+      <div style={{ marginTop: 14, opacity: u, fontFamily, fontWeight: 600, fontSize: 40, color: C.text }}>{REPO}</div>
       <div style={{ position: 'absolute', left: 110, bottom: 64, opacity: u, fontFamily, fontSize: 24, color: C.muted }}>
         Unofficial fan project. Not affiliated with CD PROJEKT RED, Studio Trigger or Netflix.
       </div>
@@ -221,8 +223,7 @@ const overlays: Over[] = [
   { at: b(40), dur: b(12), node: <Caption text="Talk to her." len={f(b(12))} side="right" /> },
   { at: b(52), dur: b(8), node: <Caption text="Ask her to move." len={f(b(8))} side="right" /> },
   { at: b(60), dur: b(8), node: <Caption text="She does real things." len={f(b(8))} side="right" /> },
-  { at: b(80), dur: b(2), node: <AbsoluteFill style={{ background: 'rgba(12,11,15,0.72)' }}><Ask line="Beta testers wanted." len={f(b(2))} /></AbsoluteFill> },
-  { at: b(82), dur: b(2), node: <AbsoluteFill style={{ background: 'rgba(12,11,15,0.72)' }}><Ask line="Developers wanted." len={f(b(2))} /></AbsoluteFill> },
+  { at: b(80), dur: b(4), node: <AbsoluteFill style={{ background: 'rgba(12,11,15,0.72)' }}><Ask line="Beta testers wanted." len={f(b(4))} /></AbsoluteFill> },
   { at: b(84), dur: END - b(84), node: <EndCard /> },
 ];
 const sfx: { at: number; name: string; volume: number }[] = [
@@ -230,7 +231,6 @@ const sfx: { at: number; name: string; volume: number }[] = [
   { at: b(52) + TP_LEAD - 0.45, name: 'teleport_whoosh', volume: 0.7 },
   { at: b(60) + 1.0, name: 'hud_ping', volume: 0.45 },
   { at: b(80), name: 'impact_boom', volume: 0.5 },
-  { at: b(82), name: 'impact_boom', volume: 0.5 },
   { at: b(84), name: 'sub_drop', volume: 0.55 },
 ];
 

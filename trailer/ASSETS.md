@@ -1,10 +1,14 @@
 # Trailer assets
 
-## Footage — `public/demo/` (not committed)
+## Footage (not committed)
 
-One take of the real app on the author's own Windows desktop, recorded by `../scripts/record-demo.mjs`. There's no show footage, stock footage or third-party art in the trailer. Re-record it locally; it's git-ignored because it shows a personal desktop.
+- `public/show/`: clips of Capri from *Cyberpunk: Edgerunners 2* (© CD PROJEKT RED, Studio Trigger and Netflix), used in a non-commercial fan trailer. Not in the repo.
+- `public/clips/desktop.mp4`: the real app on a clean stand-in desktop, recorded by `../scripts/record-trailer-clips.mjs`. The wallpaper is a still from a Pexels clip (Pexels License).
+- `public/clips/faces/`: close-ups from the app's own renderer, made by `../scripts/capture-closeups.mjs`.
 
 ## Music — `public/audio/score.mp3`
+
+Not in the repo: Pixabay's licence doesn't allow re-hosting the files as-is. Run `node scripts/fetch-audio.mjs` to download the score and every sound effect below from their sources.
 
 "Anime Cyberpunk" by YevhenAstafiev, from [Pixabay](https://cdn.pixabay.com/download/audio/2026/05/25/audio_9ea878a210.mp3?filename=yevhenastafiev-anime-anime-cyberpunk-534203.mp3). It's under the Pixabay Content License.
 

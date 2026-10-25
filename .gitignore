@@ -12,3 +12,4 @@ trailer/.remotion/
 # raw desktop recordings (scripts/record-demo.mjs): personal desktop, regenerate locally
 trailer/public/demo/
 trailer/public/clips/
+trailer/public/audio/

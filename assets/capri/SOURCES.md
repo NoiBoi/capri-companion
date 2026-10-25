@@ -1,6 +1,6 @@
 # Capri character model
 
-`model.json` is Capri's vector model, reconstructed from reference frames of *Cyberpunk: Edgerunners 2* (© CD PROJEKT, Studio Trigger and Netflix). It's traced from those frames, so it's **for private, personal use only**; don't distribute builds that contain it.
+`model.json` is Capri's vector model, traced from reference frames of *Cyberpunk: Edgerunners 2* (© CD PROJEKT RED, Studio Trigger and Netflix). The character and these frames belong to their owners and are not covered by the project's MIT license; this is a non-commercial fan project.
 
 Build it with `python -P tools/build_model.py` (needs opencv-python-headless and numpy). The source cut-outs are in `reference/cutouts/`.
 

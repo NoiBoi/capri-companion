@@ -1,11 +1,11 @@
 {
-  "date": "2026-10-25T17:12:07.300Z",
-  "installer": "Capri-Setup-1.0.0.exe",
+  "date": "2026-10-25T22:16:10.531Z",
+  "installer": "Capri-Setup-0.1.0.exe",
   "results": [
     {
       "name": "silent install completes",
       "ok": true,
-      "detail": "10.9 s"
+      "detail": "9.6 s"
     },
     {
       "name": "app.asar present",
@@ -55,7 +55,7 @@
     {
       "name": "packaged performance measured",
       "ok": true,
-      "detail": "startup 308 ms, idle 1.6% CPU / 452 MB, 47.7 fps idle"
+      "detail": "startup 345 ms, idle 2.2% CPU / 464 MB, 20 fps idle"
     },
     {
       "name": "uninstall removes the program",

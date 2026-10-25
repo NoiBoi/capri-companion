@@ -1,27 +1,27 @@
 {
   "machine": "AMD Ryzen 7 7730U with Radeon Graphics (16 threads), 14 GB RAM, win32 10.0.26300",
   "build": "packaged",
-  "startupToCharacterMs": 308,
-  "launchToReadyWallMs": 381,
-  "idleRenderFps": 47.7,
+  "startupToCharacterMs": 345,
+  "launchToReadyWallMs": 501,
+  "idleRenderFps": 20,
   "note": "cpuPct = sum over all Electron processes, % of ONE core (Chromium convention)",
   "rows": [
     {
       "label": "idle (after 5s settle)",
-      "cpuPct": 1.6,
-      "memMB": 452,
+      "cpuPct": 2.2,
+      "memMB": 464,
       "procs": 4
     },
     {
       "label": "active (forced speaking, 60fps)",
-      "cpuPct": 2.3,
-      "memMB": 503,
+      "cpuPct": 3.3,
+      "memMB": 450,
       "procs": 4
     },
     {
       "label": "hidden (render paused)",
-      "cpuPct": 0,
-      "memMB": 425,
+      "cpuPct": 0.1,
+      "memMB": 433,
       "procs": 4
     }
   ]
