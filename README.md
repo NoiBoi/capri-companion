@@ -2,7 +2,7 @@
 
 Capri from *Cyberpunk: Edgerunners 2*, living on your Windows desktop. She talks back, moves when you ask, glitches across your screen and does real things on your PC.
 
-**[Watch the trailer and join the beta](https://theagencymge.github.io/capri/)** · **[Download 0.1.0 beta](https://github.com/TheAgencyMGE/capri-companion/releases/latest)**
+**[Watch the trailer and join the beta](https://theagencymge.github.io/capri/)** · **[Download 0.1.0 beta](https://github.com/TheAgencyMGE/capri-companion/releases)**
 
 ![Capri on the desktop, chatting](docs/screenshots/desktop.jpg)
 
@@ -24,7 +24,7 @@ Capri from *Cyberpunk: Edgerunners 2*, living on your Windows desktop. She talks
 
 ## Install
 
-1. Download `Capri-Setup-0.1.0.exe` from the [latest release](https://github.com/TheAgencyMGE/capri-companion/releases/latest) and run it. It installs for your user only, no admin needed.
+1. Download `Capri-Setup-0.1.0.exe` from the [Releases page](https://github.com/TheAgencyMGE/capri-companion/releases) and run it. It installs for your user only, no admin needed.
 2. The installer isn't code-signed yet, so Windows SmartScreen will warn. Choose **More info → Run anyway**.
 3. On first launch, pick her brain:
    - **Google Gemini** (recommended): get a free key at [aistudio.google.com](https://aistudio.google.com/apikey) and paste it in **Model**. It's stored encrypted on your PC.
