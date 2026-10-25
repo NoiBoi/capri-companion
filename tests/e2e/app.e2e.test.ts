@@ -169,7 +169,7 @@ describe('desktop presence', () => {
     await panel.evaluate(() => (window as unknown as { capri: { invoke(c: string, a: unknown): Promise<unknown> } }).capri.invoke('settings:set', { character: { scale: 0.6, opacity: 0.7, alwaysOnTop: false } }));
     await panel.waitForTimeout(400);
     const w = await app.evaluate(({ BrowserWindow }) => { const x = BrowserWindow.getAllWindows().find((y) => !y.isFocusable())!; return { size: x.getSize(), opacity: x.getOpacity(), top: x.isAlwaysOnTop() }; });
-    expect(Math.abs(w.size[0] - 204)).toBeLessThanOrEqual(1); // DIP rounding at fractional DPI
+    expect(Math.abs(w.size[0] - 312)).toBeLessThanOrEqual(1); // 520 × 0.6 (footage art is wider); DIP rounding at fractional DPI
     expect(Math.abs(w.size[1] - 312)).toBeLessThanOrEqual(1);
     expect(w.opacity).toBeCloseTo(0.7, 1);
     expect(w.top).toBe(false);
@@ -439,13 +439,47 @@ describe('teleportation', () => {
     await quit(app);
     const ollama = await mockOllama();
     ({ app } = await launch(profile({ teleport: { auto: true }, ...awake, ai: { provider: 'ollama', ollama: { baseUrl: ollama.url, model: 'llama3.2' } } })));
-    await app.evaluate(() => new Promise((r) => setTimeout(r, 800)));
+    await app.evaluate(() => { (globalThis as unknown as { __capriIdleOverride: number }).__capriIdleOverride = 0; return new Promise((r) => setTimeout(r, 800)); }); // as if someone is at the machine
     expect((await capri(app)).conn.state).toBe('connected');
     const before = await charPos(app);
     expect(await tick(app)).toBeNull();
     expect((await capri(app)).tp.count).toBe(1);
     expect(await charPos(app)).not.toEqual(before);
     await ollama.close();
+  });
+
+  it('desktop-pet handling: dropped near a window top she sits on it; flung, she flies and skids to a stop on screen', async () => {
+    const { app } = await launch(profile());
+    type Hooks = { __capri: { charWin: { getBounds(): { x: number; y: number; width: number; height: number }; setBounds(b: object): void }; settleAfterDrop(): void; throwCharacter(v: object): void; throwing: boolean } };
+    const win = { x: 300, y: 600, width: 700, height: 200 };
+    await app.evaluate((_e, win) => {
+      (globalThis as unknown as { __capriFgOverride: object }).__capriFgOverride = win;
+      const c = (globalThis as unknown as Hooks).__capri; const b = c.charWin.getBounds();
+      c.charWin.setBounds({ ...b, x: 500, y: Math.round(win.y + 35 - b.height * (500 / 520)) }); // seat line 35 px below the window top
+      c.settleAfterDrop();
+    }, win);
+    const sat = await app.evaluate(() => (globalThis as unknown as Hooks).__capri.charWin.getBounds());
+    expect(Math.abs(sat.y + sat.height * (500 / 520) - win.y)).toBeLessThanOrEqual(2); // seat exactly on the window's top edge
+    const before = sat.x;
+    await app.evaluate(() => (globalThis as unknown as Hooks).__capri.throwCharacter({ x: 3200, y: -400 }));
+    let flying = true;
+    for (let i = 0; i < 60 && flying; i++) { await app.evaluate(() => new Promise((r) => setTimeout(r, 100))); flying = await app.evaluate(() => (globalThis as unknown as Hooks).__capri.throwing); }
+    expect(flying).toBe(false);
+    const after = await app.evaluate(({ screen }) => ({ b: (globalThis as unknown as Hooks).__capri.charWin.getBounds(), wa: screen.getPrimaryDisplay().workArea }));
+    expect(after.b.x).toBeGreaterThan(before + 200);
+    expect(after.b.x + after.b.width * 0.3).toBeLessThanOrEqual(after.wa.x + after.wa.width + 1); // never lost off-screen
+  });
+
+  it('real-footage art: she is drawn from the show cut-outs, poses follow what she is doing', async () => {
+    const { char } = await launch(profile());
+    await char.waitForFunction(() => (window as unknown as { __capriDebug: { sprite: { ready: boolean } } }).__capriDebug.sprite.ready);
+    const pose = await char.evaluate(() => { const d = (window as unknown as { __capriDebug: { setSurface(s: string): void; behavior: { setPosture(n: string): void }; spritePose: string } }).__capriDebug; d.setSurface('air'); d.behavior.setPosture('stand'); return d.spritePose; });
+    expect(pose).toBe('stand');
+    await char.waitForTimeout(400);
+    const drawn = await char.evaluate(() => { const c = document.getElementById('stage') as HTMLCanvasElement; const px = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < px.length; i += 16) if (px[i] > 40) n++; return n / (px.length / 16); });
+    expect(drawn).toBeGreaterThan(0.08); // a real figure, not an empty canvas
+    const sit = await char.evaluate(() => { const d = (window as unknown as { __capriDebug: { setSurface(s: string): void; behavior: { setPosture(n: string): void }; spritePose: string } }).__capriDebug; d.setSurface('taskbar'); d.behavior.setPosture('sit_edge'); return d.spritePose; });
+    expect(['sit', 'lounge']).toContain(sit);
   });
 
   it('a teleport zaps a red bolt across the screen to her new spot; glides do not', async () => {

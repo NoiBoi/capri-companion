@@ -94,7 +94,7 @@ export function chooseDestination(target: TeleportTarget, c: TeleportContext): D
     // character behaviour, not random repositioning: sometimes sit on your window, sometimes peek in from an edge
     const roll = rand();
     if (roll < 0.3 && c.avoid) { const pr = perchSpot(c.avoid, { width: w, height: h }, c.displays, c.cursor, rand); if (pr && dist(centre(pr), here) > 150) return pr; }
-    if (roll > 0.88) { const a = currentDisplay.workArea; const pk = peekSpot(currentDisplay, { width: w, height: h }, c.cursor.x < a.x + a.width / 2 ? 'right' : 'left'); if (!contains(pk, c.cursor)) return pk; }
+    if (roll > 0.88 && w <= currentDisplay.workArea.width && h <= currentDisplay.workArea.height) { const a = currentDisplay.workArea; const pk = peekSpot(currentDisplay, { width: w, height: h }, c.cursor.x < a.x + a.width / 2 ? 'right' : 'left'); if (!contains(pk, c.cursor)) return pk; }
   }
 
   let pool = c.displays.flatMap((d) => spots(d, w, h).map((s) => ({ ...s, display: d.id })));

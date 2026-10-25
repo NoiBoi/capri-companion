@@ -11,6 +11,8 @@ import { TeleportFx } from './teleportFx';
 import { POSTURES, type PostureName, type Surface } from './postures';
 import { clipByName } from './clips';
 import type { Reaction } from './behavior';
+import { SpriteCapri, type PosePack } from './sprite';
+import posePack from '../../../assets/capri/poses.json';
 
 /** Model-requested emotes → validated reactions/clips (the model never touches the renderer directly). */
 const EMOTE_MAP: Record<string, { react?: Reaction; clip?: string; posture?: PostureName }> = {
@@ -47,6 +49,26 @@ let surface: Surface = 'taskbar';
 let dashing = 0; // pose override for previews/tests only
 
 const fx = new TeleportFx(() => document.createElement('canvas'));
+const sprite = new SpriteCapri(posePack as unknown as PosePack, 'capri');
+const useSprites = () => settings?.character.art !== 'vector' && Object.keys(posePack).length > 0;
+/** Which real-footage pose fits what she is doing right now. */
+let variantFor = '', variant = 0;
+function spritePose(): string {
+  const pick = (...names: string[]) => names.find((n) => sprite.has(n)) ?? Object.keys(posePack)[0];
+  if (variantFor !== behavior.posture) { variantFor = behavior.posture; variant = Math.random(); }
+  const either = (a: string, b: string) => (variant < 0.5 ? pick(a, b) : pick(b, a));
+  if (dragging) return pick('dangle', 'stand');
+  if (behavior.state === 'sleeping') return pick('lie', 'sit', 'crouch');
+  if (behavior.state === 'reacting' && behavior.reaction === 'surprised') return pick('power', 'stand');
+  switch (behavior.posture) {
+    case 'sit_edge': return either('sit', 'lounge');
+    case 'air_sit': return pick('crouch', 'sit');
+    case 'recline': return either('lounge', 'lie');
+    case 'power_stance': return pick('power', 'stand');
+    case 'peek_left': case 'peek_right': return pick('peek', 'stand');
+    default: return pick('stand');
+  }
+}
 const rig = new CapriRig((w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; });
 const anim = new Animator();
 const behavior = new Behavior();
@@ -117,6 +139,7 @@ function tick(dt: number) {
   p.mouthOpen = Math.max(0, speaker.speaking ? level : p.mouthOpen); // lip-sync wins over gesture clips
 
   const teleporting = fx.active || fx.hidden;
+  if (useSprites()) { drawSprite(p, dt, teleporting, intensity); return; }
   if (rig.stutter > 0 && !teleporting) { rig.stutter--; return; } // glitch stutter: hold the last image a few frames
   const glitch = !teleporting && settings.character.glitchEffects && (p.glitch > 0.05 || rig.burst > 0 || Math.random() < 0.0015 * intensity);
   const g = glitch || teleporting ? offCtx : ctx;
@@ -131,6 +154,41 @@ function tick(dt: number) {
     rig.glitch(ctx, off, Math.max(0.3, p.glitch, rig.burst * 0.9));
   }
   if (teleporting) fx.render(ctx, off, dt, dpr);
+}
+
+function drawSprite(p: Params, dt: number, teleporting: boolean, intensity: number) {
+  sprite.faceToward(Math.abs(p.turn) > 0.15 ? p.turn : p.gazeX);
+  if (sprite.stutter > 0 && !teleporting) { sprite.stutter--; return; } // glitch stutter: hold the last image
+  const glitch = !teleporting && settings.character.glitchEffects && (p.glitch > 0.05 || sprite.burst > 0 || Math.random() < 0.0015 * intensity);
+  const g = glitch || teleporting ? offCtx : ctx;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, canvas.width, canvas.height);
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  sprite.draw(g, p, dt, { pose: spritePose(), surface, dragging, speaking: speaker.speaking ? p.mouthOpen : 0, glitchEnabled: settings.character.glitchEffects, scale: H / FRAME.height }, W, H);
+  if (glitch) {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(off, 0, 0);
+    sprite.post(ctx, off, Math.max(0.3, p.glitch, sprite.burst * 0.9));
+  }
+  if (teleporting) fx.render(ctx, off, dt, dpr);
+}
+
+// head pats: the cursor rubbing back and forth over her head (Desktop Mate / Shimeji style)
+let patDir = 0, patTurns: number[] = [], patLastX = 0, patCool = 0;
+function trackPat(x: number, y: number) {
+  if (!hit || dragging || y > H * 0.45) return;
+  const d = Math.sign(x - patLastX);
+  patLastX = x;
+  if (!d) return;
+  const now = performance.now();
+  if (d !== patDir) { patDir = d; patTurns.push(now); }
+  patTurns = patTurns.filter((t) => now - t < 1400);
+  if (patTurns.length >= 4 && now > patCool) {
+    patTurns = []; patCool = now + 2500;
+    sprite.pat();
+    behavior.react('happy');
+  }
 }
 
 // ---------------------------------------------------------------- teleport (window move happens in main between phases)
@@ -160,7 +218,8 @@ window.addEventListener('mousemove', (e) => {
   lastPointerAt = performance.now();
   // gaze target relative to her head (≈ 34% down the frame)
   pointer = { x: (e.clientX - W / 2) / (W * 0.45), y: (e.clientY - H * 0.34) / (H * 0.35) };
-  if (!dragging) setHit(!fx.active && !fx.hidden && rig.hitTest(ctx, e.clientX, e.clientY));
+  if (!dragging) setHit(!fx.active && !fx.hidden && (useSprites() ? sprite.hitTest(ctx, e.clientX, e.clientY, dpr) : rig.hitTest(ctx, e.clientX, e.clientY)));
+  trackPat(e.clientX, e.clientY);
 });
 window.addEventListener('mouseleave', () => { pointer = null; if (!dragging) setHit(false); });
 window.addEventListener('mousedown', (e) => {
@@ -207,7 +266,7 @@ api.on('cue', (raw) => {
   const c = raw as CharacterCue;
   switch (c.type) {
     case 'phase': phase = c.phase; if (c.phase !== 'idle') behavior.wake(); break;
-    case 'react': behavior.react(c.reaction); break;
+    case 'react': behavior.react(c.reaction); if (c.reaction === 'happy' || c.reaction === 'surprised') sprite.poke(); break;
     case 'speak': behavior.wake(); speaker.enqueue(c.utteranceId, c.text); break;
     case 'stopSpeech': speaker.stopAll(); break;
     case 'wake': wakeAuto = true; behavior.react('surprised'); break;
@@ -242,12 +301,13 @@ api.on('settings:changed', (s) => { settings = s as Settings; });
   anim.snap({ ...NEUTRAL });
   raf = requestAnimationFrame(loop);
   window.__capriDebug = {
-    behavior, anim, speaker, rig, mic, fx, postures: POSTURES,
+    behavior, anim, speaker, rig, sprite, mic, fx, postures: POSTURES,
+    get spritePose() { return useSprites() ? spritePose() : null; },
     get surface() { return surface; },
     get hit() { return hit; },
     get paused() { return paused; },
     force(p: Partial<Params> | null) { forced = p; },
-    hitAt: (x: number, y: number) => rig.hitTest(ctx, x, y),
+    hitAt: (x: number, y: number) => (useSprites() ? sprite.hitTest(ctx, x, y, dpr) : rig.hitTest(ctx, x, y)),
     // ---- deterministic capture mode (trailer / docs): stop the clock, advance exact frames, export pixels
     manual(on: boolean) { if (on) { cancelAnimationFrame(raf); paused = true; } else { paused = false; last = performance.now(); raf = requestAnimationFrame(loop); } },
     step(dt: number, n = 1) { for (let i = 0; i < n; i++) tick(dt); },

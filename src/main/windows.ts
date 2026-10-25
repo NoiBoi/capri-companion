@@ -22,10 +22,12 @@ export function conceal(win: BrowserWindow) {
 export const shown = (win: BrowserWindow | null | undefined) => !!win && !win.isDestroyed() && (OFFSCREEN ? (win as unknown as { capriShown?: boolean }).capriShown === true : win.isVisible());
 const RENDERER_DIR = path.join(__dirname, '..', 'renderer');
 
-export function characterSize(scale: number) {
+/** Real-footage poses include wide ones (lying on her side), so that art gets a wider window. */
+export const FOOTAGE_WIDTH = 520;
+export function characterSize(scale: number, art: 'footage' | 'vector' = 'vector') {
   // capture harness only: oversize the window for high-resolution trailer close-ups
   if (process.env.CAPRI_TEST === '1' && process.env.CAPRI_CAPTURE_SCALE) scale = Number(process.env.CAPRI_CAPTURE_SCALE) || scale;
-  return { width: Math.round(BASE_SIZE.width * scale), height: Math.round(BASE_SIZE.height * scale) };
+  return { width: Math.round((art === 'footage' ? FOOTAGE_WIDTH : BASE_SIZE.width) * scale), height: Math.round(BASE_SIZE.height * scale) };
 }
 
 export function displaysNow(): DisplayLike[] {
@@ -45,7 +47,7 @@ function harden(win: BrowserWindow, log: Logger) {
 }
 
 export function createCharacterWindow(s: Settings, preload: string, log: Logger): BrowserWindow {
-  const size = characterSize(s.character.scale);
+  const size = characterSize(s.character.scale, s.character.art);
   const pos = restorePosition(s.character.position, size, displaysNow(), screen.getPrimaryDisplay().id);
   const win = new BrowserWindow({
     ...pos,
@@ -116,6 +118,9 @@ export class DragController {
   private offset = { x: 0, y: 0 };
   private start = { x: 0, y: 0 };
   moved = false;
+  /** Release velocity in DIP/s (from the last ~100 ms of the drag), for throwing her. */
+  velocity = { x: 0, y: 0 };
+  private samples: { t: number; x: number; y: number }[] = [];
   constructor(private win: () => BrowserWindow | null, private onEnd: (moved: boolean) => void) {}
   begin() {
     const w = this.win();
@@ -125,6 +130,8 @@ export class DragController {
     this.offset = { x: c.x - wx, y: c.y - wy };
     this.start = c;
     this.moved = false;
+    this.samples = [];
+    this.velocity = { x: 0, y: 0 };
     this.timer = setInterval(() => this.step(), 16);
   }
   private step() {
@@ -132,6 +139,9 @@ export class DragController {
     if (!w || w.isDestroyed()) return this.end();
     if (leftButtonDown() === false) return this.end();
     const c = screen.getCursorScreenPoint();
+    const now = Date.now();
+    this.samples.push({ t: now, x: c.x, y: c.y });
+    while (this.samples.length > 2 && now - this.samples[0].t > 110) this.samples.shift();
     if (!this.moved && Math.hypot(c.x - this.start.x, c.y - this.start.y) < 4) return;
     this.moved = true;
     const [width, height] = w.getSize();
@@ -141,6 +151,9 @@ export class DragController {
     if (!this.timer) return;
     clearInterval(this.timer);
     this.timer = null;
+    const a = this.samples[0], b = this.samples[this.samples.length - 1];
+    const dt = a && b ? (b.t - a.t) / 1000 : 0;
+    this.velocity = dt > 0.02 ? { x: (b.x - a.x) / dt, y: (b.y - a.y) / dt } : { x: 0, y: 0 };
     const w = this.win();
     if (w && !w.isDestroyed() && this.moved) {
       const b = w.getBounds();

@@ -199,9 +199,10 @@ async function init() {
     activeWindow: fgRectDip,
     cue,
     aiConnected: () => monitor.connected,
-    blocked: () => (convo.busy ? 'conversation in progress' : recording ? 'listening' : drag.active ? 'being dragged' : fullscreenHidden ? 'fullscreen app' : userHidden ? 'hidden'
+    blocked: () => (convo.busy ? 'conversation in progress' : recording ? 'listening' : drag.active ? 'being dragged' : throwTimer ? 'being thrown' : fullscreenHidden ? 'fullscreen app' : userHidden ? 'hidden'
       : !mayInterrupt(settings.get(), { fullscreen: fullscreenHidden, hidden: userHidden }) ? 'do not disturb / quiet hours' : null),
-    userIdleSec: () => powerMonitor.getSystemIdleTime(),
+    // tests may pin the user's idle time so results don't depend on whether someone is at the machine
+    userIdleSec: () => (TEST && typeof (globalThis as { __capriIdleOverride?: number }).__capriIdleOverride === 'number' ? (globalThis as { __capriIdleOverride?: number }).__capriIdleOverride! : powerMonitor.getSystemIdleTime()),
     log,
   });
 
@@ -227,7 +228,56 @@ async function init() {
   powerMonitor.on('resume', () => { reminders.tick(); reclampCharacter(); void monitor.check('resume'); });
 
   if (!s0.firstRunComplete) setTimeout(() => openPanel('welcome'), 800);
-  if (TEST) (globalThis as Record<string, unknown>).__capri = { get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, get startupMs() { return startupMs; }, get zapCount() { return zapCount; }, pendingConfirms, log };
+  if (TEST) (globalThis as Record<string, unknown>).__capri = { get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, get startupMs() { return startupMs; }, get zapCount() { return zapCount; }, settleAfterDrop, throwCharacter, get throwing() { return !!throwTimer; }, pendingConfirms, log };
+}
+
+// ---------------------------------------------------------------- desktop-pet handling: drop onto a ledge, throw
+/** Dropped near the top edge of the active window or the taskbar: she takes a seat on it (Desktop Mate style). */
+function settleAfterDrop() {
+  if (!charWin || charWin.isDestroyed()) return;
+  const b = charWin.getBounds();
+  const seat = b.y + b.height * SEAT_RATIO, cx = b.x + b.width / 2;
+  const fg = fgRectDip();
+  const work = displayFor(b, displaysNow()).workArea;
+  if (fg && cx > fg.x && cx < fg.x + fg.width && Math.abs(seat - fg.y) < 70 && fg.y - b.height * SEAT_RATIO >= work.y - b.height * 0.1) {
+    charWin.setBounds({ ...b, y: Math.round(fg.y - b.height * SEAT_RATIO) });
+    perchRect = fg;
+  } else if (work.y + work.height - (b.y + b.height) < 90 && b.y + b.height > work.y + work.height - 90) {
+    charWin.setBounds({ ...b, y: work.y + work.height - b.height });
+  }
+  savePosition();
+  sendSurface();
+}
+let throwTimer: NodeJS.Timeout | null = null;
+/** Thrown: she flies with the release velocity, skids with friction and bounces off the screen edges. */
+function throwCharacter(v0: { x: number; y: number }) {
+  if (!charWin || throwTimer) return;
+  let vx = Math.max(-5000, Math.min(5000, v0.x)), vy = Math.max(-5000, Math.min(5000, v0.y));
+  let last = Date.now();
+  cue({ type: 'react', reaction: 'surprised' });
+  cue({ type: 'dash', dir: vx < 0 ? -1 : 1 });
+  throwTimer = setInterval(() => {
+    const w = charWin;
+    if (!w || w.isDestroyed() || drag.active) { stopThrow(); return; }
+    const now = Date.now(), dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    const b = w.getBounds();
+    const area = displayFor(b, displaysNow()).workArea;
+    let x = b.x + vx * dt, y = b.y + vy * dt;
+    if (x < area.x - b.width * 0.3) { x = area.x - b.width * 0.3; vx = Math.abs(vx) * 0.55; }
+    if (x > area.x + area.width - b.width * 0.7) { x = area.x + area.width - b.width * 0.7; vx = -Math.abs(vx) * 0.55; }
+    if (y < area.y - b.height * 0.2) { y = area.y - b.height * 0.2; vy = Math.abs(vy) * 0.55; }
+    if (y > area.y + area.height - b.height) { y = area.y + area.height - b.height; vy = -Math.abs(vy) * 0.45; }
+    const f = Math.pow(0.08, dt); // she floats: air friction, no gravity
+    vx *= f; vy *= f;
+    w.setBounds({ x: Math.round(x), y: Math.round(y), width: b.width, height: b.height });
+    if (Math.hypot(vx, vy) < 70) { stopThrow(); settleAfterDrop(); }
+  }, 16);
+}
+function stopThrow() {
+  if (throwTimer) clearInterval(throwTimer);
+  throwTimer = null;
+  cue({ type: 'dash', dir: 0 });
 }
 
 // ---------------------------------------------------------------- windows
@@ -235,8 +285,12 @@ function createCharacter() {
   const s = settings.get();
   charWin = createCharacterWindow(s, preloadPath(), log);
   drag = new DragController(() => charWin, (moved) => {
-    if (moved) { perchRect = null; savePosition(); sendSurface(); }
-    else { lastInteraction = Date.now(); cue({ type: 'react', reaction: 'happy' }); }
+    if (moved) {
+      perchRect = null;
+      const v = drag.velocity;
+      if (Math.hypot(v.x, v.y) > 1300) throwCharacter(v); // flung: she flies off and skids to a stop
+      else settleAfterDrop();
+    } else { lastInteraction = Date.now(); cue({ type: 'react', reaction: 'happy' }); }
   });
   // At fractional DPI Windows shifts new frameless windows by a few px; without this
   // correction the saved position creeps a little on every launch.
@@ -247,7 +301,7 @@ function createCharacter() {
   let settled = false;
   charWin.once('ready-to-show', () => {
     if (!charWin) return;
-    const size = characterSize(s0.character.scale);
+    const size = characterSize(s0.character.scale, s0.character.art);
     charWin.setBounds(clampToDisplays({ ...target, ...size }, displaysNow()));
     setTimeout(() => { settled = true; }, 500);
     if (!userHidden && charWin) reveal(charWin);
@@ -345,7 +399,7 @@ function onSettingsChanged(s: Settings) {
   if (tsig !== lastTpSig) { lastTpSig = tsig; teleporter?.rearm(); }
   log.setLevel(s.privacy.logLevel);
   if (charWin && !charWin.isDestroyed()) {
-    const size = characterSize(s.character.scale);
+    const size = characterSize(s.character.scale, s.character.art);
     const b = charWin.getBounds();
     if (b.width !== size.width || b.height !== size.height) {
       // keep her feet planted: anchor bottom-centre

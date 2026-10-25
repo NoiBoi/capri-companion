@@ -1,0 +1,718 @@
+{
+ "sit": {
+  "frames": [
+   {
+    "file": "sit/00.webp",
+    "hold": 89
+   }
+  ],
+  "anchor": [
+   0.5,
+   0.68
+  ],
+  "facing": 1,
+  "kind": "sit",
+  "size": 0.98,
+  "source": "5wGdjjwoDbY 2:21-2:25"
+ },
+ "lie": {
+  "frames": [
+   {
+    "file": "lie/00.webp",
+    "hold": 36
+   }
+  ],
+  "anchor": [
+   0.5,
+   0.753
+  ],
+  "facing": -1,
+  "kind": "lie",
+  "size": 0.55,
+  "source": "5wGdjjwoDbY 0:29-0:31"
+ },
+ "stand": {
+  "frames": [
+   {
+    "file": "stand/00.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/01.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/02.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/03.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/04.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/05.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/06.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/07.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/08.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/09.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/10.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/11.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/12.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/13.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/14.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/15.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/16.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/17.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/18.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/19.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/20.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/21.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/22.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/23.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/24.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/25.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/26.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/27.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/28.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/29.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/30.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/31.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/32.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/33.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/34.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/35.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/36.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/37.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/38.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/39.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/40.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/41.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/42.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/43.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/44.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/45.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/46.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/47.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/48.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/49.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/50.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/51.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/52.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/53.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/54.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/55.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/56.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/57.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/58.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/59.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/60.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/61.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/62.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/63.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/64.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/65.webp",
+    "hold": 2
+   },
+   {
+    "file": "stand/66.webp",
+    "hold": 1
+   }
+  ],
+  "anchor": [
+   0.5,
+   1.0
+  ],
+  "facing": 1,
+  "kind": "stand",
+  "size": 0.98,
+  "source": "5wGdjjwoDbY 1:49-1:54"
+ },
+ "lounge": {
+  "frames": [
+   {
+    "file": "lounge/00.webp",
+    "hold": 2
+   },
+   {
+    "file": "lounge/01.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/02.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/03.webp",
+    "hold": 2
+   },
+   {
+    "file": "lounge/04.webp",
+    "hold": 2
+   },
+   {
+    "file": "lounge/05.webp",
+    "hold": 2
+   },
+   {
+    "file": "lounge/06.webp",
+    "hold": 2
+   },
+   {
+    "file": "lounge/07.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/08.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/09.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/10.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/11.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/12.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/13.webp",
+    "hold": 2
+   },
+   {
+    "file": "lounge/14.webp",
+    "hold": 2
+   },
+   {
+    "file": "lounge/15.webp",
+    "hold": 2
+   },
+   {
+    "file": "lounge/16.webp",
+    "hold": 2
+   },
+   {
+    "file": "lounge/17.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/18.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/19.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/20.webp",
+    "hold": 2
+   },
+   {
+    "file": "lounge/21.webp",
+    "hold": 1
+   },
+   {
+    "file": "lounge/22.webp",
+    "hold": 2
+   },
+   {
+    "file": "lounge/23.webp",
+    "hold": 1
+   },
+   {
+    "file": "lounge/24.webp",
+    "hold": 2
+   },
+   {
+    "file": "lounge/25.webp",
+    "hold": 1
+   },
+   {
+    "file": "lounge/26.webp",
+    "hold": 2
+   },
+   {
+    "file": "lounge/27.webp",
+    "hold": 2
+   },
+   {
+    "file": "lounge/28.webp",
+    "hold": 2
+   },
+   {
+    "file": "lounge/29.webp",
+    "hold": 2
+   },
+   {
+    "file": "lounge/30.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/31.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/32.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/33.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/34.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/35.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/36.webp",
+    "hold": 2
+   },
+   {
+    "file": "lounge/37.webp",
+    "hold": 2
+   },
+   {
+    "file": "lounge/38.webp",
+    "hold": 2
+   },
+   {
+    "file": "lounge/39.webp",
+    "hold": 2
+   },
+   {
+    "file": "lounge/40.webp",
+    "hold": 2
+   },
+   {
+    "file": "lounge/41.webp",
+    "hold": 1
+   },
+   {
+    "file": "lounge/42.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/43.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/44.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/45.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/46.webp",
+    "hold": 3
+   },
+   {
+    "file": "lounge/47.webp",
+    "hold": 2
+   }
+  ],
+  "anchor": [
+   0.5,
+   1.0
+  ],
+  "facing": -1,
+  "kind": "lie",
+  "size": 0.5,
+  "source": "5wGdjjwoDbY 1:27-1:37"
+ },
+ "glitch": {
+  "frames": [
+   {
+    "file": "glitch/00.webp",
+    "hold": 1
+   },
+   {
+    "file": "glitch/01.webp",
+    "hold": 3
+   },
+   {
+    "file": "glitch/02.webp",
+    "hold": 2
+   },
+   {
+    "file": "glitch/03.webp",
+    "hold": 2
+   },
+   {
+    "file": "glitch/04.webp",
+    "hold": 3
+   },
+   {
+    "file": "glitch/05.webp",
+    "hold": 3
+   },
+   {
+    "file": "glitch/06.webp",
+    "hold": 2
+   },
+   {
+    "file": "glitch/07.webp",
+    "hold": 3
+   },
+   {
+    "file": "glitch/08.webp",
+    "hold": 2
+   },
+   {
+    "file": "glitch/09.webp",
+    "hold": 3
+   },
+   {
+    "file": "glitch/10.webp",
+    "hold": 2
+   },
+   {
+    "file": "glitch/11.webp",
+    "hold": 2
+   },
+   {
+    "file": "glitch/12.webp",
+    "hold": 3
+   },
+   {
+    "file": "glitch/13.webp",
+    "hold": 2
+   },
+   {
+    "file": "glitch/14.webp",
+    "hold": 3
+   },
+   {
+    "file": "glitch/15.webp",
+    "hold": 5
+   },
+   {
+    "file": "glitch/16.webp",
+    "hold": 3
+   },
+   {
+    "file": "glitch/17.webp",
+    "hold": 2
+   },
+   {
+    "file": "glitch/18.webp",
+    "hold": 2
+   },
+   {
+    "file": "glitch/19.webp",
+    "hold": 3
+   },
+   {
+    "file": "glitch/20.webp",
+    "hold": 3
+   },
+   {
+    "file": "glitch/21.webp",
+    "hold": 2
+   },
+   {
+    "file": "glitch/22.webp",
+    "hold": 5
+   },
+   {
+    "file": "glitch/23.webp",
+    "hold": 3
+   },
+   {
+    "file": "glitch/24.webp",
+    "hold": 2
+   },
+   {
+    "file": "glitch/25.webp",
+    "hold": 3
+   },
+   {
+    "file": "glitch/26.webp",
+    "hold": 2
+   },
+   {
+    "file": "glitch/27.webp",
+    "hold": 3
+   },
+   {
+    "file": "glitch/28.webp",
+    "hold": 2
+   },
+   {
+    "file": "glitch/29.webp",
+    "hold": 2
+   },
+   {
+    "file": "glitch/30.webp",
+    "hold": 3
+   },
+   {
+    "file": "glitch/31.webp",
+    "hold": 3
+   },
+   {
+    "file": "glitch/32.webp",
+    "hold": 2
+   },
+   {
+    "file": "glitch/33.webp",
+    "hold": 3
+   },
+   {
+    "file": "glitch/34.webp",
+    "hold": 2
+   },
+   {
+    "file": "glitch/35.webp",
+    "hold": 2
+   },
+   {
+    "file": "glitch/36.webp",
+    "hold": 3
+   },
+   {
+    "file": "glitch/37.webp",
+    "hold": 3
+   },
+   {
+    "file": "glitch/38.webp",
+    "hold": 2
+   },
+   {
+    "file": "glitch/39.webp",
+    "hold": 5
+   },
+   {
+    "file": "glitch/40.webp",
+    "hold": 3
+   },
+   {
+    "file": "glitch/41.webp",
+    "hold": 2
+   },
+   {
+    "file": "glitch/42.webp",
+    "hold": 3
+   },
+   {
+    "file": "glitch/43.webp",
+    "hold": 2
+   },
+   {
+    "file": "glitch/44.webp",
+    "hold": 5
+   },
+   {
+    "file": "glitch/45.webp",
+    "hold": 5
+   },
+   {
+    "file": "glitch/46.webp",
+    "hold": 2
+   }
+  ],
+  "anchor": [
+   0.5,
+   1.0
+  ],
+  "facing": 1,
+  "kind": "float",
+  "size": 0.6,
+  "source": "Nli_SZ-DBco 4:19-4:21 (Netflix footage)"
+ }
+}

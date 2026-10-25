@@ -204,7 +204,8 @@ describe('teleport destination selection', () => {
   it('returns null on an impossible layout instead of moving off-screen', () => {
     expect(chooseDestination('auto', { displays: [], current: cur, cursor: { x: 0, y: 0 }, avoid: null })).toBeNull();
     const tiny = d(9, 0, 0, 200, 300);
-    expect(chooseDestination('auto', { displays: [tiny], current: cur, cursor: { x: 0, y: 0 }, avoid: null })).toBeNull();
+    // every random roll, including the 'peek in from an edge' branch (it used to slip through ~12% of the time)
+    for (const r of [0.1, 0.5, 0.9, 0.99]) expect(chooseDestination('auto', { displays: [tiny], current: cur, cursor: { x: 0, y: 0 }, avoid: null, rand: () => r })).toBeNull();
   });
   it('auto delays stay within the configured range', () => {
     for (let i = 0; i < 100; i++) { const ms = nextAutoDelay(4, 15); expect(ms).toBeGreaterThanOrEqual(4 * 60_000); expect(ms).toBeLessThanOrEqual(15 * 60_000); }

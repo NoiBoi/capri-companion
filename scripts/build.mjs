@@ -19,4 +19,7 @@ for (const f of ['character.html', 'panel.html', 'panel.css']) {
   const src = path.join(root, 'src/renderer', f);
   if (fs.existsSync(src)) fs.copyFileSync(src, path.join(out, 'renderer', f));
 }
+// real-footage cut-outs for the character (see assets/capri/SOURCES.md)
+const capri = path.join(root, 'assets', 'capri');
+if (fs.existsSync(capri)) fs.cpSync(capri, path.join(out, 'renderer', 'capri'), { recursive: true, filter: (f) => !f.endsWith('.md') });
 console.log(`built ${prod ? 'production' : 'development'} bundle → dist/`);
