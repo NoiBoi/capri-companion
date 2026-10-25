@@ -23,6 +23,8 @@ export const shown = (win: BrowserWindow | null | undefined) => !!win && !win.is
 const RENDERER_DIR = path.join(__dirname, '..', 'renderer');
 
 export function characterSize(scale: number) {
+  // capture harness only: oversize the window for high-resolution trailer close-ups
+  if (process.env.CAPRI_TEST === '1' && process.env.CAPRI_CAPTURE_SCALE) scale = Number(process.env.CAPRI_CAPTURE_SCALE) || scale;
   return { width: Math.round(BASE_SIZE.width * scale), height: Math.round(BASE_SIZE.height * scale) };
 }
 

@@ -247,5 +247,22 @@ api.on('settings:changed', (s) => { settings = s as Settings; });
     get paused() { return paused; },
     force(p: Partial<Params> | null) { forced = p; },
     hitAt: (x: number, y: number) => rig.hitTest(ctx, x, y),
+    // ---- deterministic capture mode (trailer / docs): stop the clock, advance exact frames, export pixels
+    manual(on: boolean) { if (on) { cancelAnimationFrame(raf); paused = true; } else { paused = false; last = performance.now(); raf = requestAnimationFrame(loop); } },
+    step(dt: number, n = 1) { for (let i = 0; i < n; i++) tick(dt); },
+    setPhase(p: AssistantPhase) { phase = p; },
+    setPointer(x: number | null, y = 0) { pointer = x === null ? null : { x, y }; lastPointerAt = performance.now(); },
+    setSurface(s: Surface) { surface = s; },
+    setDashing(d: number) { dashing = d; },
+    setIdle(sec: number, q = false) { idleSec = sec; quiet = q; },
+    lips(on: boolean) { if (on) speaker.lips.start(); else speaker.lips.stop(); },
+    teleportFx(ph: 'out' | 'in', id = 1) { fx.start(ph, id, { x: W / 2, y: H * 0.38, w: W * 0.8, h: H * 0.7 }); },
+    canvasSize: () => [canvas.width, canvas.height],
+    grab(crop?: { x: number; y: number; w: number; h: number }, q = 0.9) {
+      const r = crop ?? { x: 0, y: 0, w: canvas.width, h: canvas.height };
+      const c = document.createElement('canvas'); c.width = r.w; c.height = r.h;
+      c.getContext('2d')!.drawImage(canvas, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+      return c.toDataURL('image/webp', q);
+    },
   };
 })();

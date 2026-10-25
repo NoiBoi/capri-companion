@@ -28,6 +28,8 @@ import { probeWindowsRecognizer, transcribeOpenAI, transcribeWindows, WakeWordLi
 const T0 = performance.timeOrigin;
 const TEST = process.env.CAPRI_TEST === '1';
 if (process.env.CAPRI_USER_DATA) app.setPath('userData', path.resolve(process.env.CAPRI_USER_DATA));
+// test/capture only: render at a fixed device scale (crisp high-res frames for the trailer harness)
+if (process.env.CAPRI_TEST === '1' && process.env.CAPRI_DPR) app.commandLine.appendSwitch('force-device-scale-factor', process.env.CAPRI_DPR);
 app.setAppUserModelId('dev.capri.companion');
 
 if (!app.requestSingleInstanceLock()) {

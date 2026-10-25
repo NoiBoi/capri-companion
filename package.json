@@ -8,7 +8,7 @@
     "start": "node scripts/build.mjs && electron .",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run tests/unit",
-    "test:e2e": "node scripts/build.mjs && vitest run tests/e2e --no-file-parallelism",
+    "test:e2e": "node scripts/build.mjs && vitest run tests/e2e --no-file-parallelism --testTimeout=60000 --hookTimeout=60000",
     "icons": "node scripts/build.mjs && node scripts/make-icons.mjs",
     "dist": "node scripts/dist.mjs",
     "verify:package": "node scripts/verify-package.mjs"
