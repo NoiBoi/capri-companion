@@ -35,7 +35,7 @@ export class CapriModel {
   private faceTarget = 1;
   private sparkle: [CanvasPattern | null, CanvasPattern | null] = [null, null];
   private rand = prng(0xca9e1);
-  private swing = 0; private swingV = 0; private lastScreen: [number, number] | null = null;
+  private readonly swing = 0; // no dangle while dragged: she stays upright where you hold her
   private squash = 0;
   // glitch bursts: she tears, dislocates, shatters and ghosts every few seconds (EFGpu 1:41, 5:10)
   burst = 0;
@@ -114,12 +114,6 @@ export class CapriModel {
     const s = W / FRAMING.unitsW;
     const t = this.t;
 
-    // dangling while dragged: the window moves under her, she swings from the grab point
-    const vx = this.lastScreen ? (window.screenX - this.lastScreen[0]) / Math.max(dt, 1e-3) : 0;
-    this.lastScreen = [window.screenX, window.screenY];
-    const target = inp.dragging ? clamp(-vx * 0.0011, -0.6, 0.6) + 0.04 * Math.sin(t * 3) : 0;
-    this.swingV += ((target - this.swing) * 60 - this.swingV * 7) * dt;
-    this.swing += this.swingV * dt;
     this.squash = Math.max(0, this.squash - dt * 4);
 
     const floating = !inp.ledge || P.kind === 'float';

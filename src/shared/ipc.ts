@@ -46,6 +46,7 @@ export type CharacterCue =
   | { type: 'presence'; idleSec: number; quiet: boolean }
   | { type: 'remark'; text: string }
   | { type: 'bubble'; text: string } // a line in her speech bubble, no gesture
+  | { type: 'workPose'; pose: 'back' | 'crouch' | 'sit' | null } // while she works on the PC (null = back to normal)
   | { type: 'connection'; state: ConnectionStatus['state'] }
   | { type: 'teleport'; phase: 'out' | 'in'; id: number; effects: boolean }
   | { type: 'clip'; name: string }
@@ -127,6 +128,10 @@ export interface InvokeMap {
   'action:respond': [{ id: string; approved: boolean; remember?: boolean }, void];
   'provider:test': [void, { ok: boolean; detail: string; latencyMs?: number }];
   'provider:models': [void, string[]];
+  'claude:status': [void, { installed: boolean; loggedIn: boolean; account?: string; detail: string }];
+  'claude:signin': [void, { ok: boolean; detail?: string }];
+  'claude:code': [string, { installed: boolean; loggedIn: boolean; account?: string; detail: string }];
+  'claude:signout': [void, void];
   'diagnostics:get': [void, Diagnostics];
   'logs:tail': [number, string[]];
   'app:openDataFolder': [void, void];
@@ -158,7 +163,7 @@ export const INVOKE_CHANNELS: InvokeChannel[] = [
   'settings:get', 'settings:set', 'settings:reset', 'secrets:status', 'secrets:set', 'secrets:delete',
   'chat:send', 'chat:stop', 'chat:history', 'chat:clear', 'memory:list', 'memory:add', 'memory:approve',
   'memory:delete', 'memory:clear', 'notes:list', 'notes:delete', 'reminders:list', 'reminders:cancel',
-  'action:respond', 'provider:test', 'provider:models', 'diagnostics:get', 'logs:tail', 'app:openDataFolder',
+  'action:respond', 'provider:test', 'provider:models', 'claude:status', 'claude:signin', 'claude:code', 'claude:signout', 'diagnostics:get', 'logs:tail', 'app:openDataFolder',
   'app:resetAll', 'app:quit', 'app:restart', 'apps:pick', 'folders:pick', 'panel:open', 'panel:close',
   'voice:ptt', 'char:hit', 'char:drag', 'char:click', 'char:menu', 'char:speechState', 'char:audio',
   'char:micError', 'char:fps', 'tts:fetch', 'connection:get', 'connection:check', 'teleport:now', 'char:teleport',

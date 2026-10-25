@@ -120,7 +120,7 @@ export class DragController {
   /** Release velocity in DIP/s (from the last ~100 ms of the drag), for throwing her. */
   velocity = { x: 0, y: 0 };
   private samples: { t: number; x: number; y: number }[] = [];
-  constructor(private win: () => BrowserWindow | null, private onEnd: (moved: boolean) => void) {}
+  constructor(private win: () => BrowserWindow | null, private size: () => { width: number; height: number }, private onEnd: (moved: boolean) => void) {}
   begin() {
     const w = this.win();
     if (!w || this.timer) return;
@@ -143,8 +143,7 @@ export class DragController {
     while (this.samples.length > 2 && now - this.samples[0].t > 110) this.samples.shift();
     if (!this.moved && Math.hypot(c.x - this.start.x, c.y - this.start.y) < 4) return;
     this.moved = true;
-    const [width, height] = w.getSize();
-    w.setBounds({ x: c.x - this.offset.x, y: c.y - this.offset.y, width, height });
+    w.setBounds({ x: c.x - this.offset.x, y: c.y - this.offset.y, ...this.size() }); // fixed size: never read back
   }
   end() {
     if (!this.timer) return;
@@ -156,7 +155,7 @@ export class DragController {
     const w = this.win();
     if (w && !w.isDestroyed() && this.moved) {
       const b = w.getBounds();
-      w.setBounds(clampToDisplays(b, displaysNow()));
+      w.setBounds(clampToDisplays({ x: b.x, y: b.y, ...this.size() }, displaysNow()));
     }
     this.onEnd(this.moved);
   }

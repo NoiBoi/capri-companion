@@ -451,26 +451,30 @@ describe('teleportation', () => {
     await ollama.close();
   });
 
-  it('desktop-pet handling: dropped near a window top she sits on it; flung, she flies and skids to a stop on screen', async () => {
+  it('desktop-pet handling: dropped right at a window top she sits on it; anywhere else she stays exactly where she was put, and never changes size', async () => {
     const { app } = await launch(profile());
-    type Hooks = { __capri: { charWin: { getBounds(): { x: number; y: number; width: number; height: number }; setBounds(b: object): void }; settleAfterDrop(): void; throwCharacter(v: object): void; throwing: boolean } };
+    type Hooks = { __capri: { charWin: { getBounds(): { x: number; y: number; width: number; height: number }; setBounds(b: object): void }; settleAfterDrop(): void } };
     const win = { x: 300, y: 600, width: 700, height: 200 };
-    await app.evaluate((_e, [win, seat]) => {
-      (globalThis as unknown as { __capriFgOverride: object }).__capriFgOverride = win;
-      const c = (globalThis as unknown as Hooks).__capri; const b = c.charWin.getBounds();
-      c.charWin.setBounds({ ...b, x: 500, y: Math.round(win.y + 35 - b.height * seat) }); // seat line 35 px below the window top
-      c.settleAfterDrop();
-    }, [win, SEAT_RATIO] as const);
-    const sat = await app.evaluate(() => (globalThis as unknown as Hooks).__capri.charWin.getBounds());
-    expect(Math.abs(sat.y + sat.height * SEAT_RATIO - win.y)).toBeLessThanOrEqual(3); // seat on the window top edge (DPI rounding)
-    const before = sat.x;
-    await app.evaluate(() => (globalThis as unknown as Hooks).__capri.throwCharacter({ x: 3200, y: -400 }));
-    let flying = true;
-    for (let i = 0; i < 60 && flying; i++) { await app.evaluate(() => new Promise((r) => setTimeout(r, 100))); flying = await app.evaluate(() => (globalThis as unknown as Hooks).__capri.throwing); }
-    expect(flying).toBe(false);
-    const after = await app.evaluate(({ screen }) => ({ b: (globalThis as unknown as Hooks).__capri.charWin.getBounds(), wa: screen.getPrimaryDisplay().workArea }));
-    expect(after.b.x).toBeGreaterThan(before + 200);
-    expect(after.b.x + after.b.width * 0.3).toBeLessThanOrEqual(after.wa.x + after.wa.width + 1); // never lost off-screen
+    const size0 = await app.evaluate(() => (globalThis as unknown as Hooks).__capri.charWin.getBounds());
+    // a drag places her window like the drag controller does: position from the cursor, size fixed
+    const drop = (x: number, y: number) => app.evaluate((_e, [x, y, w, h]) => {
+      const c = (globalThis as unknown as Hooks).__capri;
+      c.charWin.setBounds({ x, y, width: w, height: h }); c.settleAfterDrop();
+      return c.charWin.getBounds();
+    }, [x, y, size0.width, size0.height] as const);
+    await app.evaluate((_e, w) => { (globalThis as unknown as { __capriFgOverride: object }).__capriFgOverride = w; }, win);
+    // 10 px above the window's top edge: she takes a seat on it
+    const sat = await drop(500, Math.round(win.y + 10 - size0.height * SEAT_RATIO));
+    expect(Math.abs(sat.y + sat.height * SEAT_RATIO - win.y)).toBeLessThanOrEqual(3);
+    // 120 px away from any edge: she stays put
+    const free = await drop(420, 150);
+    expect(Math.abs(free.x - 420)).toBeLessThanOrEqual(3);
+    expect(Math.abs(free.y - 150)).toBeLessThanOrEqual(3);
+    // thirty moves later she is exactly the same size (fractional-DPI rounding used to grow her)
+    let last = free;
+    for (let i = 0; i < 30; i++) last = await drop(200 + (i % 5) * 37, 120 + (i % 3) * 29);
+    expect(Math.abs(last.width - size0.width)).toBeLessThanOrEqual(1); // Windows reads back ±1 px at 125%; nothing accumulates
+    expect(Math.abs(last.height - size0.height)).toBeLessThanOrEqual(1);
   });
 
   it('character model: every pose renders whole inside her window, and poses follow where she is', async () => {
@@ -478,8 +482,8 @@ describe('teleportation', () => {
     type D = { __capriDebug: { manual(on: boolean): void; step(dt: number, n: number): void; setSurface(s: string): void; behavior: { setPosture(n: string): void }; pose: string; force(p: object | null): void } };
     await char.evaluate(() => (window as unknown as D).__capriDebug.manual(true));
     const cases: [string, string, string[], object][] = [
-      ['window', 'sit_edge', ['sit'], {}], ['taskbar', 'recline', ['lie'], {}], ['taskbar', 'sit_edge', ['lie', 'crouch'], {}],
-      ['air', 'air_sit', ['crouch'], {}], ['air', 'air_sit', ['crouch'], { hairStream: 1, hairWind: 1, headYaw: 1, turn: 1 }], ['window', 'sit_edge', ['sit'], { turn: -1, headPitch: 1, sleep: 1 }],
+      ['window', 'sit_edge', ['sit', 'back'], {}], ['taskbar', 'recline', ['lie'], {}], ['taskbar', 'sit_edge', ['lie', 'crouch', 'back'], {}],
+      ['air', 'air_sit', ['crouch'], {}], ['air', 'air_sit', ['crouch'], { hairStream: 1, hairWind: 1, headYaw: 1, turn: 1 }], ['window', 'sit_edge', ['sit', 'back'], { turn: -1, headPitch: 1, sleep: 1 }],
     ];
     for (const [surface, posture, want, force] of cases) {
       const r = await char.evaluate(([surface, posture, force]) => {

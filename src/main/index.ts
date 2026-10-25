@@ -6,6 +6,7 @@ import {
 } from 'electron';
 import { GoogleGenAI } from '@google/genai';
 import { runTask, type Screen } from './agent/computer';
+import { claudeSignIn, claudeSignOut, claudeStatus, claudeSubmitCode } from './ai/claudeAccount';
 import { newId } from './store/jsonFile';
 import * as hands from './desktop/input';
 import { z } from 'zod';
@@ -186,10 +187,10 @@ async function init() {
   monitor.on('changed', (st) => { toPanel('connection:status', st); cue({ type: 'connection', state: st.state }); updateTrayMenu(); });
   teleporter = new TeleportController({
     settings: () => settings.get(),
-    bounds: () => (charWin && !charWin.isDestroyed() ? charWin.getBounds() : null),
+    bounds: () => (charWin && !charWin.isDestroyed() ? herBounds() : null),
     move: (r, how) => {
       if (!charWin || charWin.isDestroyed()) return;
-      charWin.setBounds(r);
+      charWin.setBounds({ ...r, ...herSize() });
       if (how === 'teleport') raiseCharacter(); // keep her above whatever is under her new spot
     },
     moved: (dest) => {
@@ -238,16 +239,20 @@ async function init() {
 
 // ---------------------------------------------------------------- desktop-pet handling: drop onto a ledge, throw
 /** Dropped near the top edge of the active window or the taskbar: she takes a seat on it (Desktop Mate style). */
+// Her size always comes from her scale setting, never from reading the window back: at fractional DPI
+// (125%) Windows reports the size a pixel off, and writing that back on every move made her grow.
+function herSize() { return characterSize(settings.get().character.scale); }
+function herBounds() { const b = charWin!.getBounds(); return { x: b.x, y: b.y, ...herSize() }; }
 function settleAfterDrop() {
   if (!charWin || charWin.isDestroyed()) return;
-  const b = charWin.getBounds();
+  const b = herBounds();
   const seat = b.y + b.height * SEAT_RATIO, cx = b.x + b.width / 2;
   const fg = fgRectDip();
   const work = displayFor(b, displaysNow()).workArea;
-  if (fg && cx > fg.x && cx < fg.x + fg.width && Math.abs(seat - fg.y) < 70 && fg.y - b.height * SEAT_RATIO >= work.y - b.height * 0.1) {
+  if (fg && cx > fg.x && cx < fg.x + fg.width && Math.abs(seat - fg.y) < 24 && fg.y - b.height * SEAT_RATIO >= work.y - b.height * 0.1) {
     charWin.setBounds({ ...b, y: Math.round(fg.y - b.height * SEAT_RATIO) });
     perchRect = fg;
-  } else if (Math.abs(work.y + work.height - seat) < 90) {
+  } else if (Math.abs(work.y + work.height - seat) < 24) {
     charWin.setBounds({ ...b, y: Math.round(work.y + work.height - b.height * SEAT_RATIO) }); // rest on the taskbar
   }
   savePosition();
@@ -266,7 +271,7 @@ function throwCharacter(v0: { x: number; y: number }) {
     if (!w || w.isDestroyed() || drag.active) { stopThrow(); return; }
     const now = Date.now(), dt = Math.min(0.05, (now - last) / 1000);
     last = now;
-    const b = w.getBounds();
+    const b = herBounds();
     const area = displayFor(b, displaysNow()).workArea;
     let x = b.x + vx * dt, y = b.y + vy * dt;
     if (x < area.x - b.width * 0.3) { x = area.x - b.width * 0.3; vx = Math.abs(vx) * 0.55; }
@@ -290,12 +295,10 @@ function createCharacter() {
   const s = settings.get();
   charWin = createCharacterWindow(s, preloadPath(), log);
   lastScale = s.character.scale;
-  drag = new DragController(() => charWin, (moved) => {
+  drag = new DragController(() => charWin, herSize, (moved) => {
     if (moved) {
       perchRect = null;
-      const v = drag.velocity;
-      if (Math.hypot(v.x, v.y) > 1300) throwCharacter(v); // flung: she flies off and skids to a stop
-      else settleAfterDrop();
+      settleAfterDrop(); // she stays where you let go (no flinging)
     } else { lastInteraction = Date.now(); cue({ type: 'react', reaction: 'happy' }); }
   });
   // At fractional DPI Windows shifts new frameless windows by a few px; without this
@@ -346,7 +349,7 @@ function savePosition() {
 
 function reclampCharacter() {
   if (!charWin || charWin.isDestroyed()) return;
-  const b = charWin.getBounds();
+  const b = herBounds();
   const c = clampToDisplays(b, displaysNow());
   if (c.x !== b.x || c.y !== b.y) { charWin.setBounds(c); savePosition(); }
 }
@@ -573,14 +576,14 @@ async function useComputer(task: string, opts: { explore?: boolean; maxSteps?: n
   const escWatch = setInterval(() => {
     if (hands.escapeDown()) ctrl.abort();
     const c = hands.cursor();
-    if (!moving && expected && c && Math.hypot(c.x - expected.x, c.y - expected.y) > 25) { log.info('agent: user took the mouse'); ctrl.abort(); }
+    if (opts.explore && !moving && expected && c && Math.hypot(c.x - expected.x, c.y - expected.y) > 25) { log.info('agent: user took the mouse'); ctrl.abort(); }
     if (opts.explore && Date.now() - lastOwn > 1500 && powerMonitor.getSystemIdleTime() === 0 && Date.now() - started > 3000) { log.info('agent: user is back'); ctrl.abort(); }
   }, 80);
   const started = Date.now();
-  const panelWasOpen = !!panelWin && !panelWin.isDestroyed() && panelWin.isVisible();
-  if (panelWasOpen) panelWin!.hide(); // out of the way: she needs the screen
+  // the chat stays open: hiding it looked like the app had closed. She knows it is hers and leaves it be.
   applyMouseMode(false);
   cue({ type: 'bubble', text: opts.explore ? 'Going for a look around.' : 'On it. Hold Esc to stop me.' });
+  cue({ type: 'workPose', pose: 'back' });
   log.info('agent: start', { chars: task.length });
   try {
     const r = await runTask(task, {
@@ -633,7 +636,11 @@ async function useComputer(task: string, opts: { explore?: boolean; maxSteps?: n
           const right = px + 60 + b.width <= a.x + a.width;
           const x = right ? px + 60 : px - 60 - b.width;
           const y = Math.min(Math.max(a.y, py - b.height * 0.45), a.y + a.height - b.height * SEAT_RATIO);
-          void teleporter.flyTo({ x: Math.round(x), y: Math.round(y), width: b.width, height: b.height, kind: 'spot' });
+          // far away: glitch out and reappear beside it; close by: stay put
+          const dist = Math.hypot(x - b.x, y - b.y);
+          if (dist > 220) void teleporter.jumpTo({ x: Math.round(x), y: Math.round(y), width: b.width, height: b.height, kind: 'spot' });
+          // a different pose each time she moves: mostly turned to watch her work, sometimes crouched
+          if (dist > 220 || Math.random() < 0.25) cue({ type: 'workPose', pose: Math.random() < 0.6 ? 'back' : 'crouch' });
         }
       },
       stopRequested: () => ctrl.signal.aborted,
@@ -648,8 +655,9 @@ async function useComputer(task: string, opts: { explore?: boolean; maxSteps?: n
   } finally {
     clearInterval(escWatch);
     agentCtrl = null;
+    cue({ type: 'workPose', pose: null });
     applyMouseMode(false);
-    if (panelWasOpen && panelWin && !panelWin.isDestroyed()) panelWin.show();
+
   }
 }
 // ---------------------------------------------------------------- autonomous exploring
@@ -884,6 +892,14 @@ function registerIpc() {
 
   handle('provider:test', 'panel', none, async () => { const r = await makeProvider().test(); void monitor.check('test'); return r; });
   handle('provider:models', 'panel', none, async () => { try { return await makeProvider().listModels(); } catch { return []; } });
+  handle('claude:status', 'panel', none, () => claudeStatus());
+  handle('claude:signin', 'panel', none, async () => {
+    const r = await claudeSignIn();
+    if (r.ok && r.url && /^https:\/\/(claude\.com|claude\.ai|platform\.claude\.com)\//.test(r.url)) await shell.openExternal(r.url);
+    return { ok: r.ok, detail: r.detail };
+  });
+  handle('claude:code', 'panel', str(500), async (code) => { const s = await claudeSubmitCode(code); if (s.loggedIn) void monitor.check('claude sign-in'); return s; });
+  handle('claude:signout', 'panel', none, async () => { await claudeSignOut(); void monitor.check('claude sign-out'); });
   handle('connection:get', 'any', none, () => monitor.status);
   handle('teleport:now', 'any', z.enum(TELEPORT_TARGETS as [TeleportTarget, ...TeleportTarget[]]).optional(), (t) => teleporter.go(t ?? 'auto', 'manual'));
   handle('char:teleport', 'char', z.object({ id: z.number().int(), phase: z.enum(['out', 'in']) }), ({ id, phase }) => teleporter.ack(id, phase));

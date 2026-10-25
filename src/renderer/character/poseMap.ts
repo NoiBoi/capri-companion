@@ -23,6 +23,7 @@ export function modelPoseFor(i: PoseInput): PoseName {
   if (i.back) return 'back';
   if (!ledge) return 'crouch';
   if (i.posture === 'recline') return 'lie';
-  if (i.surface === 'taskbar') return i.variant < 0.6 ? 'lie' : 'crouch';
-  return 'sit';
+  // a mix, rolled once per posture so each choice holds a while: not always the same pose
+  if (i.surface === 'taskbar') return i.variant < 0.45 ? 'lie' : i.variant < 0.75 ? 'crouch' : 'back';
+  return i.variant < 0.65 ? 'sit' : 'back'; // on a window top: sitting on the edge, or standing on it watching your screen
 }

@@ -49,9 +49,12 @@ let dashing = 0; // pose override for previews/tests only
 const fx = new TeleportFx(() => document.createElement('canvas'));
 const model = new CapriModel();
 let variantFor = '', variant = 0, lastP: Params | null = null, shownPose: PoseName | null = null;
+let workPose: 'back' | 'crouch' | 'sit' | null = null; // set while she uses the PC
 function modelPose(): PoseName {
   // while she breaks apart she keeps the pose she was in; the new spot's pose appears as she arrives
   if (fx.phase === 'out' && shownPose) return shownPose;
+  // working on the PC: the pose main picked, except she only sits with a ledge under her
+  if (workPose && !dragging) return (shownPose = workPose === 'sit' && surface !== 'window' && surface !== 'taskbar' ? 'crouch' : workPose);
   if (variantFor !== behavior.posture) { variantFor = behavior.posture; variant = Math.random(); }
   return (shownPose = modelPoseFor({ surface, posture: behavior.posture, sleeping: behavior.state === 'sleeping', dragging, variant, back: (lastP?.back ?? 0) > 0.5 }));
 }
@@ -247,6 +250,7 @@ api.on('cue', (raw) => {
     case 'presence': idleSec = c.idleSec; quiet = c.quiet; break;
     case 'remark': behavior.react('wave'); showBubble(c.text); break;
     case 'bubble': showBubble(c.text); break;
+    case 'workPose': workPose = c.pose; break;
     case 'teleport': onTeleport(c.phase, c.id, c.effects); break;
     case 'clip': {
       const e = EMOTE_MAP[c.name];

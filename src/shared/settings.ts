@@ -66,11 +66,12 @@ export const SettingsSchema = z.object({
     exploreAfterMinutes: z.number().min(2).max(120),
   }),
   ai: z.object({
-    provider: z.enum(['gemini', 'offline', 'ollama', 'openai', 'anthropic']),
+    provider: z.enum(['gemini', 'claude', 'offline', 'ollama', 'openai', 'anthropic']),
     gemini: z.object({ model: z.string().min(3).max(100), fallbackModel: z.string().max(100), thinkingLevel: z.enum(['minimal', 'low', 'medium', 'high']) }),
     ollama: z.object({ baseUrl: httpUrl, model: z.string().max(200) }),
     openai: z.object({ baseUrl: httpUrl, model: z.string().max(200) }),
     anthropic: z.object({ baseUrl: httpUrl, model: z.string().max(200) }),
+    claude: z.object({ model: z.enum(['sonnet', 'opus', 'haiku']) }), // through the user's Claude account (Claude Code sign-in)
     temperature: z.number().min(0).max(2),
     maxTokens: z.number().int().min(32).max(8192),
     responseLength: z.enum(['short', 'medium', 'long']),
@@ -166,6 +167,7 @@ export const DEFAULT_SETTINGS: Settings = {
     ollama: { baseUrl: 'http://127.0.0.1:11434', model: 'llama3.2' },
     openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
     anthropic: { baseUrl: 'https://api.anthropic.com', model: 'claude-haiku-5-5' },
+    claude: { model: 'sonnet' },
     temperature: 0.8,
     maxTokens: 500,
     responseLength: 'short',

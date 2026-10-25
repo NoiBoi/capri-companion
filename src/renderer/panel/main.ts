@@ -291,6 +291,41 @@ function refreshConn() {
     conn.provider === 'gemini' ? h('dd', {}, conn.keySource === 'secure-store' ? 'Saved in Capri' : conn.keySource === 'environment' ? 'GEMINI_API_KEY' : 'Not set') : null,
     h('dt', {}, 'Checked'), h('dd', {}, conn.checkedAt ? new Date(conn.checkedAt).toLocaleTimeString() : '—')));
 }
+/** Claude through the user's own account: sign-in state, sign in / out, and the model. */
+function claudeAccountFields() {
+  const state = h('span', { class: 'sub' }, 'Checking…');
+  const actions = h('span', { class: 'row' });
+  const render = async () => {
+    const s = await api.invoke('claude:status');
+    state.textContent = !s.installed ? 'Install Claude Code (claude.com/code), then reopen this.' : s.loggedIn ? s.detail : 'Not signed in';
+    actions.replaceChildren(
+      !s.installed ? '' :
+      s.loggedIn ? btn('Sign out', async () => { await api.invoke('claude:signout'); await render(); }, 'quiet') :
+      btn('Sign in to Claude', async () => {
+        state.textContent = 'Opening Claude sign-in…';
+        const r = await api.invoke('claude:signin');
+        if (!r.ok) { state.textContent = r.detail ?? 'Couldn’t start sign-in.'; return; }
+        state.textContent = 'Sign in in your browser, then paste the code it shows you here.';
+        const code = h('input', { type: 'text', placeholder: 'Paste code', autocomplete: 'off', spellcheck: false, 'aria-label': 'Claude sign-in code' }) as HTMLInputElement;
+        const submit = btn('Connect', async () => {
+          if (!code.value.trim()) { code.focus(); return; }
+          state.textContent = 'Connecting…';
+          const s = await api.invoke('claude:code', code.value.trim());
+          if (s.loggedIn) { toast('Signed in to Claude'); go('model'); }
+          else { state.textContent = s.detail === 'Not signed in.' ? 'That code didn’t work. Click Sign in to try again.' : s.detail; await render(); }
+        }, 'primary');
+        code.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit.click(); });
+        actions.replaceChildren(code, submit);
+        code.focus();
+      }, 'primary'),
+    );
+  };
+  void render();
+  return h('div', {},
+    field('Account', h('span', { class: 'row' }, state, actions)),
+    field('Model', select('ai.claude.model', 'Claude model', [['sonnet', 'Sonnet'], ['opus', 'Opus'], ['haiku', 'Haiku']])));
+}
+
 async function renderModel() {
   secretStatus = await api.invoke('secrets:status');
   conn = await api.invoke('connection:get');
@@ -313,12 +348,13 @@ async function renderModel() {
       btn('Test', async () => { result.textContent = 'Testing…'; const r = await api.invoke('provider:test'); result.textContent = `${r.ok ? 'OK' : 'Failed'}: ${r.detail}${r.latencyMs !== undefined ? ` · ${r.latencyMs} ms` : ''}`; const list = await api.invoke('provider:models'); datalist.replaceChildren(...list.map((m) => h('option', { value: m }))); })),
     result, datalist),
     group('Provider',
-      field('Provider', select('ai.provider', 'Provider', [['gemini', 'Google Gemini'], ['ollama', 'Ollama'], ['openai', 'OpenAI-compatible'], ['anthropic', 'Anthropic'], ['offline', 'None (offline commands)']], () => go('model'))),
+      field('Provider', select('ai.provider', 'Provider', [['claude', 'Claude (your account)'], ['gemini', 'Google Gemini'], ['ollama', 'Ollama'], ['openai', 'OpenAI-compatible'], ['anthropic', 'Anthropic'], ['offline', 'None (offline commands)']], () => go('model'))),
       prov === 'gemini' ? h('div', {},
         field('Model', text('ai.gemini.model', 'Model', 'gemini-3.5-flash-lite', 'models')),
         field('Fallback', text('ai.gemini.fallbackModel', 'Fallback model', 'none', 'models')),
         field('Thinking', select('ai.gemini.thinkingLevel', 'Thinking', [['minimal', 'Minimal'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']])),
         keyField('gemini', 'API key')) : null,
+      prov === 'claude' ? claudeAccountFields() : null,
       prov === 'ollama' ? h('div', {}, field('Server', text('ai.ollama.baseUrl', 'Server URL')), field('Model', text('ai.ollama.model', 'Model', 'llama3.2', 'models'))) : null,
       prov === 'openai' ? h('div', {}, field('Base URL', text('ai.openai.baseUrl', 'Base URL')), field('Model', text('ai.openai.model', 'Model', 'gpt-4o-mini', 'models')), keyField('openai', 'API key')) : null,
       prov === 'anthropic' ? h('div', {}, field('Base URL', text('ai.anthropic.baseUrl', 'Base URL')), field('Model', text('ai.anthropic.model', 'Model', 'claude-haiku-5-5', 'models')), keyField('anthropic', 'API key')) : null,
@@ -534,6 +570,7 @@ function renderWelcome() {
     h('b', {}, title), h('span', { class: 'sub' }, sub), h('span', { class: 'go' }, '→'));
   view.append(h('div', { class: 'scroll' }, h('div', { class: 'welcome' },
     h('h2', {}, 'Choose her brain'),
+    choice('Claude', 'Sign in with your Claude account', 'claude'),
     choice('Google Gemini', 'Needs an API key', 'gemini'),
     choice('Ollama', 'Local, on this PC', 'ollama'),
     choice('Other API', 'OpenAI-compatible or Anthropic', 'openai'),
