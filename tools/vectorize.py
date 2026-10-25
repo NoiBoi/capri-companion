@@ -95,9 +95,49 @@ def find_face(cls, names):
     return {'eyes': [[float(e[0]), float(e[1])] for e in eyes], 'iris': r, 'eyeDist': dist, 'mouth': mouth}
 
 
-def vectorize(path, eps=1.3):
+def restore_body(bgr, alpha, boxes):
+    """The cut-out masks dropped parts of her drawn dark-on-dark (a raised black leg against a dark
+    curtain, a black leg along a dark bed) or thin (green streaks). The frame's colours are still in the
+    file, so inside each box take back the pixels in her exact colours — near-black ink (almost no green
+    channel, unlike any room shadow), mask green, violet edge, crimson — but only regions that join her
+    existing body, or float within a stroke's width of it (her streaks and stripes are separate shapes
+    beside the limb). Each box is (x0, y0, x1, y1[, 'classes']), classes defaulting to all four."""
+    b, g, r = [bgr[..., i].astype(np.int16) for i in range(3)]
+    colours = {
+        'ink': (g < 16) & (r < 50) & (b < 80),
+        'green': (g > 190) & (r < 110) & (b < 170),
+        'violet': (b > 140) & (r > 100) & (g < 100),
+        'crimson': (r > 190) & (g < 70) & (b < 140),
+    }
+    cand = np.zeros(alpha.shape, bool)
+    for spec in boxes:
+        x0, y0, x1, y1 = spec[:4]
+        want = spec[4].split() if len(spec) > 4 else list(colours)
+        box = np.zeros(alpha.shape, bool); box[y0:y1, x0:x1] = True
+        for c in want: cand |= box & colours[c]
+    cand = cv2.morphologyEx(cand.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+    cand = cv2.morphologyEx(cand, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)) > 0  # no speckle
+    body = alpha > 110
+    n, lab, st, _ = cv2.connectedComponentsWithStats(cand.astype(np.uint8), connectivity=8)
+    reach = np.ones((31, 31), np.uint8)
+    added = np.zeros(n, bool)
+    for _ in range(4):  # grow outward: a stripe beside a restored leg joins on the next pass
+        near = cv2.dilate(body.astype(np.uint8), reach) > 0
+        hit = np.unique(lab[near & cand])
+        new = [i for i in hit if i and not added[i] and st[i, cv2.CC_STAT_AREA] >= 40]
+        if not new: break
+        added[new] = True
+        body = body | added[lab]
+    out = alpha.copy(); out[added[lab]] = 255
+    return out
+
+
+def vectorize(path, eps=1.3, restore=None):
     im = cv2.imdecode(np.fromfile(longpath(path), np.uint8), cv2.IMREAD_UNCHANGED)  # works on deep Windows paths
     bgr, alpha = im[..., :3], im[..., 3]
+    ys0, xs0 = np.where(alpha > 110)
+    origin0 = [int(xs0.min()), int(ys0.min())]  # crop origin before any restore (pose tables measure in it)
+    if restore: alpha = restore_body(bgr, alpha, restore)
     ys, xs = np.where(alpha > 110)
     x0, y0, x1, y1 = xs.min(), ys.min(), xs.max() + 1, ys.max() + 1
     bgr, alpha = bgr[y0:y1, x0:x1], alpha[y0:y1, x0:x1]
@@ -118,7 +158,7 @@ def vectorize(path, eps=1.3):
             polys = [p for p in polys if solid(p)]
         if polys: layers[name] = polys
     face = find_face(cls, names)
-    return {'size': [int(x1 - x0), int(y1 - y0)], 'origin': [int(x0), int(y0)], 'layers': layers, 'face': face}
+    return {'size': [int(x1 - x0), int(y1 - y0)], 'origin': [int(x0), int(y0)], 'origin0': origin0, 'layers': layers, 'face': face}
 
 
 def render(model, scale=1.0):

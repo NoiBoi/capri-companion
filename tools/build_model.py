@@ -9,6 +9,7 @@ her eyes, the same unit the live face is drawn in. Every pose therefore has the 
 coordinates are relative to the pose's anchor (the seat / contact point, or the centre when floating).
 """
 import json, math, os, sys
+import cv2
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from vectorize import vectorize, ORDER, longpath
@@ -21,11 +22,11 @@ EYE_UNITS = 26.0
 # anchor (crop px), kind, which crop sides were cut by the original shot, cleanup rules.
 POSES = {
     'sit': dict(src='sit_wiki01.png', eyes=[(489, 426), (541, 425)], anchor=(538, 786), kind='sit',
-                cut={'top': 'hair', 'bottom': 'leg'}, note='Official still (wiki Capri_01): seated on the edge of a bed, one leg along it'),
+                cut={'top': 'hair', 'bottom': 'leg'}, restore=[(560, 680, 960, 810, 'ink violet green'), (400, 430, 760, 990, 'green violet')], note='Official still (wiki Capri_01): seated on the edge of a bed, one leg along it'),
     'lie': dict(src='lie_5wG_0030.png', eyes=[(1117.3, 436.7), (1150.0, 484.0)], anchor=(760, 548), kind='lie',
-                cut={'right': 'hair'}, note='Netflix clip 5wGdjjwoDbY 0:29-0:31: lying on her side on the bed'),
+                cut={'right': 'hair'}, restore=[(460, 170, 990, 700)], note='Netflix clip 5wGdjjwoDbY 0:29-0:31: lying on her side on the bed'),
     'crouch': dict(src='crouch_Nli_0023.png', eyes=[(227.5, 297.5), (256.0, 291.0)], anchor=(232, 330), kind='float',
-                   cut={}, drop_ink_above=0.33, note='Netflix footage (Nli_SZ-DBco 0:23-0:25): knees drawn up, sitting on nothing in mid-air'),
+                   cut={}, drop_ink_above=0.33, drop_shade_above=0.33, note='Netflix footage (Nli_SZ-DBco 0:23-0:25): knees drawn up, sitting on nothing in mid-air'),
 }
 KEEP = ['violet', 'hair', 'crimson', 'shade', 'ink', 'green']  # eyes, irises and teeth come from the live face
 
@@ -92,12 +93,17 @@ def build():
     model = {'unit': 'eye spacing = 26', 'poses': {}}
     rng = np.random.default_rng(7)
     for name, P in POSES.items():
-        m = vectorize(os.path.join(REF, P['src']))
+        m = vectorize(os.path.join(REF, P['src']), restore=P.get('restore'))
+        # eyes and anchor are measured in the original crop; a restore can widen it
+        sx, sy = m['origin0'][0] - m['origin'][0], m['origin0'][1] - m['origin'][1]
+        P = dict(P, eyes=[(x + sx, y + sy) for x, y in P['eyes']], anchor=(P['anchor'][0] + sx, P['anchor'][1] + sy))
         w, h = m['size']
         ox, oy = m['origin']
         layers = {k: v for k, v in m['layers'].items() if k in KEEP}
         if 'drop_ink_above' in P:
             layers['ink'] = [p for p in layers.get('ink', []) if centroid(p)[1] > P['drop_ink_above'] * h]
+        if 'drop_shade_above' in P:  # the cut-out's soft shadow halo above her hair traces as a dark band
+            layers['shade'] = [p for p in layers.get('shade', []) if centroid(p)[1] > P['drop_shade_above'] * h]
         # which crop sides really were cut by the original shot: only where the cut-out touches the frame edge
         src_w, src_h = 1920, 1080
         for side, kind in P['cut'].items():
@@ -112,6 +118,29 @@ def build():
         fx, fy = mx - math.sin(ang) * 5 / k, my + math.cos(ang) * 5 / k
         ax, ay = P['anchor']
         tx = lambda x, y: [round((x - ax) * k, 2), round((y - ay) * k, 2)]
+        # the live face replaces the traced one: drop the traced mask pieces under it, or they poke out
+        # around it as mismatched green shards (worst on the tilted lying pose)
+        face_r = 34 / k  # model units → crop px; the live head plate is ~30 units across from its centre
+        layers['green'] = [p for p in layers.get('green', []) if math.dist(centroid(p), (fx, fy)) > face_r]
+        # crimson patches enclosed by the hair cloud are hair: as crimson they stay flat discs with no glitter
+        hair_rings = [np.array(p, np.float32).reshape(-1, 1, 2) for p in layers.get('hair', [])]
+        keep, to_hair = [], []
+        for p in layers.get('crimson', []):
+            c = tuple(float(v) for v in centroid(p))
+            # class masks are disjoint, so crimson inside the hair outline sits in one of its holes; added to
+            # the hair layer it fills that hole under the renderer's even-odd fill
+            inside = any(cv2.pointPolygonTest(r, c, False) >= 0 for r in hair_rings)
+            # in her head's own frame (rotated with the face, so the lying pose works too): crimson at or
+            # above head height and outside the neck/torso column under the face is the hair cloud, flat
+            # only because shadow weakened its glitter; the torso column and the legs stay body
+            dx, dy = c[0] - fx, c[1] - fy
+            ux = dx * math.cos(-ang) - dy * math.sin(-ang); uy = dx * math.sin(-ang) + dy * math.cos(-ang)
+            torso = abs(ux) < 30 / k and uy > 12 / k
+            cloud = uy < 75 / k and not torso
+            near_face = math.dist(c, (fx, fy)) < face_r * 1.3
+            (to_hair if (inside or cloud) and not near_face and not torso else keep).append(p)
+        layers['crimson'] = keep
+        layers['hair'] = layers.get('hair', []) + to_hair
         out_layers = {}
         allpts = []
         for cls in ORDER:

@@ -98,30 +98,95 @@ function eye(ctx: CanvasRenderingContext2D, head: Mat, c: Pt, side: -1 | 1, xSca
   ctx.restore();
 }
 
-/** Thin white zigzag when closed; a dark slot with white teeth when open (only while audio plays). */
+type MouthIn = Pick<Params, 'mouthOpen' | 'mouthSmile' | 'happyEyes' | 'squint' | 'eyeWide'>;
+/** How open her mouth reads: talking, plus the open smile of a happy face or a beaming one. */
+function openness(p: MouthIn) {
+  const smile = clamp(p.mouthSmile, -1, 1);
+  return Math.max(clamp(p.mouthOpen, 0, 1), p.happyEyes > 0.5 ? 0.55 : 0, smile >= 0.95 && p.squint < 0.6 ? 0.3 : 0);
+}
+/**
+ * Which mouth the expression calls for (exported for tests). From the show's clips: at rest a thin
+ * wavy zigzag; open — happy, beaming, talking, surprised — a solid white fang shape, wide across the
+ * top and pointed below; only the maniac/menace grin (B 3:03, 5:33: eyes wide or narrowed, full smile)
+ * is the slot of jagged teeth.
+ */
+export function mouthShape(p: MouthIn): 'neutral' | 'smirk' | 'frown' | 'fang' | 'teeth' {
+  const o = openness(p), smile = clamp(p.mouthSmile, -1, 1);
+  if (o > 0.12) return p.mouthOpen > 0.12 && smile >= 0.85 && (p.squint >= 0.6 || p.eyeWide >= 0.7) ? 'teeth' : 'fang';
+  if (smile >= 0.6) return 'smirk';
+  if (smile <= -0.3) return 'frown';
+  return 'neutral';
+}
+
 function mouth(ctx: CanvasRenderingContext2D, head: Mat, c: Pt, p: Params, S: number) {
+  if (mouthShape(p) === 'fang') fang(ctx, head, c, p, openness(p));
+  else zigOrTeeth(ctx, head, c, p, S);
+}
+
+/**
+ * The open mouth the show draws most: one solid white shape, a wide top edge with a small notch in the
+ * middle that tips up at the corners as she smiles, narrowing to a point below. Grows with how open
+ * she is (lip-sync drives it while she talks).
+ */
+function fang(ctx: CanvasRenderingContext2D, head: Mat, c: Pt, p: Params, o: number) {
+  const smile = clamp(p.mouthSmile, -1, 1);
+  const w = 4.5 + o * 5.5 + Math.max(0, smile) * 2.5;
+  const lift = Math.max(0, smile) * 1.6;
+  const y0 = -1.2;
+  const h = 3 + o * 9.5;
+  const tipX = -w * 0.12 * smile; // her grin pulls a little to one side
+  const shape: Pt[] = [
+    [-w, y0 - lift], [-w * 0.55, y0 - lift * 0.25], [-w * 0.16, y0 + 0.35], [0, y0 + 0.9 + o * 0.6], [w * 0.16, y0 + 0.35], [w * 0.55, y0 - lift * 0.25], [w, y0 - lift],
+    [w * 0.45, y0 + h * 0.55], [tipX, y0 + h], [-w * 0.45, y0 + h * 0.55],
+  ];
+  ctx.fillStyle = C.white;
+  ctx.fill(toPath(head.translate(c[0], c[1]).map(shape)));
+}
+
+/**
+ * At rest a short thin white zigzag; smug, the zigzag with one corner hitched up; cross, corners down;
+ * the maniac grin, a wide crescent opening from the corners into a slot of sharp teeth top and bottom.
+ */
+function zigOrTeeth(ctx: CanvasRenderingContext2D, head: Mat, c: Pt, p: Params, S: number) {
   const open = clamp(p.mouthOpen, 0, 1), smile = clamp(p.mouthSmile, -1, 1);
-  const w = 9 + open * 1.5 + Math.max(0, smile) * 1.5, n = 4;
-  const zig = (y0: number, amp: number, sign: number): Pt[] => Array.from({ length: n * 2 + 1 }, (_, i) => {
-    const t = i / (n * 2), x = -w + 2 * w * t;
-    return [x, y0 + (-smile * 3.2 * (1 - (2 * t - 1) ** 2) + smile * 1.2) * sign + (i % 2 ? amp : -amp) * 0.5] as Pt;
-  });
+  const grin = clamp((smile - 0.4) / 0.6, 0, 1); // how far the smile has spread into her grin
+  const frown = clamp(-smile, 0, 1);
+  const smirk = open < 0.12 ? clamp((smile - 0.45) / 0.4, 0, 1) : 0; // closed smile: one corner up
+  const w = 7.5 + grin * 7.5 + open * 1.5 - frown * 2;
+  const n = 3 + Math.round(grin * 3 + open * 1.5); // zig count grows with the grin: more teeth
+  const lift = smile * 3.4; // corners up (smile) or down (frown)
+  const depthMax = open * (3.2 + grin * 3.6) + (1 - grin) * open * 2.2; // open slot height at the centre
+  const zigAmp = 0.85 + open * 0.4 - frown * 0.25;
+  const pts = n * 2 + 1;
+  const upper: Pt[] = [], lower: Pt[] = [];
+  for (let i = 0; i < pts; i++) {
+    const t = i / (pts - 1), u = 2 * t - 1, x = -w + 2 * w * t;
+    const base = -lift * u * u + lift * 0.35 - smirk * 2.6 * Math.max(0, u) ** 1.5; // smile curve, smirk hitch on her left
+    const zig = (i % 2 ? zigAmp : -zigAmp) * (1 - 0.5 * u * u);
+    // a grin opens as a crescent (nothing at the corners); a plain open mouth is a rounder slot
+    const profile = grin > 0.3 ? Math.pow(Math.max(0, 1 - u * u), 0.75) : Math.pow(Math.max(0, 1 - u * u), 0.45);
+    const d = depthMax * profile;
+    upper.push([x, base + zig - d * 0.35]);
+    lower.push([x, base - zig * 0.6 + d * 0.65 + (grin > 0.3 ? lift * 0.25 * (1 - u * u) : 0)]);
+  }
   const m = head.translate(c[0], c[1]);
-  const upper = m.map(zig(-open * 3.5, 1.7 + open * 0.8, 1));
-  const lower = m.map(zig(open * 4.5, 1.7 + open * 0.8, open > 0.05 ? -0.3 : 1));
+  const U = m.map(upper), Lo = m.map(lower);
   if (open > 0.05) {
-    const slot = toPath([...upper, ...[...lower].reverse()]);
+    const slot = toPath([...U, ...[...Lo].reverse()]);
     ctx.fillStyle = C.mouthInner; ctx.fill(slot);
     ctx.save(); ctx.clip(slot); ctx.fillStyle = C.white;
-    const depth = (2.2 + open * 2.6) * Math.hypot(m.c, m.d);
-    for (const [line, dir] of [[upper, 1], [lower, -1]] as const) {
+    // sharp teeth: one triangle per zig on each jaw, as long as the opening there allows
+    const ky = Math.hypot(m.c, m.d);
+    for (const [line, other, dir] of [[U, Lo, 1], [Lo, U, -1]] as const) {
       for (let i = 0; i + 2 < line.length; i += 2) {
-        const a = line[i], b = line[i + 2];
-        ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.lineTo((a[0] + b[0]) / 2, (a[1] + b[1]) / 2 + dir * depth); ctx.closePath(); ctx.fill();
+        const a = line[i], b = line[i + 2], mid = line[i + 1];
+        const gap = Math.abs(other[i + 1][1] - mid[1]);
+        const len = Math.min(gap * (grin > 0.3 ? 0.55 : 0.4), (1.6 + grin * 2.6) * ky);
+        ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.lineTo(mid[0], mid[1] + dir * len); ctx.closePath(); ctx.fill();
       }
     }
     ctx.restore();
   }
-  ctx.strokeStyle = C.white; ctx.lineWidth = 1.05 * S; ctx.lineJoin = 'miter';
-  for (const line of open > 0.05 ? [upper, lower] : [upper]) { ctx.beginPath(); ctx.moveTo(line[0][0], line[0][1]); for (const q of line.slice(1)) ctx.lineTo(q[0], q[1]); ctx.stroke(); }
+  ctx.strokeStyle = C.white; ctx.lineWidth = (1.05 + grin * 0.35) * S; ctx.lineJoin = 'miter';
+  for (const line of open > 0.05 ? [U, Lo] : [U]) { ctx.beginPath(); ctx.moveTo(line[0][0], line[0][1]); for (const q of line.slice(1)) ctx.lineTo(q[0], q[1]); ctx.stroke(); }
 }
