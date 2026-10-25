@@ -406,7 +406,9 @@ async function renderCharacter() {
       field('From', h('span', { class: 'row' }, timeIn('behavior.quietHours.start', 'Quiet hours start'), h('span', { class: 'sub' }, 'to'), timeIn('behavior.quietHours.end', 'Quiet hours end'))),
       sw('Idle remarks', 'behavior.idleRemarks'),
       S.behavior.idleRemarks ? sw('Say remarks out loud', 'behavior.proactiveVoice') : null,
-      S.behavior.idleRemarks ? field('Remark every (minutes)', num('behavior.remarkIntervalMinutes', 'Remark interval', 5, 480)) : null),
+      S.behavior.idleRemarks ? field('Remark every (minutes)', num('behavior.remarkIntervalMinutes', 'Remark interval', 5, 480)) : null,
+      sw('Explore on her own while I’m away', 'behavior.explore'),
+      S.behavior.explore ? field('After I’m idle for (minutes)', num('behavior.exploreAfterMinutes', 'Explore after', 2, 120)) : null),
   );
   view.append(viewHead('Character'), sc);
 }

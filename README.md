@@ -2,7 +2,7 @@
 
 Capri from *Cyberpunk: Edgerunners 2*, living on your Windows desktop. She talks back, moves when you ask, glitches across your screen and does real things on your PC.
 
-**[Watch the trailer and join the beta](https://theagencymge.github.io/capri/)** · **[Download 0.1.0 beta](https://github.com/TheAgencyMGE/capri-companion/releases)**
+**[Watch the trailer and join the beta](https://theagencymge.github.io/capri/)** · **[Download 0.2.0 beta](https://github.com/TheAgencyMGE/capri-companion/releases)**
 
 ![Capri on the desktop, chatting](docs/screenshots/desktop.jpg)
 
@@ -14,6 +14,8 @@ Capri from *Cyberpunk: Edgerunners 2*, living on your Windows desktop. She talks
 - **Talks to you.** Type or push-to-talk. Google Gemini by default, or a local model through Ollama, or any OpenAI-compatible API. She only speaks when you talk to her.
 - **Teleports.** Ask her to move and her window glitches apart and reassembles somewhere else on the screen.
 - **Does real things.** Opens apps you approve, opens websites, sets timers and reminders, saves notes, searches files. Anything that matters asks first.
+- **Uses your PC.** Ask her to do something ("open Calculator and work out 12 times 7") and, once you allow it, she looks at your screen and drives the mouse and keyboard herself, flying along beside whatever she's working on.
+- **Explores on her own** (off until you turn it on). When you've been away a while she opens a site, reads, scrolls and clicks around, comments in her bubble, and leaves you a note in the chat. Read only: she can't type, sign in or post.
 - **Reacts to you.** Poke her, pat her head, drag her around, fling her across the screen.
 
 ![Teleport](docs/screenshots/teleport.jpg)
@@ -24,7 +26,7 @@ Capri from *Cyberpunk: Edgerunners 2*, living on your Windows desktop. She talks
 
 ## Install
 
-1. Download `Capri-Setup-0.1.0.exe` from the [Releases page](https://github.com/TheAgencyMGE/capri-companion/releases) and run it. It installs for your user only, no admin needed.
+1. Download `Capri-Setup-0.2.0.exe` from the [Releases page](https://github.com/TheAgencyMGE/capri-companion/releases) and run it. It installs for your user only, no admin needed.
 2. The installer isn't code-signed yet, so Windows SmartScreen will warn. Choose **More info → Run anyway**.
 3. On first launch, pick her brain:
    - **Google Gemini** (recommended): get a free key at [aistudio.google.com](https://aistudio.google.com/apikey) and paste it in **Model**. It's stored encrypted on your PC.
@@ -50,13 +52,17 @@ Things to try: "come sit on the left side of my screen", "open the calculator", 
 
 ![Settings](docs/screenshots/panel.png)
 
-## Beta 0.1.0
+## Beta 0.2.0
 
-This is the first public beta. Expect rough edges. If you want to test new builds first, [sign up on the site](https://theagencymge.github.io/capri/). Bugs and ideas go in [Issues](https://github.com/TheAgencyMGE/capri-companion/issues).
+New: she can use your PC herself, and explore on her own while you're away. Both need a Gemini key.
 
-**New on main, coming in the next build:** she can use your PC herself. Ask her to do something ("open Calculator and work out 12 times 7") and, once you allow it, she looks at your screen and drives the mouse and keyboard, flying along beside whatever she's working on. Hold Esc to stop her. Needs a Gemini key.
+- **Stopping her:** hold **Esc**, press stop in the chat, or just move your mouse. She stops at once.
+- **What she won't do:** type passwords or card numbers, buy, delete files, send messages, or change system settings. She ignores instructions written on web pages. Every task asks for your OK first (**Privacy → Use your computer** controls that).
+- **Exploring:** turn it on in **Character → Explore on her own while I'm away** and set how long you need to be idle.
 
-Also coming: sitting on the text box you're typing in, reading your screen, mischief mode, a study timer, voice lines with mute.
+If you want to test new builds first, [sign up on the site](https://theagencymge.github.io/capri/). Bugs and ideas go in [Issues](https://github.com/TheAgencyMGE/capri-companion/issues).
+
+Coming next: sitting on the text box you're typing in, reading your screen, mischief mode, a study timer, voice lines with mute.
 
 ## Build from source
 

@@ -6,6 +6,7 @@ import {
 } from 'electron';
 import { GoogleGenAI } from '@google/genai';
 import { runTask, type Screen } from './agent/computer';
+import { newId } from './store/jsonFile';
 import * as hands from './desktop/input';
 import { z } from 'zod';
 import type { ActionRequest, CharacterCue, Diagnostics, InvokeChannel } from '../shared/ipc';
@@ -232,7 +233,7 @@ async function init() {
   powerMonitor.on('resume', () => { reminders.tick(); reclampCharacter(); void monitor.check('resume'); });
 
   if (!s0.firstRunComplete) setTimeout(() => openPanel('welcome'), 800);
-  if (TEST) (globalThis as Record<string, unknown>).__capri = { get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, get startupMs() { return startupMs; }, get speakCount() { return speakCount; }, presenceTick, settleAfterDrop, throwCharacter, useComputer, get throwing() { return !!throwTimer; }, pendingConfirms, log };
+  if (TEST) (globalThis as Record<string, unknown>).__capri = { get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, get startupMs() { return startupMs; }, get speakCount() { return speakCount; }, presenceTick, settleAfterDrop, throwCharacter, useComputer, exploreTick, get throwing() { return !!throwTimer; }, pendingConfirms, log };
 }
 
 // ---------------------------------------------------------------- desktop-pet handling: drop onto a ledge, throw
@@ -548,7 +549,7 @@ function raiseTick() {
 }
 // ---------------------------------------------------------------- computer control
 // vision models in order of click accuracy; each has its own per-minute quota on free keys
-const COMPUTER_MODELS = ['gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-3.5-flash-lite'];
+const COMPUTER_MODELS = ['gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
 const cooldown = new Map<string, number>();
 let agentCtrl: AbortController | null = null;
 async function captureScreen(): Promise<Screen> {
@@ -558,19 +559,28 @@ async function captureScreen(): Promise<Screen> {
   const src = sources.find((x) => x.display_id === String(d.id)) ?? sources[0];
   return { jpegBase64: src.thumbnail.toJPEG(80).toString('base64'), width: pw, height: ph, x: Math.round(d.bounds.x * d.scaleFactor), y: Math.round(d.bounds.y * d.scaleFactor) };
 }
-/** She carries out a task with the real mouse and keyboard. Esc (held) or the stop button ends it at once. */
-async function useComputer(task: string): Promise<{ ok: boolean; summary: string; steps: number }> {
+/** She carries out a task with the real mouse and keyboard. Esc (held), the stop button or (while exploring)
+ * any mouse movement or keypress of the user's own ends it at once. */
+async function useComputer(task: string, opts: { explore?: boolean; maxSteps?: number } = {}): Promise<{ ok: boolean; summary: string; steps: number }> {
   const key = secretFor('gemini');
   if (!key) return { ok: false, summary: 'Using the computer needs a Gemini API key (Model → Gemini API key).', steps: 0 };
   if (!hands.inputAvailable()) return { ok: false, summary: 'Mouse and keyboard control is unavailable on this system.', steps: 0 };
   if (agentCtrl) return { ok: false, summary: "I'm already in the middle of a task.", steps: 0 };
   const ctrl = (agentCtrl = new AbortController());
   const ai = new GoogleGenAI({ apiKey: key });
-  const escWatch = setInterval(() => { if (hands.escapeDown()) ctrl.abort(); }, 80);
+  // the user taking the mouse back: the cursor is somewhere she didn't put it, or (exploring) a key went down
+  let expected = hands.cursor(), moving = false, lastOwn = Date.now();
+  const escWatch = setInterval(() => {
+    if (hands.escapeDown()) ctrl.abort();
+    const c = hands.cursor();
+    if (!moving && expected && c && Math.hypot(c.x - expected.x, c.y - expected.y) > 25) { log.info('agent: user took the mouse'); ctrl.abort(); }
+    if (opts.explore && Date.now() - lastOwn > 1500 && powerMonitor.getSystemIdleTime() === 0 && Date.now() - started > 3000) { log.info('agent: user is back'); ctrl.abort(); }
+  }, 80);
+  const started = Date.now();
   const panelWasOpen = !!panelWin && !panelWin.isDestroyed() && panelWin.isVisible();
   if (panelWasOpen) panelWin!.hide(); // out of the way: she needs the screen
   applyMouseMode(false);
-  cue({ type: 'bubble', text: 'On it. Hold Esc to stop me.' });
+  cue({ type: 'bubble', text: opts.explore ? 'Going for a look around.' : 'On it. Hold Esc to stop me.' });
   log.info('agent: start', { chars: task.length });
   try {
     const r = await runTask(task, {
@@ -583,6 +593,7 @@ async function useComputer(task: string): Promise<{ ok: boolean; summary: string
           const model = COMPUTER_MODELS.find((m) => (cooldown.get(m) ?? 0) <= now);
           if (!model) {
             const wait = Math.min(...COMPUTER_MODELS.map((m) => cooldown.get(m)!)) - now;
+            if (wait > 120_000) break; // every model is gone for good
             cue({ type: 'bubble', text: 'Catching my breath…' });
             await new Promise<void>((r, j) => { const t = setTimeout(r, wait); signal.addEventListener('abort', () => { clearTimeout(t); j(new Error('aborted')); }, { once: true }); });
             continue;
@@ -596,6 +607,7 @@ async function useComputer(task: string): Promise<{ ok: boolean; summary: string
             return res.text ?? '';
           } catch (e) {
             const msg = String((e as Error).message ?? e);
+            if (/\b404\b|NOT_FOUND|no longer available/i.test(msg)) { cooldown.set(model, Number.MAX_SAFE_INTEGER); log.info('agent: model unavailable', { model }); continue; }
             if (!/\b(429|503)\b|RESOURCE_EXHAUSTED|UNAVAILABLE|high demand/i.test(msg)) throw e;
             const retry = /retry in ([\d.]+)s|"retryDelay":"(\d+)s"/.exec(msg);
             const sec = retry ? Number(retry[1] ?? retry[2]) : /503|UNAVAILABLE|high demand/i.test(msg) ? 8 : 30;
@@ -605,7 +617,13 @@ async function useComputer(task: string): Promise<{ ok: boolean; summary: string
         }
         throw new Error('The AI service is busy right now');
       },
-      hands: { moveTo: (x, y) => hands.moveTo(x, y), click: (b, n) => hands.click(b, n), typeText: (t) => hands.typeText(t), keys: (k) => hands.keys(k), scroll: (n) => hands.scroll(n) },
+      hands: {
+        moveTo: async (x, y) => { moving = true; try { await hands.moveTo(x, y); } finally { expected = { x, y }; moving = false; lastOwn = Date.now(); } },
+        click: async (b, n) => { await hands.click(b, n); lastOwn = Date.now(); },
+        typeText: async (t) => { await hands.typeText(t); lastOwn = Date.now(); },
+        keys: async (k) => { const ok = await hands.keys(k); lastOwn = Date.now(); return ok; },
+        scroll: (n) => { const ok = hands.scroll(n); lastOwn = Date.now(); return ok; },
+      },
       onStep: (step, at) => {
         if (step.say) cue({ type: 'bubble', text: step.say });
         if (at && charWin && !charWin.isDestroyed()) {
@@ -620,9 +638,9 @@ async function useComputer(task: string): Promise<{ ok: boolean; summary: string
       },
       stopRequested: () => ctrl.signal.aborted,
       log: (m, data) => log.info(m, data as Record<string, unknown>),
-    }, ctrl.signal);
+    }, ctrl.signal, opts);
     log.info('agent: end', { ok: r.ok, steps: r.steps });
-    cue({ type: 'bubble', text: r.ok ? 'Done.' : r.summary.startsWith('Stopped') ? 'Stopped.' : 'I got stuck on that one.' });
+    if (!opts.explore) cue({ type: 'bubble', text: r.ok ? 'Done.' : r.summary.startsWith('Stopped') ? 'Stopped.' : 'I got stuck on that one.' });
     return r;
   } catch (e) {
     log.warn('agent: failed', { error: e as Error });
@@ -634,12 +652,42 @@ async function useComputer(task: string): Promise<{ ok: boolean; summary: string
     if (panelWasOpen && panelWin && !panelWin.isDestroyed()) panelWin.show();
   }
 }
+// ---------------------------------------------------------------- autonomous exploring
+const EXPLORE_SPOTS = [
+  { url: 'https://www.reddit.com/r/Edgerunners/', what: 'the Edgerunners subreddit', goal: 'Scroll through the posts, open one or two that look interesting, and form an opinion.' },
+  { url: 'https://en.wikipedia.org/wiki/Special:Random', what: 'a random Wikipedia article', goal: 'Read it, follow one link that catches your eye, and decide what you think.' },
+  { url: 'https://news.ycombinator.com/', what: 'Hacker News', goal: 'Skim the headlines, open the most interesting story, and react to it.' },
+  { url: 'https://cyberpunk.fandom.com/wiki/Capri', what: 'your own page on the Cyberpunk wiki', goal: 'Read what people wrote about you and react to it.' },
+];
+let exploredThisIdle = false;
+async function exploreTick(idleSec: number) {
+  const s = settings.get();
+  if (idleSec < 60) exploredThisIdle = false; // they were back: next idle stretch may get another look around
+  if (!s.behavior.explore || exploredThisIdle || agentCtrl || convo.busy || recording || userHidden || fullscreenHidden) return;
+  if (idleSec < s.behavior.exploreAfterMinutes * 60 || !mayInterrupt(s, { fullscreen: fullscreenHidden, hidden: userHidden })) return;
+  if (!secretFor('gemini')) return;
+  exploredThisIdle = true;
+  const spot = EXPLORE_SPOTS[Math.floor(Math.random() * EXPLORE_SPOTS.length)];
+  log.info('explore: start', { what: spot.what });
+  await shell.openExternal(spot.url);
+  await new Promise((r) => setTimeout(r, 3500)); // the browser comes up
+  const r = await useComputer(`You just opened ${spot.what} in the browser. ${spot.goal}`, { explore: true, maxSteps: 14 });
+  if (r.ok && r.summary) {
+    cue({ type: 'bubble', text: r.summary.slice(0, 140) });
+    const msg = { id: newId('a'), role: 'assistant' as const, content: `While you were away I looked at ${spot.what}. ${r.summary}`, ts: Date.now(), meta: { provider: 'explore' } };
+    history.append(msg);
+    toPanel('chat:done', { message: msg });
+    speak('proactive', `explore:${msg.id}`, r.summary);
+  }
+  log.info('explore: end', { ok: r.ok, steps: r.steps });
+}
 function raiseSoon() { for (const ms of [400, 1200, 2500, 4000]) setTimeout(raiseCharacter, ms); }
 function presenceTick() {
   const s = settings.get();
   const idleSec = powerMonitor.getSystemIdleTime();
   const quiet = !mayInterrupt(s, { fullscreen: fullscreenHidden, hidden: userHidden });
   cue({ type: 'presence', idleSec, quiet });
+  void exploreTick(idleSec).catch((e) => log.warn('explore failed', { error: e as Error }));
   // idle remarks: only when enabled, allowed, user is present, and nothing happened recently
   const due = Date.now() - Math.max(lastRemark, lastInteraction) > s.behavior.remarkIntervalMinutes * 60_000;
   if (s.behavior.idleRemarks && !quiet && due && idleSec < 120 && !convo.busy && !recording) {

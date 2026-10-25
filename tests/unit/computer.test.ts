@@ -68,3 +68,26 @@ describe('computer control', () => {
     expect(r.summary).toMatch(/next step/);
   }, 20_000);
 });
+
+describe('exploring on her own (read only)', () => {
+  it('blocks typing, right-clicks and non-reading keys; allows clicks, scrolling and page keys', async () => {
+    const { deps, did } = fake([
+      '{"action":"type","text":"my password"}',
+      '{"action":"key","keys":"ctrl+a"}',
+      '{"action":"right_click","point":[500,500]}',
+      '{"action":"key","keys":"pagedown"}',
+      '{"action":"scroll","amount":3}',
+      '{"action":"click","point":[500,500]}',
+      '{"action":"done","result":"Nice wiki page."}',
+    ]);
+    const r = await runTask('look around', deps, new AbortController().signal, { explore: true });
+    expect(r).toMatchObject({ ok: true, summary: 'Nice wiki page.' });
+    expect(did).toEqual(['keys pagedown', 'scroll -3', 'move 960,540', 'click left x1']);
+  }, 30_000);
+
+  it('caps how long she explores', async () => {
+    const { deps } = fake(['{"action":"wait"}']);
+    const r = await runTask('look around', deps, new AbortController().signal, { explore: true, maxSteps: 2 });
+    expect(r).toMatchObject({ ok: false, steps: 2 });
+  }, 30_000);
+});

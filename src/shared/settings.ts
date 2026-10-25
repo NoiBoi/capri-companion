@@ -62,6 +62,8 @@ export const SettingsSchema = z.object({
     idlePeek: z.boolean(), // when you're away she peeks in from a screen edge
     mischief: z.boolean(), // harmless pranks now and then (screen glitch, borrowing the cursor, notes)
     mischiefIntervalMinutes: z.number().min(5).max(240),
+    explore: z.boolean(), // while you're away she browses on her own (read only) and tells you what she found
+    exploreAfterMinutes: z.number().min(2).max(120),
   }),
   ai: z.object({
     provider: z.enum(['gemini', 'offline', 'ollama', 'openai', 'anthropic']),
@@ -155,6 +157,8 @@ export const DEFAULT_SETTINGS: Settings = {
     idlePeek: true,
     mischief: false,
     mischiefIntervalMinutes: 30,
+    explore: false,
+    exploreAfterMinutes: 5,
   },
   ai: {
     provider: 'gemini',
