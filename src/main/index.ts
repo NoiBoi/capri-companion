@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { ActionRequest, CharacterCue, Diagnostics, InvokeChannel } from '../shared/ipc';
 import type { Settings } from '../shared/settings';
 import { IDLE_REMARKS, mayInterrupt } from '../shared/behaviorRules';
+import { speechAllowed, type SpeechReason } from '../shared/speechPolicy';
 import { Logger } from './log';
 import { SettingsStore } from './store/settingsStore';
 import { SecretStore, type Cipher } from './store/secrets';
@@ -171,7 +172,8 @@ async function init() {
     history, memories: () => (settings.get().memory.enabled ? memory.approved() : []),
     actionCtx,
     emit: (ch, p) => toPanel(ch, p),
-    cue,
+    // replies are the only thing the conversation may voice
+    cue: (c) => { if (c.type === 'speak') speak('reply', c.utteranceId, c.text); else cue(c); },
     confirm: requestConfirmation,
     log,
     onProviderResult: (ok, _name, err) => { if (!ok) monitor.reportFailure(err); },
@@ -228,7 +230,7 @@ async function init() {
   powerMonitor.on('resume', () => { reminders.tick(); reclampCharacter(); void monitor.check('resume'); });
 
   if (!s0.firstRunComplete) setTimeout(() => openPanel('welcome'), 800);
-  if (TEST) (globalThis as Record<string, unknown>).__capri = { get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, get startupMs() { return startupMs; }, get zapCount() { return zapCount; }, settleAfterDrop, throwCharacter, get throwing() { return !!throwTimer; }, pendingConfirms, log };
+  if (TEST) (globalThis as Record<string, unknown>).__capri = { get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, get startupMs() { return startupMs; }, get zapCount() { return zapCount; }, get speakCount() { return speakCount; }, presenceTick, settleAfterDrop, throwCharacter, get throwing() { return !!throwTimer; }, pendingConfirms, log };
 }
 
 // ---------------------------------------------------------------- desktop-pet handling: drop onto a ledge, throw
@@ -366,6 +368,15 @@ function toPanel(channel: string, payload: unknown) {
 }
 function cue(c: CharacterCue) {
   if (charWin && !charWin.isDestroyed()) charWin.webContents.send('cue', c);
+}
+/** The single gate for speaking out loud: every utterance names its reason and is logged. */
+let speakCount = 0;
+function speak(reason: SpeechReason, utteranceId: string, text: string): boolean {
+  if (!speechAllowed(reason, settings.get(), { fullscreen: fullscreenHidden, hidden: userHidden })) return false;
+  speakCount++;
+  log.info('speak', { reason, utteranceId });
+  cue({ type: 'speak', utteranceId, text });
+  return true;
 }
 
 function setCharacterVisible(visible: boolean) {
@@ -522,8 +533,8 @@ function presenceTick() {
   if (s.behavior.idleRemarks && !quiet && due && idleSec < 120 && !convo.busy && !recording) {
     lastRemark = Date.now();
     const text = IDLE_REMARKS[Math.floor(Math.random() * IDLE_REMARKS.length)];
-    cue({ type: 'remark', text });
-    if (s.voice.ttsEnabled) cue({ type: 'speak', utteranceId: `remark:${Date.now()}`, text });
+    cue({ type: 'remark', text }); // a silent bubble; spoken only if proactive voice is enabled too
+    speak('proactive', `remark:${Date.now()}`, text);
   }
 }
 function onReminder(r: { text: string; kind: string }) {
@@ -535,9 +546,7 @@ function onReminder(r: { text: string; kind: string }) {
     new Notification({ title: r.kind === 'timer' ? 'Capri · timer done' : 'Capri · reminder', body: r.text, icon: fs.existsSync(icon) ? icon : undefined, silent: !s.notifications.sound || s.behavior.doNotDisturb }).show();
   }
   cue({ type: 'react', reaction: 'wave' });
-  if (s.voice.ttsEnabled && !s.behavior.doNotDisturb && !fullscreenHidden) {
-    cue({ type: 'speak', utteranceId: `rem:${Date.now()}`, text: r.kind === 'timer' ? `Timer's up, choom. ${r.text}.` : `Hey — reminder: ${r.text}.` });
-  }
+  speak('reminder', `rem:${Date.now()}`, r.kind === 'timer' ? `Timer's up, choom. ${r.text}.` : `Hey — reminder: ${r.text}.`);
 }
 
 // ---------------------------------------------------------------- tray & shortcuts

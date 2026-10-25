@@ -21,7 +21,9 @@ export class Speaker {
   private audioCtx: AudioContext | null = null;
   constructor(private settings: () => Settings, private report: Report, private fetchAudio: (text: string) => Promise<Uint8Array>) {}
 
-  get speaking() { return !!this.playing; }
+  /** True only while audio is actually playing (between the engine's start and end events). */
+  private audible = false;
+  get speaking() { return this.audible; }
 
   enqueue(id: string, text: string) {
     if (this.queue.length > 50) this.queue.shift(); // bounded
@@ -60,8 +62,8 @@ export class Speaker {
       if (voice) u.voice = voice;
       u.rate = v.rate; u.pitch = v.pitch; u.volume = v.volume;
       let done = false;
-      const finish = (state: 'end' | 'error') => { if (done) return; done = true; this.lips.stop(); this.report(item.id, state); state === 'end' ? resolve() : reject(new Error('tts error')); };
-      u.onstart = () => { this.lips.start(); this.report(item.id, 'start'); };
+      const finish = (state: 'end' | 'error') => { if (done) return; done = true; this.audible = false; this.lips.stop(); this.report(item.id, state); state === 'end' ? resolve() : reject(new Error('tts error')); };
+      u.onstart = () => { this.audible = true; this.lips.start(); this.report(item.id, 'start'); };
       u.onboundary = (e) => { if (e.name === 'word') this.lips.boundary(e.charLength || 4); };
       u.onend = () => finish('end');
       u.onerror = (e) => (e.error === 'interrupted' || e.error === 'canceled' ? finish('end') : finish('error'));
@@ -86,10 +88,11 @@ export class Speaker {
     src.connect(gain).connect(an).connect(this.audioCtx.destination);
     await new Promise<void>((resolve) => {
       let done = false;
-      const finish = () => { if (done) return; done = true; this.lips.stop(); this.report(item.id, 'end'); resolve(); };
+      const finish = () => { if (done) return; done = true; this.audible = false; this.lips.stop(); this.report(item.id, 'end'); resolve(); };
       src.onended = finish;
       this.playing = { id: item.id, cancel: () => { try { src.stop(); } catch { /* */ } finish(); } };
       this.lips.start(() => { an.getFloatTimeDomainData(data); let s = 0; for (const x of data) s += x * x; return Math.sqrt(s / data.length); });
+      this.audible = true;
       this.report(item.id, 'start');
       src.start();
     });

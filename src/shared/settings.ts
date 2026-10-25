@@ -51,6 +51,7 @@ export const SettingsSchema = z.object({
   behavior: z.object({
     idleRemarks: z.boolean(),
     remarkIntervalMinutes: z.number().min(5).max(480),
+    proactiveVoice: z.boolean(), // idle remarks are silent bubbles unless this is on as well
     quietHours: z.object({ enabled: z.boolean(), start: hhmm, end: hhmm }),
     doNotDisturb: z.boolean(),
     sleepAfterMinutes: z.number().min(1).max(240),
@@ -135,6 +136,7 @@ export const DEFAULT_SETTINGS: Settings = {
   behavior: {
     idleRemarks: false,
     remarkIntervalMinutes: 45,
+    proactiveVoice: false,
     quietHours: { enabled: true, start: '22:00', end: '08:00' },
     doNotDisturb: false,
     sleepAfterMinutes: 10,

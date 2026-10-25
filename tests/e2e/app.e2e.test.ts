@@ -482,6 +482,28 @@ describe('teleportation', () => {
     expect(['sit', 'lounge']).toContain(sit);
   });
 
+  it('never speaks without a trigger: idling, reconnecting, teleporting, pokes and remarks stay silent', async () => {
+    const model = await mockModel(() => 'Right here, choom.');
+    const { app, char } = await launch(openaiProfile(model.url, { voice: { ttsEnabled: true, volume: 0 }, behavior: { idleRemarks: true, remarkIntervalMinutes: 5, quietHours: { enabled: false, start: '22:00', end: '08:00' } } }));
+    type H = { __capri: { speakCount: number; presenceTick(): void; monitor: { check(r: string): Promise<unknown> }; teleporter: { go(t: string, r: string): Promise<unknown> } } };
+    const count = () => app.evaluate(() => (globalThis as unknown as H).__capri.speakCount);
+    await app.evaluate(async () => {
+      const c = (globalThis as unknown as H).__capri;
+      for (let i = 0; i < 5; i++) c.presenceTick(); // remark timer fires (bubble only)
+      await c.monitor.check('test reconnect');
+      await c.teleporter.go('left', 'manual');
+    });
+    await char.waitForTimeout(1500);
+    expect(await count()).toBe(0);
+    // talking to her is a trigger
+    const panel = await openPanel(app, char);
+    await panel.fill('textarea', 'you there?'); await panel.press('textarea', 'Enter');
+    await panel.waitForSelector('.msg.assistant:not(.cursor)');
+    await panel.waitForTimeout(300);
+    expect(await count()).toBeGreaterThan(0);
+    await model.close();
+  });
+
   it('a teleport zaps a red bolt across the screen to her new spot; glides do not', async () => {
     const { app } = await launch(profile());
     const zaps = () => app.evaluate(() => (globalThis as unknown as { __capri: { zapCount: number } }).__capri.zapCount);
