@@ -7,7 +7,7 @@ import { chooseDestination, nextAutoDelay, type Destination, type TeleportTarget
 export interface TeleportDeps {
   settings(): Settings;
   bounds(): Rect | null; // character window bounds, null if no window
-  move(r: Rect): void; // actually reposition the native window
+  move(r: Rect, how?: 'teleport' | 'glide'): void; // actually reposition the native window
   displays(): DisplayLike[];
   cursor(): { x: number; y: number };
   activeWindow(): Rect | null; // DIP rect of the foreground app
@@ -100,7 +100,7 @@ export class TeleportController {
     try {
       this.d.cue({ type: 'teleport', phase: 'out', id, effects: fx });
       const outOk = await this.waitAck(id, 'out', fx ? 1500 : 400);
-      this.d.move(dest);
+      this.d.move(dest, 'teleport');
       this.d.moved?.(dest, 'teleport');
       this.d.cue({ type: 'teleport', phase: 'in', id, effects: fx });
       const inOk = await this.waitAck(id, 'in', fx ? 1800 : 400);

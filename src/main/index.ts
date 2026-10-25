@@ -22,6 +22,7 @@ import { Conversation } from './ai/conversation';
 import type { ActionContext } from './actions/registry';
 import { createCharacterWindow, createPanelWindow, characterSize, displaysNow, DragController, OFFSCREEN, reveal, conceal, shown } from './windows';
 import { clampToDisplays } from './desktop/displays';
+import { zap, zapCount } from './zap';
 import { foregroundRect, handleToBigint, isOtherAppFullscreen, loadWin32, win32Status } from './desktop/win32';
 import { probeWindowsRecognizer, transcribeOpenAI, transcribeWindows, WakeWordListener } from './voice/speech';
 
@@ -180,7 +181,13 @@ async function init() {
   teleporter = new TeleportController({
     settings: () => settings.get(),
     bounds: () => (charWin && !charWin.isDestroyed() ? charWin.getBounds() : null),
-    move: (r) => { if (charWin && !charWin.isDestroyed()) charWin.setBounds(r); },
+    move: (r, how) => {
+      if (!charWin || charWin.isDestroyed()) return;
+      const from = charWin.getBounds();
+      charWin.setBounds(r);
+      // a real jump (not a glide): a red bolt zaps across the screen to where she lands
+      if (how === 'teleport' && settings.get().teleport.effects) zap(from, r);
+    },
     moved: (dest) => {
       // remember the window she's sitting on so she can react if it moves or closes
       perchRect = dest.kind === 'perch' ? fgRectDip() : null;
@@ -220,7 +227,7 @@ async function init() {
   powerMonitor.on('resume', () => { reminders.tick(); reclampCharacter(); void monitor.check('resume'); });
 
   if (!s0.firstRunComplete) setTimeout(() => openPanel('welcome'), 800);
-  if (TEST) (globalThis as Record<string, unknown>).__capri = { get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, get startupMs() { return startupMs; }, pendingConfirms, log };
+  if (TEST) (globalThis as Record<string, unknown>).__capri = { get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, get startupMs() { return startupMs; }, get zapCount() { return zapCount; }, pendingConfirms, log };
 }
 
 // ---------------------------------------------------------------- windows
