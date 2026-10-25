@@ -1,0 +1,10 @@
+node_modules/
+dist/
+release/
+docs/previews/
+*.log
+.env.local
+.env*.local
+trailer/out/
+trailer/.remotion/
+*.tmp

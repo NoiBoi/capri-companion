@@ -1,0 +1,66 @@
+{
+  "date": "2026-10-25T02:42:55.927Z",
+  "installer": "Capri-Setup-1.0.0.exe",
+  "results": [
+    {
+      "name": "silent install completes",
+      "ok": true,
+      "detail": "12.4 s"
+    },
+    {
+      "name": "app.asar present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "native FFI module unpacked",
+      "ok": true,
+      "detail": "win32_x64"
+    },
+    {
+      "name": "third-party licenses shipped",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Chromium/Electron notices shipped",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "uninstaller present",
+      "ok": true,
+      "detail": "Uninstall Capri.exe"
+    },
+    {
+      "name": "installed size reported",
+      "ok": true,
+      "detail": "383 MB on disk"
+    },
+    {
+      "name": "no API keys or .env files in the installed app",
+      "ok": true,
+      "detail": "148 files + asar listing scanned, dev key searched byte-for-byte"
+    },
+    {
+      "name": "installer does not bundle .env.local",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "e2e suite passes on packaged build",
+      "ok": true,
+      "detail": "Test Files  1 passed (1) |       Tests  33 passed | 2 skipped (35)"
+    },
+    {
+      "name": "packaged performance measured",
+      "ok": true,
+      "detail": "startup 379 ms, idle 1.7% CPU / 403 MB, 30.3 fps idle"
+    },
+    {
+      "name": "uninstall removes the program",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}
