@@ -25,6 +25,7 @@ const SHOTS = [
   ['menace', "d.setSurface('window')", 20, { squint: 0.9, mouthSmile: 0.6 }],
   ['grin_talk', "d.setSurface('window')", 20, { mouthOpen: 0.8, mouthSmile: 1, eyeWide: 0.4 }],
   ['happy', "d.setSurface('window')", 20, { happyEyes: 1, mouthSmile: 1 }],
+  ['back_taskbar', "d.setSurface('taskbar'); d.behavior.setPosture('stand')", 40, { back: 1 }],
   ['talk', "d.setSurface('window')", 20, { mouthOpen: 0.45, mouthSmile: 0.45 }],
   ['maniac', "d.setSurface('window')", 20, { mouthOpen: 0.85, mouthSmile: 1, eyeWide: 0.9 }],
   ['smug', "d.setSurface('window')", 20, { mouthSmile: 0.8, squint: 0.4 }],

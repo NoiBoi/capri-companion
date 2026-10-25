@@ -119,7 +119,7 @@ describe('desktop presence', () => {
     });
     expect(px.corner[3]).toBe(0); // transparent background
     expect(px.head[3]).toBeGreaterThan(200); // opaque character
-    expect(px.crimson).toBeGreaterThan(0.06); // the crimson hair mass dominates the silhouette
+    expect(px.crimson).toBeGreaterThan(0.035); // the crimson hair mass is a large share of the frame (sized for her tallest pose)
     expect(px.green).toBeGreaterThan(0); // neon-green mask/panels present
     expect(px.hitHead).toBe(true);
     expect(px.hitCorner).toBe(false);

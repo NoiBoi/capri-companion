@@ -48,10 +48,10 @@ let dashing = 0; // pose override for previews/tests only
 
 const fx = new TeleportFx(() => document.createElement('canvas'));
 const model = new CapriModel();
-let variantFor = '', variant = 0;
+let variantFor = '', variant = 0, lastP: Params | null = null;
 function modelPose(): PoseName {
   if (variantFor !== behavior.posture) { variantFor = behavior.posture; variant = Math.random(); }
-  return modelPoseFor({ surface, posture: behavior.posture, sleeping: behavior.state === 'sleeping', dragging, variant });
+  return modelPoseFor({ surface, posture: behavior.posture, sleeping: behavior.state === 'sleeping', dragging, variant, back: (lastP?.back ?? 0) > 0.5 });
 }
 const anim = new Animator();
 const behavior = new Behavior();
@@ -129,6 +129,7 @@ function tick(dt: number) {
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, canvas.width, canvas.height);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  lastP = p;
   model.draw(g, p, dt, { pose: modelPose(), ledge: surface === 'taskbar' || surface === 'window', dragging, glitchEnabled: settings.character.glitchEffects }, W, H);
   if (glitch) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);

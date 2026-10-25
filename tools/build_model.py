@@ -27,7 +27,15 @@ POSES = {
                 cut={'right': 'hair'}, restore=[(460, 170, 990, 700)], note='Netflix clip 5wGdjjwoDbY 0:29-0:31: lying on her side on the bed'),
     'crouch': dict(src='crouch_Nli_0023.png', eyes=[(227.5, 297.5), (256.0, 291.0)], anchor=(232, 330), kind='float',
                    cut={}, drop_ink_above=0.33, drop_shade_above=0.33, note='Netflix footage (Nli_SZ-DBco 0:23-0:25): knees drawn up, sitting on nothing in mid-air'),
+    # cut by tools/cutout_from_frame.py; points given in frame px (coords='frame')
+    'back': dict(src='stand_back_n2137.png', coords='frame', back=True,
+                 # no face in a back view: the scale comes from her head-to-hip length matching the sitting
+                 # pose's (175 units), i.e. an eye spacing of ~43 px at this size
+                 eyes=[(963.5, 495), (1006.5, 495)], anchor=(985, 790), kind='stand', leg_len=6.0,
+                 cut={'top': 'hair', 'bottom': 'leg'}, note='Netflix footage (Nli_SZ-DBco 3:33.7): standing in the sky, seen from behind'),
 }
+# Tried and left out: e 1:14 (arms and claws spread, in the fire). The shot is so tight that her hair is
+# cropped on three sides and her body at the hips; the rebuilt version was mostly invented shape.
 KEEP = ['violet', 'hair', 'crimson', 'shade', 'ink', 'green']  # eyes, irises and teeth come from the live face
 
 
@@ -35,7 +43,7 @@ def centroid(p):
     a = np.array(p, float); return a[:, 0].mean(), a[:, 1].mean()
 
 
-def extend_cut(layers, side, kind, w, h, rng):
+def extend_cut(layers, side, kind, w, h, rng, leg_len=2.4):
     """Rebuild what the shot cropped: jagged hair spikes, or a tapering leg tip, past the cut edge."""
     vertical = side in ('top', 'bottom')          # the cut runs horizontally
     edge = {'top': 0.0, 'bottom': float(h), 'left': 0.0, 'right': float(w)}[side]
@@ -84,7 +92,7 @@ def extend_cut(layers, side, kind, w, h, rng):
                 near = a[np.abs(c_across - edge) < 140]
                 if len(near) < 3: continue
                 slope = np.polyfit(near[:, 1], near[:, 0], 1)[0]  # dx/dy of the limb near the cut
-                L = (hi - lo) * 2.4
+                L = (hi - lo) * leg_len
                 add.setdefault(cls, []).append([P(lo, -2), P(hi, -2), P((lo + hi) / 2 + slope * L * out, L)])
     for k, v in add.items(): layers.setdefault(k, []).extend(v)
 
@@ -96,7 +104,12 @@ def build():
         m = vectorize(os.path.join(REF, P['src']), restore=P.get('restore'))
         # eyes and anchor are measured in the original crop; a restore can widen it
         sx, sy = m['origin0'][0] - m['origin'][0], m['origin0'][1] - m['origin'][1]
-        P = dict(P, eyes=[(x + sx, y + sy) for x, y in P['eyes']], anchor=(P['anchor'][0] + sx, P['anchor'][1] + sy))
+        if P.get('coords') == 'frame': sx, sy = -m['origin'][0], -m['origin'][1]  # points measured on the whole frame
+        if P['eyes'] == 'auto':  # front views: the irises are found in the trace
+            if not m['face']: raise SystemExit(f'{name}: no eyes found; give them by hand')
+            P = dict(P, eyes=[tuple(e) for e in m['face']['eyes']], anchor=(P['anchor'][0] + sx, P['anchor'][1] + sy))
+        else:
+            P = dict(P, eyes=[(x + sx, y + sy) for x, y in P['eyes']], anchor=(P['anchor'][0] + sx, P['anchor'][1] + sy))
         w, h = m['size']
         ox, oy = m['origin']
         layers = {k: v for k, v in m['layers'].items() if k in KEEP}
@@ -104,11 +117,6 @@ def build():
             layers['ink'] = [p for p in layers.get('ink', []) if centroid(p)[1] > P['drop_ink_above'] * h]
         if 'drop_shade_above' in P:  # the cut-out's soft shadow halo above her hair traces as a dark band
             layers['shade'] = [p for p in layers.get('shade', []) if centroid(p)[1] > P['drop_shade_above'] * h]
-        # which crop sides really were cut by the original shot: only where the cut-out touches the frame edge
-        src_w, src_h = 1920, 1080
-        for side, kind in P['cut'].items():
-            touching = {'top': oy <= 1, 'bottom': oy + h >= src_h - 1, 'left': ox <= 1, 'right': ox + w >= src_w - 1}[side]
-            if touching: extend_cut(layers, side, kind, w, h, rng)
         (e1, e2) = P['eyes']
         dist = math.dist(e1, e2)
         k = EYE_UNITS / dist
@@ -141,6 +149,12 @@ def build():
             (to_hair if (inside or cloud) and not near_face and not torso else keep).append(p)
         layers['crimson'] = keep
         layers['hair'] = layers.get('hair', []) + to_hair
+        # rebuild what the shot cropped, once every hair piece is classed as hair: only on sides where the
+        # cut-out really touches the frame edge
+        src_w, src_h = 1920, 1080
+        for side, kind in P['cut'].items():
+            touching = {'top': oy <= 1, 'bottom': oy + h >= src_h - 1, 'left': ox <= 1, 'right': ox + w >= src_w - 1}[side]
+            if touching: extend_cut(layers, side, kind, w, h, rng, P.get('leg_len', 2.4))
         out_layers = {}
         allpts = []
         for cls in ORDER:
@@ -152,7 +166,7 @@ def build():
             out_layers[cls] = polys
         a = np.array(allpts)
         model['poses'][name] = {
-            'kind': P['kind'], 'note': P['note'],
+            'kind': P['kind'], 'note': P['note'], **({'back': True} if P.get('back') else {}),
             'face': {'x': round((fx - ax) * k, 2), 'y': round((fy - ay) * k, 2), 'angle': round(ang, 4)},
             'bounds': [round(float(a[:, 0].min()), 1), round(float(a[:, 1].min()), 1), round(float(a[:, 0].max()), 1), round(float(a[:, 1].max()), 1)],
             'layers': out_layers,

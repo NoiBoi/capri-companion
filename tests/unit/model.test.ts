@@ -8,9 +8,9 @@ const SWAY = 14, BOB = 8; // most the hair sway / float bob can move a vertex, i
 
 describe('character model (traced from the reference stills)', () => {
   it('has the poses the desktop behaviour needs, each a clean set of palette shapes with a face', () => {
-    expect(Object.keys(poses).sort()).toEqual(['crouch', 'lie', 'sit']);
+    expect(Object.keys(poses).sort()).toEqual(['back', 'crouch', 'lie', 'sit']);
     for (const [name, p] of Object.entries(poses)) {
-      expect(['sit', 'lie', 'float']).toContain(p.kind);
+      expect(['sit', 'lie', 'float', 'stand']).toContain(p.kind);
       expect(Object.keys(p.layers)).toEqual(expect.arrayContaining(['hair', 'violet', 'ink']));
       for (const [cls, polys] of Object.entries(p.layers)) {
         expect(['violet', 'hair', 'crimson', 'shade', 'ink', 'green'], `${name}.${cls}`).toContain(cls);

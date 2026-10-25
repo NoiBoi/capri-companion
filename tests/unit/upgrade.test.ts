@@ -369,7 +369,7 @@ describe('model pose: she never lies or sits on thin air', () => {
           for (const variant of [0, 0.3, 0.59, 0.61, 0.99]) {
             const pose = modelPoseFor({ surface, posture, sleeping, dragging: false, variant });
             const ledge = surface === 'taskbar' || surface === 'window';
-            if (!ledge) expect(pose, `${surface}/${posture}/${sleeping}`).toBe('crouch');
+            if (!ledge) expect(['crouch', 'back'], `${surface}/${posture}/${sleeping}`).toContain(pose); // upright or knees drawn up: floating
             if (pose === 'lie' || pose === 'sit') expect(ledge).toBe(true);
           }
   });

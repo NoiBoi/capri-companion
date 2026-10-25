@@ -13,7 +13,7 @@ import type { Params } from './params';
  * breathing, a float bob, mirroring, a live face, and her glitch bursts.
  */
 type Poly = number[][];
-interface PoseData { kind: 'sit' | 'lie' | 'float'; note: string; face: { x: number; y: number; angle: number }; bounds: [number, number, number, number]; layers: Record<string, Poly[]> }
+interface PoseData { kind: 'sit' | 'lie' | 'float' | 'stand'; back?: boolean; note: string; face: { x: number; y: number; angle: number }; bounds: [number, number, number, number]; layers: Record<string, Poly[]> }
 export const POSES = (modelData as unknown as { poses: Record<string, PoseData> }).poses;
 export type PoseName = keyof typeof POSES & string;
 
@@ -198,7 +198,7 @@ export class CapriModel {
       // the live face, riding the same field as the head around it
       const [fx2, fy2] = m.apply(deform(f.x, f.y));
       const head = new Mat().translate(fx2, fy2).rotate(this.swing + lean).scale(sx, sy).rotate(f.angle + p.headRoll * 0.6);
-      drawFace(ctx, head, p, s);
+      if (!P.back) drawFace(ctx, head, p, s); // a back view shows the back of her head, no face
     };
 
     if (this.burst > 0 && this.kind === 'slice') {
