@@ -29,19 +29,23 @@ export interface Params {
   happyEyes: number; // 0..1 eyes become ^ ^ arcs (B 2:33)
   blankEyes: number; // 0..1 irises vanish to blank white (B 0:13)
   clawScale: number; // 1 = normal; >1 claws reaching toward the viewer (B 2:48)
+  zoom: number; // whole-figure scale about the hip (fits the side-lying pose in the frame)
+  hairUp: number; // 0..1 hair counter-rotates against body lean, so the cloud stays up when she lies down
+  turn: number; // -1..1 whole body turned toward viewer-left/right; ±1 = side profile
+  back: number; // 0..1 turned away from the viewer (back view)
 }
 
 export const NEUTRAL: Params = {
   bodyX: 0, bodyY: 0, bodyRot: 0, breathe: 0, headYaw: 0, headPitch: 0, headRoll: 0, gazeX: 0, gazeY: 0,
   blinkL: 0, blinkR: 0, eyeWide: 0, squint: 0, mouthOpen: 0, mouthSmile: 0.35, maskGlow: 0.2,
   armLRaise: 0, armRRaise: 0, armRWave: 0, hip: 0, hairWind: 0, float: 0.4, glitch: 0, sleep: 0, ringPulse: 0, armSpread: 0, manyEyes: 0,
-  thighL: 0, kneeL: 0, foreL: 1, thighR: 0, kneeR: 0, foreR: 1, hipDrop: 0, lean: 0, hairStream: 0, happyEyes: 0, blankEyes: 0, clawScale: 1,
+  thighL: 0, kneeL: 0, foreL: 1, thighR: 0, kneeR: 0, foreR: 1, hipDrop: 0, lean: 0, hairStream: 0, happyEyes: 0, blankEyes: 0, clawScale: 1, zoom: 1, hairUp: 0, turn: 0, back: 0,
 };
 
 /** Per-parameter spring stiffness (higher = snappier). Blink and mouth are fast; body is slow. */
 const STIFFNESS: Partial<Record<keyof Params, number>> = {
   blinkL: 900, blinkR: 900, mouthOpen: 600, eyeWide: 160, gazeX: 260, gazeY: 260, glitch: 400,
-  headYaw: 55, headPitch: 55, headRoll: 45, manyEyes: 120, armSpread: 70, hipDrop: 14, thighL: 26, thighR: 26, kneeL: 30, kneeR: 30, foreL: 30, foreR: 30, lean: 16, hairStream: 30, happyEyes: 160, blankEyes: 160, bodyX: 18, bodyY: 30, bodyRot: 22, armLRaise: 60, armRRaise: 60, armRWave: 120,
+  headYaw: 55, headPitch: 55, headRoll: 45, manyEyes: 120, armSpread: 70, hipDrop: 14, thighL: 26, thighR: 26, kneeL: 30, kneeR: 30, foreL: 30, foreR: 30, lean: 16, hairStream: 30, happyEyes: 160, blankEyes: 160, bodyX: 18, bodyY: 30, bodyRot: 22, zoom: 16, hairUp: 16, turn: 22, back: 30, armLRaise: 60, armRRaise: 60, armRWave: 120,
 };
 
 /**

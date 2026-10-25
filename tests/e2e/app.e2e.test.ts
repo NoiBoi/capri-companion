@@ -431,13 +431,14 @@ describe('teleportation', () => {
   });
 
   it('autonomous teleport is held back without AI, and runs once the AI is genuinely connected', async () => {
-    let { app } = await launch(profile({ teleport: { auto: true } }));
+    const awake = { behavior: { quietHours: { enabled: false, start: '22:00', end: '08:00' } } }; // independent of the time of day
+    let { app } = await launch(profile({ teleport: { auto: true }, ...awake }));
     const tick = (a: ElectronApplication) => a.evaluate(() => (globalThis as unknown as { __capri: { teleporter: { autoTick(): Promise<string | null> } } }).__capri.teleporter.autoTick());
     expect(await tick(app)).toBe('AI is not connected');
     expect((await capri(app)).tp.count).toBe(0);
     await quit(app);
     const ollama = await mockOllama();
-    ({ app } = await launch(profile({ teleport: { auto: true }, ai: { provider: 'ollama', ollama: { baseUrl: ollama.url, model: 'llama3.2' } } })));
+    ({ app } = await launch(profile({ teleport: { auto: true }, ...awake, ai: { provider: 'ollama', ollama: { baseUrl: ollama.url, model: 'llama3.2' } } })));
     await app.evaluate(() => new Promise((r) => setTimeout(r, 800)));
     expect((await capri(app)).conn.state).toBe('connected');
     const before = await charPos(app);

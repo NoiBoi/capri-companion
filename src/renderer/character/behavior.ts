@@ -39,6 +39,8 @@ export class Behavior {
   private clock = 0;
   private lookTarget = { x: 0, y: 0 };
   private lookTimer = 0;
+  private lookBack = false; // distracted look: turned fully away (back view)
+  private idleTurn = 0; private idleTurnT = 0;
   readonly history: BehaviorState[] = [];
   /** Currently playing keyframed clip (gesture / emote / fidget), layered over the pose. */
   clip: ClipInstance | null = null;
@@ -185,12 +187,16 @@ export class Behavior {
     p.hairWind = 0.25 * k;
     p.maskGlow = 0.25 + 0.05 * Math.sin(c * 2);
 
-    const lookAt = (x: number, y: number) => { p.gazeX = x; p.gazeY = y; p.headYaw = x * 0.45; p.headPitch = y * 0.35; };
+    // the whole body turns toward what she looks at, not just the eyes
+    const lookAt = (x: number, y: number) => { p.gazeX = x; p.gazeY = y; p.headYaw = x * 0.45; p.headPitch = y * 0.35; p.turn = clamp(x * 0.55, -1, 1); };
     if (inp.pointer && this.state !== 'sleeping') lookAt(clamp(inp.pointer.x, -1, 1), clamp(inp.pointer.y, -1, 1));
 
     switch (this.state) {
       case 'idle':
-        if (!inp.pointer) lookAt(Math.sin(c * 0.23) * 0.12, Math.sin(c * 0.31) * 0.08);
+        // she holds a 3/4 or side-on stance for a while, then snaps to another (held frames, EFGpu 2:45)
+        this.idleTurnT -= this.lastDt;
+        if (this.idleTurnT <= 0) { const r = this.rand(); this.idleTurn = r < 0.3 ? 0 : (this.rand() < 0.5 ? -1 : 1) * (r < 0.75 ? 0.5 : 1); this.idleTurnT = 3 + this.rand() * 6; }
+        if (!inp.pointer) { lookAt(Math.sin(c * 0.23) * 0.12 + this.idleTurn * 0.4, Math.sin(c * 0.31) * 0.08); p.turn = this.idleTurn; }
         break;
       case 'lookAround':
       case 'distracted': {
@@ -199,10 +205,12 @@ export class Behavior {
           const far = this.state === 'distracted';
           this.lookTarget = { x: (this.rand() * 2 - 1) * (far ? 1 : 0.7), y: (this.rand() * 2 - 1) * (far ? 0.5 : 0.35) };
           if (far) this.lookTarget.x = Math.sign(this.lookTarget.x || 1) * Math.max(0.7, Math.abs(this.lookTarget.x));
+          this.lookBack = far && this.rand() < 0.35;
           this.lookTimer = far ? 2 : 0.8 + this.rand();
         }
         if (!inp.pointer) lookAt(this.lookTarget.x, this.lookTarget.y);
-        if (this.state === 'distracted') { p.headYaw *= 1.6; p.hairWind = 0.6 * k; p.mouthSmile = 0.1; p.eyeWide = 0.3; }
+        if (!inp.pointer) p.turn = clamp(this.lookTarget.x * (this.state === 'distracted' ? 1.4 : 1), -1, 1);
+        if (this.state === 'distracted') { p.headYaw *= 1.6; p.hairWind = 0.6 * k; p.mouthSmile = 0.1; p.eyeWide = 0.3; if (this.lookBack && !inp.pointer) { p.back = 1; p.turn *= 0.3; } }
         break;
       }
       case 'listening':

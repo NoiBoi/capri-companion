@@ -54,10 +54,10 @@ export const POSTURES: Record<PostureName, Posture> = {
 /** Which postures make sense for where she is on the desktop, with relative weights. */
 export function posturesFor(surface: Surface): [PostureName, number][] {
   switch (surface) {
-    case 'taskbar': return [['sit_edge', 4], ['stand', 2], ['contrapposto', 3], ['power_stance', 0.5]];
+    case 'taskbar': return [['sit_edge', 4], ['stand', 1.5], ['contrapposto', 3], ['power_stance', 0.5]];
     case 'window': return [['sit_edge', 4], ['balance', 2], ['contrapposto', 1]];
     case 'edge_left': return [['peek_left', 1]];
     case 'edge_right': return [['peek_right', 1]];
-    default: return [['air_sit', 3], ['recline', 3], ['contrapposto', 2], ['stand', 1]];
+    default: return [['air_sit', 3], ['recline', 2], ['contrapposto', 2], ['stand', 1]];
   }
 }

@@ -5,6 +5,18 @@ import * as R from './rigData';
 
 type Ctx = CanvasRenderingContext2D;
 
+/** Integer hash -> [-1, 1]. Deterministic per (redraw, part, vertex) so captures repeat exactly. */
+const h3 = (a: number, b: number, c: number) => {
+  let h = Math.imul(a | 0, 374761393) ^ Math.imul((b | 0) + 0x9e37, 668265263) ^ Math.imul((c | 0) + 0x85eb, 1274126177);
+  h = Math.imul(h ^ (h >>> 13), 1103515245);
+  h ^= h >>> 16;
+  return ((h >>> 0) / 4294967296) * 2 - 1;
+};
+/** Per hair group [sx, sy]: the cloud is lopsided in every official frame, never mirrored (Nli 0:24, EFGpu 3:45). */
+const HAIR_ASYM: [number, number][] = [[1, 1], [1.02, 1.04], [1.12, 1.1], [0.8, 0.86], [1.1, 1.06], [0.84, 0.9]];
+type GlitchKind = 'dislocate' | 'shatter' | 'ghost' | 'tear';
+interface Shard { x: number; y: number; vx: number; vy: number; r: number; vr: number; s: number; life: number; ink: boolean }
+
 export interface DrawOptions {
   glitchEnabled: boolean;
   micActive: boolean;
@@ -31,6 +43,24 @@ export class CapriRig {
   private hitPaths: Path2D[] = [];
   private zPhase = 0;
   t = 0;
+  // ---- limited animation + line boil: the show animates on twos/threes and redraws her silhouette
+  // slightly differently every few frames (EFGpu 1:38-1:43), so nothing ever looks vector-perfect
+  private held: Params | null = null;
+  private heldT = 1;
+  private boil = 0;
+  private boilT = 0;
+  private sweep = 0.16;
+  private sweepTarget = 0.16;
+  private rand = prng(0x5eed);
+  // ---- glitch bursts: she tears, dislocates, shatters and ghosts every few seconds (EFGpu 1:41, 5:10)
+  burst = 0; // 0..1 strength right now (the renderer reads it for the post-process)
+  stutter = 0; // frames for the renderer to hold the previous image
+  ghost = false;
+  private burstKind: GlitchKind = 'tear';
+  private burstLeft = 0;
+  private burstNext = 1.2;
+  private burstDx = 0;
+  private shards: Shard[] = [];
 
   constructor(private makeCanvas: (w: number, h: number) => HTMLCanvasElement | OffscreenCanvas) {}
 
@@ -61,19 +91,80 @@ export class CapriRig {
     return hit;
   }
 
-  draw(ctx: Ctx, p: Params, dt: number, o: DrawOptions) {
+  /** Small per-redraw wobble of a polygon (amp in rig units). */
+  private rough(poly: Poly, key: number, amp: number): Poly {
+    const b = this.boil;
+    return poly.map(([x, y], i) => [x + amp * h3(b, key, i * 2), y + amp * h3(b, key, i * 2 + 1)]);
+  }
+  /** Hair: tips stretch and wander every redraw, the whole cloud is swept to one side. */
+  private roughHair(poly: Poly, key: number): Poly {
+    const b = this.boil, sw = this.sweep;
+    return poly.map(([x, y], i) => {
+      const far = clamp((Math.hypot(x, y) - 40) / 90, 0, 1);
+      const ext = 1 + far * 0.18 * h3(b, key, i * 3);
+      const ny = y * ext + (2.5 + far * 8) * h3(b, key, i * 3 + 2);
+      const nx = x * ext + (2.5 + far * 8) * h3(b, key, i * 3 + 1) + sw * (ny < 0 ? -ny : -ny * 0.35);
+      return [nx, ny];
+    });
+  }
+  private updateBurst(dt: number, enabled: boolean, level: number) {
+    if (this.burstLeft > 0) {
+      this.burstLeft -= dt;
+      this.burst = this.burstLeft > 0 ? 0.55 + 0.45 * this.rand() : 0;
+      this.ghost = this.burst > 0 && this.burstKind === 'ghost';
+      if (this.burstLeft <= 0) this.burstNext = 0.8 + this.rand() * 3;
+      return;
+    }
+    this.burst = 0;
+    this.ghost = false;
+    if (!enabled) return;
+    this.burstNext -= dt * (1 + level * 5);
+    if (this.burstNext > 0) return;
+    const kinds: GlitchKind[] = ['dislocate', 'shatter', 'ghost', 'tear', 'dislocate'];
+    this.burstKind = kinds[Math.floor(this.rand() * kinds.length)];
+    this.burstLeft = 0.08 + this.rand() * (this.burstKind === 'shatter' ? 0.4 : 0.26);
+    this.burst = 1;
+    if (this.rand() < 0.45) this.stutter = 2 + Math.floor(this.rand() * 3);
+    if (this.burstKind === 'shatter') this.shards.push(...Array.from({ length: 12 }, () => this.newShard()));
+  }
+  private newShard(): Shard {
+    const r = this.rand, a = -Math.PI * (0.05 + r() * 0.9) + (r() < 0.25 ? Math.PI : 0), sp = 120 + r() * 260;
+    return { x: (r() * 2 - 1) * 70, y: -40 - r() * 70, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: r() * 6, vr: (r() * 2 - 1) * 9, s: 8 + r() * 22, life: 0.35 + r() * 0.4, ink: r() < 0.3 };
+  }
+
+  draw(ctx: Ctx, pIn: Params, dt: number, o: DrawOptions) {
     this.t += dt;
+    // hold each pose ~2 frames at 24 fps: Trigger's limited animation, not buttery tweening
+    this.heldT += dt;
+    const newPose = !this.held || this.heldT >= 1 / 12;
+    if (newPose) { this.held = { ...pIn }; this.heldT = 0; }
+    const p = this.held!;
+    this.boilT += dt;
+    if (this.boilT >= 1 / 10) {
+      this.boilT = 0;
+      this.boil++;
+      if (this.rand() < 0.12) this.sweepTarget = 0.06 + this.rand() * 0.2;
+    }
+    this.sweep += (this.sweepTarget - this.sweep) * Math.min(1, dt * 4);
+    this.updateBurst(dt, o.glitchEnabled, p.glitch);
+    if (this.burst > 0 && newPose) this.burstDx = (this.rand() * 2 - 1) * 24;
+    const dis = this.burst > 0 && this.burstKind === 'dislocate' ? this.burstDx : 0;
+    if (this.burst > 0 && this.burstKind === 'shatter') p.manyEyes = Math.max(p.manyEyes, 0.6);
     if (!this.sparkleA) { this.sparkleA = this.sparkle(ctx, 7); this.sparkleB = this.sparkle(ctx, 1337); }
     const hits: Path2D[] = [];
     const S = o.scale;
 
     // ---------------- transforms
     const lift = (p.float - 0.4) * 12;
-    const root = Mat.identity().scale(S).translate(R.FRAME.hip[0] + p.bodyX, R.FRAME.hip[1] + p.bodyY - lift + p.hipDrop).rotate(p.bodyRot + p.lean);
+    // body turn: 3/4 → side profile (|turn| = 1) → back view; the show draws her from every side (EFGpu 1:40, 2:45, Nli 0:24)
+    const tn = clamp(p.turn, -1, 1), at = Math.abs(tn), bk = clamp(p.back, 0, 1);
+    const root = Mat.identity().scale(S).translate(R.FRAME.hip[0] + p.bodyX, R.FRAME.hip[1] + p.bodyY - lift + p.hipDrop).rotate(p.bodyRot + p.lean).scale(p.zoom);
     const sleepDroop = p.sleep * 6;
-    const headLocal = Mat.identity().translate(p.hip * 1.5, R.HEAD_OFFSET - p.breathe * 1.5 + sleepDroop).rotate(p.headRoll + p.bodyRot * 0.4);
+    // a permanent slight tilt: she never holds her head dead level
+    const headLocal = Mat.identity().translate(p.hip * 1.5 + dis, R.HEAD_OFFSET - p.breathe * 1.5 + sleepDroop).rotate(p.headRoll + p.bodyRot * 0.4 + 0.07);
     const head = root.mul(headLocal);
-    const hairM = root.mul(Mat.identity().translate(p.hip * 1.5, R.HEAD_OFFSET - p.breathe * 1.5 + sleepDroop).rotate(p.headRoll * 0.6));
+    const hairM = root.mul(Mat.identity().translate(p.hip * 1.5 + dis * 1.4, R.HEAD_OFFSET - p.breathe * 1.5 + sleepDroop).rotate(p.headRoll * 0.6 - (p.bodyRot + p.lean) * p.hairUp)).translate(-tn * 12, 0).scale(1 - 0.12 * at, 1);
+    const body = root.scale(1 - 0.42 * at, 1); // torso, limbs narrow as she turns side-on
 
     // hair secondary motion: springs chase head movement + wind
     const headPos = head.apply([0, 0]);
@@ -85,16 +176,32 @@ export class CapriRig {
     });
 
     const yaw = p.headYaw, pitch = p.headPitch;
-    const fx = yaw * 7, fy = pitch * 6;
-    const squeeze = 1 - Math.abs(yaw) * 0.14;
+    const yawE = clamp(yaw + tn * 1.15, -1.5, 1.5);
+    const fx = yawE * 8, fy = pitch * 6;
+    const squeeze = 1 - Math.min(0.55, Math.abs(yawE) * 0.32);
     const face = (poly: Poly, depth = 1): Poly => poly.map(([x, y]) => [x * squeeze + fx * depth, y + fy * depth]);
 
     // ---------------- hair back (violet offset → red → glitter → ink shards)
     const hairPolys: Poly[] = [];
     R.HAIR_BACK.forEach((g, i) => {
       const ang = this.springs[i].x * g.weight;
-      for (const s of g.slabs) hairPolys.push(hairM.map(offset(bend(s, g.pivot, ang, g.length), -yaw * 4, -pitch * 3)));
+      const [ax, ay] = HAIR_ASYM[i] ?? [1, 1];
+      g.slabs.forEach((s, j) => {
+        const shaped = this.roughHair(s.map(([x, y]) => [x * ax, y * ay] as Pt), i * 16 + j);
+        hairPolys.push(hairM.map(offset(bend(shaped, g.pivot, ang, g.length), -yaw * 4, -pitch * 3)));
+      });
     });
+    // stray spikes jutting out of the cloud, different on every redraw (more while glitching)
+    const spikes: { poly: Poly; ink: boolean }[] = [];
+    const nSpikes = 6 + Math.round(this.burst * 6);
+    for (let k = 0; k < nSpikes; k++) {
+      const u = h3(this.boil, 900, k), v = h3(this.boil, 901, k), w = h3(this.boil, 902, k);
+      const a = -Math.PI / 2 + u * 1.9 + this.sweep * 0.6;
+      const rb = 88 + v * 18, rt = rb + 34 + Math.abs(w) * 40 + this.burst * 30;
+      const pol = (ang: number, r: number): Pt => [Math.cos(ang) * r * (Math.cos(ang) < 0 ? 1.12 : 0.9), Math.sin(ang) * r];
+      spikes.push({ poly: hairM.map([pol(a - 0.07, rb), pol(a + 0.07, rb), pol(a + w * 0.12, rt)]), ink: v > 0.55 });
+    }
+    for (const sp of spikes) if (!sp.ink) hairPolys.push(sp.poly);
     const violetShift: Pt = [-3.5 * S, 4.5 * S];
     ctx.fillStyle = C.violet;
     for (const hp of hairPolys) ctx.fill(toPath(offset(hp, violetShift[0], violetShift[1])));
@@ -136,7 +243,8 @@ export class CapriRig {
     ctx.restore();
 
     ctx.fillStyle = C.ink;
-    for (const s of R.HAIR_INK) ctx.fill(toPath(hairM.map(offset(s, -yaw * 2, 0))));
+    R.HAIR_INK.forEach((s, i) => ctx.fill(toPath(hairM.map(offset(this.roughHair(s, 200 + i), -yaw * 2, 0)))));
+    for (const sp of spikes) if (sp.ink) ctx.fill(toPath(sp.poly));
 
     // ---------------- legs (crimson with black lightning cuts), posable: thigh/knee/foreshortening
     const leg = (side: -1 | 1) => {
@@ -153,7 +261,7 @@ export class CapriRig {
       return { side, joints: [hipPt, kneePt, ankle, toe] as Pt[] };
     };
     const legs = [leg(-1), leg(1)];
-    const legPolys = legs.map((l) => root.map(limb(l.joints, R.LEG_WIDTHS)));
+    const legPolys = legs.map((l, i) => body.map(this.rough(limb(l.joints, R.LEG_WIDTHS), 300 + i, 1.1)));
     for (const lp of legPolys) { ctx.fillStyle = C.violet; ctx.fill(toPath(offset(lp, -2 * S, 2 * S))); }
     for (const lp of legPolys) { const path = toPath(lp); ctx.fillStyle = C.hair; ctx.fill(path); hits.push(path); }
     for (const d of R.LEG_DECO) {
@@ -164,36 +272,16 @@ export class CapriRig {
       const nx = -dy / len, ny = dx / len;
       const poly: Poly = d.poly.map(([sx, tt]) => { const w = (wA + (wB - wA) * tt) / 2; return [A[0] + dx * tt + nx * sx * w * l.side, A[1] + dy * tt + ny * sx * w * l.side]; });
       ctx.fillStyle = d.color === 'ink' ? C.ink : C.mask;
-      ctx.fill(toPath(root.map(poly)));
+      ctx.fill(toPath(body.map(poly)));
     }
-
-    // ---------------- torso (crimson, black X, green/black shoulder triangles)
-    const chest = (q: Poly): Poly => q.map(([x, y]) => [x, y < -60 ? y - p.breathe * 1.5 : y]);
-    const torso = root.map(chest(R.TORSO));
-    ctx.fillStyle = C.violet;
-    ctx.fill(toPath(offset(torso, -2.5 * S, 3 * S)));
-    const torsoPath = toPath(torso);
-    ctx.fillStyle = C.hair; ctx.fill(torsoPath); hits.push(torsoPath);
-    ctx.save();
-    ctx.clip(torsoPath);
-    ctx.fillStyle = C.ink;
-    for (const g2 of R.TORSO_INK) ctx.fill(toPath(root.map(chest(g2))));
-    ctx.fillStyle = C.mask;
-    for (const g2 of R.GREEN_PANELS.slice(0, 2)) ctx.fill(toPath(root.map(chest(g2))));
-    ctx.restore();
-    ctx.fillStyle = C.ink;
-    const neck = toPath(root.map(offset(R.NECK, p.hip * 0.8, sleepDroop * 0.5)));
-    ctx.fill(neck);
-    ctx.fillStyle = C.mask;
-    ctx.fill(toPath(root.map(offset(R.GREEN_PANELS[2], p.hip * 0.8, sleepDroop * 0.5))));
 
     // ---------------- arms: very long, spindly, four claws (viewer-left black, viewer-right crimson)
     const arm = (side: -1 | 1, raise: number, wave: number, spread: number) => {
       const sh = side < 0 ? R.SHOULDER_L : R.SHOULDER_R;
       // angle keyframes (deg; canvas 0=right, 90=down): hang -> hand-to-chin -> raised
       const keys = side < 0
-        ? [{ u: 98, f: 93 }, { u: 100, f: -70 }, { u: -122, f: -100 }]
-        : [{ u: 82, f: 87 }, { u: 60, f: -128 }, { u: -52, f: -96 + wave * 30 }];
+        ? [{ u: 101, f: 90 }, { u: 100, f: -70 }, { u: -122, f: -100 }] // arms never hang as mirror images
+        : [{ u: 79, f: 104 }, { u: 60, f: -128 }, { u: -52, f: -96 + wave * 30 }];
       const k = raise <= 0.55 ? raise / 0.55 : (raise - 0.55) / 0.45;
       const [a, b] = raise <= 0.55 ? [keys[0], keys[1]] : [keys[1], keys[2]];
       let ud = lerp(a.u, b.u, k), fd = lerp(a.f, b.f, k);
@@ -201,10 +289,10 @@ export class CapriRig {
       const spreadU = side < 0 ? 172 : 8, spreadF = side < 0 ? 186 : -6;
       ud = lerp(ud, spreadU, spread); fd = lerp(fd, spreadF, spread);
       const u = (ud * Math.PI) / 180, f = (fd * Math.PI) / 180;
-      const s0: Pt = [sh[0], sh[1] - p.breathe * 1.5];
+      const s0: Pt = [sh[0], sh[1] - p.breathe * 1.5 + (side > 0 ? 3 : -2)]; // uneven shoulders
       const el: Pt = [s0[0] + Math.cos(u) * R.ARM.upper, s0[1] + Math.sin(u) * R.ARM.upper];
       const wr: Pt = [el[0] + Math.cos(f) * R.ARM.fore, el[1] + Math.sin(f) * R.ARM.fore];
-      const poly = root.map(limb([s0, el, wr], R.ARM.widths));
+      const poly = body.map(this.rough(limb([s0, el, wr], R.ARM.widths), 340 + side, 0.9));
       const fill = side < 0 ? C.ink : C.hair;
       ctx.fillStyle = C.violet; ctx.fill(toPath(offset(poly, -1.8 * S, 2 * S)));
       const path = toPath(poly); ctx.fillStyle = fill; ctx.fill(path); hits.push(path);
@@ -215,27 +303,70 @@ export class CapriRig {
         const L = len * clamp(p.clawScale, 0.6, 2.2);
         const tip: Pt = [wr[0] + Math.cos(ang) * L, wr[1] + Math.sin(ang) * L];
         const nx = -Math.sin(ang) * 1.3, ny = Math.cos(ang) * 1.3;
-        const cp = root.map([[wr[0] + nx, wr[1] + ny], [wr[0] - nx, wr[1] - ny], tip]);
+        const cp = body.map([[wr[0] + nx, wr[1] + ny], [wr[0] - nx, wr[1] - ny], tip]);
         ctx.fillStyle = C.violet; ctx.fill(toPath(offset(cp, -1 * S, 1.2 * S)));
         ctx.fillStyle = fill; ctx.fill(toPath(cp));
       });
-      if (side < 0) { ctx.fillStyle = C.mask; ctx.fill(toPath(root.map(limb([s0, [lerp(s0[0], el[0], 0.4), lerp(s0[1], el[1], 0.4)]], [3.5, 1.5])))); }
+      if (side < 0) { ctx.fillStyle = C.mask; ctx.fill(toPath(body.map(limb([s0, [lerp(s0[0], el[0], 0.4), lerp(s0[1], el[1], 0.4)]], [3.5, 1.5])))); }
     };
-    arm(-1, p.armLRaise, 0, clamp(p.armSpread, 0, 1));
-    arm(1, p.armRRaise, p.armRWave, clamp(p.armSpread, 0, 1));
+    const armArgs = (side: -1 | 1) => (side < 0 ? arm(-1, p.armLRaise, 0, clamp(p.armSpread, 0, 1)) : arm(1, p.armRRaise, p.armRWave, clamp(p.armSpread, 0, 1)));
+    const farSide: -1 | 1 | 0 = at > 0.4 ? (tn > 0 ? -1 : 1) : 0; // the far arm goes behind the torso when she's side-on
+    if (farSide) armArgs(farSide);
+    // ---------------- torso (crimson, black X, green/black shoulder triangles)
+    const chest = (q: Poly): Poly => q.map(([x, y]) => [x, y < -60 ? y - p.breathe * 1.5 : y]);
+    const torso = body.map(this.rough(chest(R.TORSO), 320, 1));
+    ctx.fillStyle = C.violet;
+    ctx.fill(toPath(offset(torso, -2.5 * S, 3 * S)));
+    const torsoPath = toPath(torso);
+    ctx.fillStyle = C.hair; ctx.fill(torsoPath); hits.push(torsoPath);
+    ctx.save();
+    ctx.clip(torsoPath);
+    ctx.fillStyle = C.ink;
+    if (bk > 0.5) ctx.fill(toPath(body.map([[-2, -100], [2, -100], [3, -20], [0, 6], [-3, -20]])));
+    else {
+      for (const g2 of R.TORSO_INK) ctx.fill(toPath(body.map(chest(g2))));
+      ctx.fillStyle = C.mask;
+      for (const g2 of R.GREEN_PANELS.slice(0, 2)) ctx.fill(toPath(body.map(chest(g2))));
+    }
+    ctx.restore();
+    ctx.fillStyle = C.ink;
+    const neck = toPath(body.map(offset(R.NECK, p.hip * 0.8, sleepDroop * 0.5)));
+    ctx.fill(neck);
+    ctx.fillStyle = C.mask;
+    ctx.fill(toPath(body.map(offset(R.GREEN_PANELS[2], p.hip * 0.8, sleepDroop * 0.5))));
+
+    if (farSide) armArgs(farSide === -1 ? 1 : -1);
+    else { armArgs(-1); armArgs(1); }
 
     // ---------------- head
     ctx.fillStyle = C.ink;
     const crownShift = (q: Poly): Poly => offset(q, -yaw * 3, -pitch * 2);
-    for (const s of R.CROWN) { const path = toPath(head.map(crownShift(s))); ctx.fill(path); hits.push(path); }
-    const headPoly = head.map(face(R.HEAD, 0.35));
+    R.CROWN.forEach((s, i) => { const path = toPath(head.map(crownShift(this.rough(s, 400 + i, 2.4)))); ctx.fill(path); hits.push(path); });
+    const headPoly = head.map(face(this.rough(R.HEAD, 420, 0.6), 0.35));
     ctx.fillStyle = C.violet; ctx.fill(toPath(offset(headPoly, -2 * S, 2.5 * S)));
     const headPath = toPath(headPoly);
     ctx.fillStyle = C.ink; ctx.fill(headPath); hits.push(headPath);
 
+    if (at > 0.45 && bk <= 0.5) {
+      const sg = Math.sign(tn);
+      ctx.fill(toPath(head.map(face([[sg * 14, 14], [sg * 20, 24], [sg * (22 + 22 * at), 30]], 0.5))));
+    }
+    if (bk > 0.5) {
+      // seen from behind: the hair cloud covers head, neck and shoulders
+      const backHair: Poly = Array.from({ length: 26 }, (_, k) => {
+        const ang = (k / 26) * Math.PI * 2, rr = k % 2 ? 1 : 1.35 + 0.25 * h3(this.boil, 520, k);
+        return [Math.cos(ang) * 40 * rr, 14 + Math.sin(ang) * 50 * rr] as Pt;
+      });
+      const bh = hairM.map(this.roughHair(backHair, 510));
+      ctx.fillStyle = C.violet; ctx.fill(toPath(offset(bh, -2 * S, 2 * S)));
+      ctx.fillStyle = C.hair; ctx.fill(toPath(bh));
+      if (this.sparkleA) { ctx.save(); ctx.clip(toPath(bh)); ctx.globalAlpha = 0.7; ctx.fillStyle = this.sparkleA; ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height); ctx.restore(); }
+      ctx.fillStyle = C.ink;
+      R.HAIR_INK.slice(0, 3).forEach((q, i) => ctx.fill(toPath(hairM.map(this.roughHair(q.map(([x, y]) => [x * 0.55, y * 0.55 + 20] as Pt), 500 + i)))));
+    } else {
     // mask (glows when talking/thinking)
     const glow = clamp(p.maskGlow, 0, 1);
-    const maskPolys = [R.MASK_L, R.MASK_R].map((m) => head.map(face(m)));
+    const maskPolys = [R.MASK_L, R.MASK_R].map((m, i) => head.map(face(this.rough(m, 430 + i, 0.7))));
     ctx.save();
     if (glow > 0.3) { ctx.shadowColor = C.mask; ctx.shadowBlur = (glow - 0.3) * 18 * S; }
     ctx.fillStyle = C.mask;
@@ -244,9 +375,10 @@ export class CapriRig {
     ctx.restore();
 
     // eyes: black pointed almonds with thorns, blue iris, white pupil, green ring
-    const farL = yaw > 0 ? 1 - yaw * 0.3 : 1, farR = yaw < 0 ? 1 + yaw * 0.3 : 1;
-    this.eye(ctx, head, face([R.EYE_L])[0], -1, farL, 1, p, p.blinkL, S);
-    this.eye(ctx, head, face([R.EYE_R])[0], 1, farR, 1, p, p.blinkR, S);
+    const farL = yawE > 0 ? 1 - yawE * 0.7 : 1, farR = yawE < 0 ? 1 + yawE * 0.7 : 1;
+    // the two eyes are never a matched pair: different size, height and slant
+    if (farL > 0.3) this.eye(ctx, head, face([[R.EYE_L[0] - 0.5, R.EYE_L[1] - 0.8]])[0], -1, farL, 1.08, p, p.blinkL, S, -0.05);
+    if (farR > 0.3) this.eye(ctx, head, face([[R.EYE_R[0] + 0.5, R.EYE_R[1] + 1.4]])[0], 1, farR, 0.9, p, p.blinkR, S, 0.1);
     // many eyes bloom across the mask (N 2:14)
     if (p.manyEyes > 0.03) {
       ctx.save();
@@ -264,10 +396,26 @@ export class CapriRig {
 
     // bangs over the mask
     ctx.fillStyle = C.ink;
-    for (const b of R.BANGS) ctx.fill(toPath(head.map(face(b, 0.6))));
+    R.BANGS.forEach((b, i) => ctx.fill(toPath(head.map(face(this.rough(b, 450 + i, 1.6), 0.6)))));
 
     // mouth
     this.mouth(ctx, head, face([R.MOUTH])[0], p, S);
+    }
+
+    // ---------------- shards thrown off while she shatters
+    if (this.shards.length) {
+      const [hx, hy] = hairM.apply([0, 0]);
+      for (const s of this.shards) {
+        s.life -= dt; s.x += s.vx * dt; s.y += s.vy * dt; s.r += s.vr * dt;
+        const m = Mat.identity().translate(hx + s.x * S, hy + s.y * S).rotate(s.r).scale((S * s.s) / 10);
+        const tri = m.map([[-3, -1.4], [3, -1.1], [0.6, 9]]);
+        ctx.globalAlpha = clamp(s.life * 3, 0, 1);
+        ctx.fillStyle = C.violet; ctx.fill(toPath(offset(tri, -2 * S, 2 * S)));
+        ctx.fillStyle = s.ink ? C.ink : C.hair; ctx.fill(toPath(tri));
+      }
+      ctx.globalAlpha = 1;
+      this.shards = this.shards.filter((s) => s.life > 0);
+    }
 
     // ---------------- FX
     if (o.micActive || p.ringPulse > 0.05) this.listenRing(ctx, head, p, S, o.micActive);
@@ -429,12 +577,26 @@ export class CapriRig {
   /** Optional glitch post-process: horizontal band displacement + violet tint bands. */
   glitch(dst: Ctx, src: CanvasImageSource & { width: number; height: number }, amount: number) {
     const r = this.glitchRand;
-    const bands = Math.ceil(amount * 4);
+    const bands = Math.ceil(amount * 6);
     const H = src.height, W = src.width;
+    if (this.ghost) {
+      // a displaced, hue-shifted double of her behind the real one (EFGpu 1:41)
+      dst.save();
+      dst.globalCompositeOperation = 'destination-over';
+      dst.globalAlpha = 0.55;
+      dst.filter = r() < 0.5 ? 'hue-rotate(110deg) saturate(1.6)' : 'hue-rotate(-60deg) saturate(1.4)';
+      dst.drawImage(src, Math.round((r() * 2 - 1) * W * 0.07), Math.round((r() * 2 - 1) * H * 0.015));
+      dst.restore();
+    }
+    if (amount > 0.6 && r() < 0.35) {
+      // datamosh smear: one pixel row stretched into a tall block (EFGpu 5:10)
+      const y = Math.floor(H * (0.15 + r() * 0.6)), hh = Math.floor(H * (0.04 + r() * 0.12)), x = Math.floor(r() * W * 0.6), w = Math.floor(W * (0.15 + r() * 0.3));
+      dst.drawImage(src, x, y, w, 1, x + (r() * 2 - 1) * W * 0.05, y, w, hh);
+    }
     for (let i = 0; i < bands; i++) {
       const h = Math.max(2, Math.floor(r() * H * 0.05));
       const y = Math.floor(r() * (H - h));
-      const dx = Math.round((r() * 2 - 1) * W * 0.04 * amount);
+      const dx = Math.round((r() * 2 - 1) * W * 0.08 * amount);
       dst.clearRect(0, y, W, h);
       dst.drawImage(src, 0, y, W, h, dx, y, W, h);
       if (r() < 0.35) {

@@ -117,7 +117,8 @@ function tick(dt: number) {
   p.mouthOpen = Math.max(0, speaker.speaking ? level : p.mouthOpen); // lip-sync wins over gesture clips
 
   const teleporting = fx.active || fx.hidden;
-  const glitch = !teleporting && settings.character.glitchEffects && (p.glitch > 0.05 || Math.random() < 0.0015 * intensity);
+  if (rig.stutter > 0 && !teleporting) { rig.stutter--; return; } // glitch stutter: hold the last image a few frames
+  const glitch = !teleporting && settings.character.glitchEffects && (p.glitch > 0.05 || rig.burst > 0 || Math.random() < 0.0015 * intensity);
   const g = glitch || teleporting ? offCtx : ctx;
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, canvas.width, canvas.height);
@@ -127,7 +128,7 @@ function tick(dt: number) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(off, 0, 0);
-    rig.glitch(ctx, off, Math.max(0.3, p.glitch));
+    rig.glitch(ctx, off, Math.max(0.3, p.glitch, rig.burst * 0.9));
   }
   if (teleporting) fx.render(ctx, off, dt, dpr);
 }
