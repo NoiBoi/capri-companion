@@ -84,6 +84,12 @@ export function foregroundRect(ownHandles: bigint[]): { x: number; y: number; wi
 }
 
 /** Is the left mouse button physically down? (used to end drags robustly). Null if unknown. */
+/** Handle of the foreground window (0n when none or unavailable). */
+export function foregroundHandle(): bigint {
+  if (!api) return 0n;
+  try { const h = api.GetForegroundWindow(); return h ? api.address(h) : 0n; } catch { return 0n; }
+}
+
 export function leftButtonDown(): boolean | null {
   if (!api) return null;
   try { return ((api.GetAsyncKeyState(0x01) as number) & 0x8000) !== 0; } catch { return null; }

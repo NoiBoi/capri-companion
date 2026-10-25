@@ -24,7 +24,7 @@ import type { ActionContext } from './actions/registry';
 import { createCharacterWindow, createPanelWindow, characterSize, displaysNow, DragController, OFFSCREEN, reveal, conceal, shown } from './windows';
 import { clampToDisplays } from './desktop/displays';
 import { zap, zapCount } from './zap';
-import { foregroundRect, handleToBigint, isOtherAppFullscreen, loadWin32, win32Status } from './desktop/win32';
+import { foregroundHandle, foregroundRect, handleToBigint, isOtherAppFullscreen, loadWin32, win32Status } from './desktop/win32';
 import { probeWindowsRecognizer, transcribeOpenAI, transcribeWindows, WakeWordListener } from './voice/speech';
 
 const T0 = performance.timeOrigin;
@@ -159,8 +159,8 @@ async function init() {
 
   const actionCtx: ActionContext = {
     settings: () => settings.get(),
-    openExternal: (u) => shell.openExternal(u),
-    openPath: (p) => shell.openPath(p),
+    openExternal: (u) => { raiseSoon(); return shell.openExternal(u); },
+    openPath: (p) => { raiseSoon(); return shell.openPath(p); },
     notes, reminders, memory,
     now: () => Date.now(),
     teleport: (where) => teleporter.go(where as TeleportTarget, 'ai'),
@@ -223,6 +223,7 @@ async function init() {
   monitor.start();
   teleporter.startAuto();
   intervals.push(setInterval(fullscreenTick, 2000));
+  intervals.push(setInterval(raiseTick, 250));
   intervals.push(setInterval(presenceTick, 30_000));
   screen.on('display-removed', reclampCharacter);
   screen.on('display-added', reclampCharacter);
@@ -317,7 +318,8 @@ function createCharacter() {
   charWin.on('move', () => {
     if (drag.active || !settled) return;
     if (moveTimer) clearTimeout(moveTimer);
-    moveTimer = setTimeout(savePosition, 300);
+    // whatever moved her, re-check what's under her so she never keeps lying on a ledge that's gone
+    moveTimer = setTimeout(() => { savePosition(); sendSurface(); }, 300);
   });
   charWin.webContents.on('render-process-gone', (_e, details) => {
     log.error('character renderer crashed', { reason: details.reason, exitCode: details.exitCode });
@@ -529,6 +531,20 @@ function fullscreenTick() {
   if (fs_ && !fullscreenHidden) { fullscreenHidden = true; setCharacterVisible(false); log.info('hidden for fullscreen app'); }
   else if (!fs_ && fullscreenHidden) { fullscreenHidden = false; setCharacterVisible(true); }
 }
+// Always-on-top windows share one topmost band, and a freshly activated app (seen with Windows
+// Calculator launched from her own action) can draw over her. Re-assert her place at the top of the
+// band whenever the foreground window changes, and a few times after she launches something.
+let lastFg = 0n;
+function raiseCharacter() {
+  if (!charWin || charWin.isDestroyed() || userHidden || fullscreenHidden || !settings.get().character.alwaysOnTop) return;
+  charWin.setAlwaysOnTop(true, 'floating');
+  charWin.moveTop();
+}
+function raiseTick() {
+  const fg = foregroundHandle();
+  if (fg !== lastFg) { lastFg = fg; raiseCharacter(); }
+}
+function raiseSoon() { for (const ms of [400, 1200, 2500, 4000]) setTimeout(raiseCharacter, ms); }
 function presenceTick() {
   const s = settings.get();
   const idleSec = powerMonitor.getSystemIdleTime();
