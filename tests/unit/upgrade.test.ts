@@ -83,6 +83,51 @@ describe('Gemini provider (Interactions API, mocked server)', () => {
     await bad.close();
   });
 
+  it('a long quota wait goes straight to the fallback model, or fails fast with the retry time', async () => {
+    const quota = JSON.stringify({ error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'quota', details: [{ retryDelay: '41s' }] } });
+    const models: string[] = [];
+    const srv = await mockServer((_q, res, body) => {
+      const model = JSON.parse(body).model; models.push(model);
+      if (model === 'primary') { res.writeHead(429, { 'content-type': 'application/json' }); res.end(quota); return; }
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end(sse([{ event_type: 'step.delta', index: 0, delta: { type: 'text', text: 'backup ok' } }]));
+    });
+    const t = Date.now();
+    expect(await collect(new GeminiProvider({ apiKey: KEY, model: 'primary', fallbackModel: 'backup', thinkingLevel: 'minimal', serverUrl: srv.url }).stream([{ role: 'user', content: 'hi' }], opts()))).toBe('backup ok');
+    expect(models).toEqual(['primary', 'backup']);
+    const err = await collect(new GeminiProvider({ apiKey: KEY, model: 'primary', fallbackModel: '', thinkingLevel: 'minimal', serverUrl: srv.url }).stream([{ role: 'user', content: 'hi' }], opts())).catch((e) => e);
+    expect(err).toMatchObject({ kind: 'rate_limit', retryAfterMs: 41_000 });
+    expect(Date.now() - t).toBeLessThan(3000); // never sat out the 41 s
+    await srv.close();
+  });
+
+  it('a stream that goes quiet after the headers times out instead of hanging', async () => {
+    const srv = await mockServer((_q, res) => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.write(sse([{ event_type: 'interaction.created', interaction: { id: 'i1' } }])); // ...then nothing, connection held open
+    });
+    const t = Date.now();
+    const err = await collect(new GeminiProvider({ apiKey: KEY, model: 'm', fallbackModel: '', thinkingLevel: 'minimal', serverUrl: srv.url }).stream([{ role: 'user', content: 'hi' }], { ...opts(), timeoutMs: 400 })).catch((e) => e);
+    expect(err).toMatchObject({ kind: 'timeout' });
+    expect(Date.now() - t).toBeLessThan(4000);
+    await srv.close();
+  }, 10_000);
+
+  it('a model that rejects the thinking level is retried with its own default', async () => {
+    const bodies: { generation_config: Record<string, unknown> }[] = [];
+    const srv = await mockServer((_q, res, body) => {
+      const b = JSON.parse(body); bodies.push(b);
+      if (b.generation_config.thinking_level) { res.writeHead(400, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: { code: 400, status: 'INVALID_ARGUMENT', message: 'Thinking level THINKING_LEVEL_MINIMAL is not supported for this model.' } })); return; }
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end(sse([{ event_type: 'step.delta', index: 0, delta: { type: 'text', text: 'ok' } }]));
+    });
+    const p = new GeminiProvider({ apiKey: KEY, model: 'gemini-3.8-flash', fallbackModel: '', thinkingLevel: 'minimal', serverUrl: srv.url });
+    expect(await collect(p.stream([{ role: 'user', content: 'hi' }], opts()))).toBe('ok');
+    expect(await collect(p.stream([{ role: 'user', content: 'again' }], opts()))).toBe('ok');
+    expect(bodies.map((b) => 'thinking_level' in b.generation_config)).toEqual([true, false, false]); // remembered
+    await srv.close();
+  });
+
   it('a missing key is a clear configuration error (never a mock reply)', async () => {
     const p = new GeminiProvider({ apiKey: undefined, model: 'm', fallbackModel: '', thinkingLevel: 'minimal' });
     await expect(collect(p.stream([{ role: 'user', content: 'hi' }], opts()))).rejects.toMatchObject({ kind: 'config' });

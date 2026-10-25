@@ -8,3 +8,6 @@ docs/previews/
 trailer/out/
 trailer/.remotion/
 *.tmp
+
+# raw desktop recordings (scripts/record-demo.mjs): personal desktop, regenerate locally
+trailer/public/demo/

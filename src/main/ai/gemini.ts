@@ -127,7 +127,10 @@ export class GeminiProvider implements LLMProvider {
           if (pe.kind === 'model') break; // try the fallback model
           // one policy for retries (the SDK's own are disabled): rate limits/overload up to 2×, dead network once
           const maxRetry = pe.kind === 'network' || pe.kind === 'timeout' ? 1 : 2;
-          if ((pe.kind === 'rate_limit' || pe.kind === 'server' || pe.kind === 'network' || pe.kind === 'timeout') && attempt < maxRetry) {
+          // a long quota wait (free tier: 15 req/min) would leave her "thinking" for most of a minute: go
+          // straight to the fallback model's own quota, or surface the error with its retry time
+          const longWait = pe.kind === 'rate_limit' && (pe.retryAfterMs ?? 0) > 4000;
+          if ((pe.kind === 'rate_limit' || pe.kind === 'server' || pe.kind === 'network' || pe.kind === 'timeout') && attempt < maxRetry && !longWait) {
             await sleep(pe.retryAfterMs ?? 800 * 2 ** attempt, o.signal);
             continue;
           }

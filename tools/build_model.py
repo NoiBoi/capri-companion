@@ -59,6 +59,20 @@ def extend_cut(layers, side, kind, w, h, rng):
                     elif cur: runs.append((min(cur), max(cur))); cur = []
                 for b0, b1 in runs:
                     if b1 - b0 < 6: continue
+                    if b1 - b0 > 60:
+                        # a wide cut through the hair cloud closes as a low, jagged dome (the cloud is
+                        # round on top, W1/infobox), not one giant spike
+                        n = max(8, int((b1 - b0) / 22))
+                        dome = [P(b0, -2)]
+                        for i in range(1, n):
+                            t = i / n
+                            hgt = (b1 - b0) * 0.2 * math.sin(math.pi * t) ** 0.7
+                            jag = (b1 - b0) * 0.05 * (1.0 if i % 2 else -0.35) * (0.6 + rng.random() * 0.8)
+                            dome.append(P(b0 + (b1 - b0) * t + (rng.random() - 0.5) * 6, max(2.0, hgt + jag)))
+                        dome.append(P(b1, -2))
+                        add.setdefault('violet', []).append([[x - 3.5, y + 4.5] for x, y in dome])
+                        add.setdefault('hair', []).append(dome)
+                        continue
                     L = (b1 - b0) * (0.7 + rng.random() * 0.8)
                     tip = (b0 + b1) / 2 + (rng.random() - 0.5) * (b1 - b0) * 0.8
                     shard = [P(b0, -2), P(b1, -2), P(tip, L)]
