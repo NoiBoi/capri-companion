@@ -23,7 +23,6 @@ import { Conversation } from './ai/conversation';
 import type { ActionContext } from './actions/registry';
 import { createCharacterWindow, createPanelWindow, characterSize, displaysNow, DragController, OFFSCREEN, reveal, conceal, shown } from './windows';
 import { clampToDisplays } from './desktop/displays';
-import { zap, zapCount } from './zap';
 import { foregroundHandle, foregroundRect, handleToBigint, isOtherAppFullscreen, loadWin32, win32Status } from './desktop/win32';
 import { probeWindowsRecognizer, transcribeOpenAI, transcribeWindows, WakeWordListener } from './voice/speech';
 
@@ -185,16 +184,8 @@ async function init() {
     bounds: () => (charWin && !charWin.isDestroyed() ? charWin.getBounds() : null),
     move: (r, how) => {
       if (!charWin || charWin.isDestroyed()) return;
-      const from = charWin.getBounds();
       charWin.setBounds(r);
-      // a real jump (not a glide): a red bolt zaps across the screen to where she lands
-      if (how === 'teleport' && settings.get().teleport.effects) {
-        zap(from, r);
-        // showing the bolt's screen-saver-level overlay clears her always-on-top flag on Windows; without
-        // this she drops behind every window after a teleport (invisible over a maximised app)
-        raiseCharacter();
-        setTimeout(raiseCharacter, 800);
-      }
+      if (how === 'teleport') raiseCharacter(); // keep her above whatever is under her new spot
     },
     moved: (dest) => {
       // remember the window she's sitting on so she can react if it moves or closes
@@ -237,7 +228,7 @@ async function init() {
   powerMonitor.on('resume', () => { reminders.tick(); reclampCharacter(); void monitor.check('resume'); });
 
   if (!s0.firstRunComplete) setTimeout(() => openPanel('welcome'), 800);
-  if (TEST) (globalThis as Record<string, unknown>).__capri = { get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, get startupMs() { return startupMs; }, get zapCount() { return zapCount; }, get speakCount() { return speakCount; }, presenceTick, settleAfterDrop, throwCharacter, get throwing() { return !!throwTimer; }, pendingConfirms, log };
+  if (TEST) (globalThis as Record<string, unknown>).__capri = { get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, get startupMs() { return startupMs; }, get speakCount() { return speakCount; }, presenceTick, settleAfterDrop, throwCharacter, get throwing() { return !!throwTimer; }, pendingConfirms, log };
 }
 
 // ---------------------------------------------------------------- desktop-pet handling: drop onto a ledge, throw

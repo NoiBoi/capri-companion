@@ -43,7 +43,6 @@ Try saying: "sit down", "sit on my window", "peek", "recline", "come here", "tel
   - Drop her on the top edge of the window you're using, or near the taskbar, and she sits there.
   - Fling her and she flies across the screen, bouncing off the edges until she skids to a stop.
   - A click pokes her; rubbing the cursor back and forth over her head pats her.
-- **Teleport bolt:** a red line zaps across the screen from where she was to where she lands.
 - **Teleport:** her real window jumps to a free spot. That's never under your cursor, avoids the app you're using, can be another monitor, and comes beside your cursor when you summon her with `Ctrl+Alt+Space`. The effect: chromatic split → collapse to a scanline with a shard burst → reassembly into an observed pose. She teleports on her own only while the AI connection is live (configurable interval, never mid-conversation or in DND).
 - **Gemini:** the official `@google/genai` SDK (Interactions API), streaming, multi-turn, `store:false`, fallback model, rate-limit/retry handling. A live status chip (connecting / online / offline / error) appears only after a real authenticated check.
 - **Postures:** she sits on the taskbar or on top of the window you're using (and jumps off if you move it), curls up or reclines in mid-air, stands contrapposto, peeks in from a screen edge and dashes across the screen. Each pose is taken from Netflix footage; see [ANIMATION_CATALOG.md](docs/ANIMATION_CATALOG.md#v3-postures-legs-hips-lean). Right-click → *Pose* to pick one, or just ask her to sit.

@@ -536,15 +536,15 @@ describe('teleportation', () => {
     }
   });
 
-  it('a teleport zaps a red bolt across the screen to her new spot; glides do not', async () => {
+  it('a teleport opens no extra overlay windows (the effect is drawn on her own window)', async () => {
     const { app } = await launch(profile());
-    const zaps = () => app.evaluate(() => (globalThis as unknown as { __capri: { zapCount: number } }).__capri.zapCount);
+    const zaps = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length - 1); // windows besides hers
     const go = (t: string, how: string) => app.evaluate((_e, [t, how]) => (globalThis as unknown as { __capri: { teleporter: { go(t: string, r: string, h: string): Promise<unknown> } } }).__capri.teleporter.go(t, 'manual', how), [t, how]);
     expect(await zaps()).toBe(0);
     await go('left', 'teleport');
-    expect(await zaps()).toBe(1);
+    expect(await zaps()).toBe(0);
     await go('right', 'glide');
-    expect(await zaps()).toBe(1);
+    expect(await zaps()).toBe(0);
   });
 
   it('the AI can make her teleport and emote through validated actions (no extra model round)', async () => {

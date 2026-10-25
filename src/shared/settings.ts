@@ -26,6 +26,9 @@ export const TOOL_NAMES = [
   'remember',
   'teleport',
   'emote',
+  'read_screen',
+  'study_timer',
+  'mischief',
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 export const Policy = z.enum(['allow', 'confirm', 'deny']);
@@ -54,6 +57,10 @@ export const SettingsSchema = z.object({
     quietHours: z.object({ enabled: z.boolean(), start: hhmm, end: hhmm }),
     doNotDisturb: z.boolean(),
     sleepAfterMinutes: z.number().min(1).max(240),
+    sitOnTextBoxes: z.boolean(), // while you type, she sits on the line you're typing on
+    idlePeek: z.boolean(), // when you're away she peeks in from a screen edge
+    mischief: z.boolean(), // harmless pranks now and then (screen glitch, borrowing the cursor, notes)
+    mischiefIntervalMinutes: z.number().min(5).max(240),
   }),
   ai: z.object({
     provider: z.enum(['gemini', 'offline', 'ollama', 'openai', 'anthropic']),
@@ -79,6 +86,7 @@ export const SettingsSchema = z.object({
     openaiStt: z.object({ baseUrl: httpUrl, model: z.string().max(100) }),
     micPermission: z.boolean(),
     wakeWord: z.boolean(),
+    interactionLines: z.boolean(), // a short spoken line when you poke, pat or call her
   }),
   memory: z.object({ enabled: z.boolean(), historyRetentionDays: z.number().int().min(0).max(3650) }),
   privacy: z.object({ saveHistory: z.boolean(), logLevel: z.enum(['debug', 'info', 'warn', 'error']) }),
@@ -115,6 +123,9 @@ export const DEFAULT_POLICIES: Record<ToolName, Policy> = {
   remember: 'confirm',
   teleport: 'allow',
   emote: 'allow',
+  read_screen: 'confirm', // reads the text in your active window: ask every time
+  study_timer: 'allow',
+  mischief: 'allow',
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -138,6 +149,10 @@ export const DEFAULT_SETTINGS: Settings = {
     quietHours: { enabled: true, start: '22:00', end: '08:00' },
     doNotDisturb: false,
     sleepAfterMinutes: 10,
+    sitOnTextBoxes: true,
+    idlePeek: true,
+    mischief: false,
+    mischiefIntervalMinutes: 30,
   },
   ai: {
     provider: 'gemini',
@@ -163,6 +178,7 @@ export const DEFAULT_SETTINGS: Settings = {
     openaiStt: { baseUrl: 'https://api.openai.com/v1', model: 'whisper-1' },
     micPermission: false,
     wakeWord: false,
+    interactionLines: true,
   },
   memory: { enabled: true, historyRetentionDays: 90 },
   privacy: { saveHistory: true, logLevel: 'info' },

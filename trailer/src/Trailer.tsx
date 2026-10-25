@@ -80,7 +80,7 @@ const FaceShot: React.FC<{ s: Extract<Shot, { kind: 'face' }>; len: number }> = 
   );
 };
 
-/** Her own glitch on a cut: torn slices and a red line, a few frames long. */
+/** Her own glitch on a cut: torn dark slices, a few frames long. */
 const CutGlitch: React.FC<{ seed: number; strength?: number }> = ({ seed, strength = 1 }) => {
   const fr = useCurrentFrame();
   if (fr > 4) return null;
@@ -88,29 +88,8 @@ const CutGlitch: React.FC<{ seed: number; strength?: number }> = ({ seed, streng
   return (
     <AbsoluteFill style={{ pointerEvents: 'none' }}>
       {Array.from({ length: 6 }, (_, i) => (
-        <div key={i} style={{ position: 'absolute', left: (random(`${seed}x${i}${fr}`) - 0.5) * 240 * k, top: random(`${seed}y${i}${fr}`) * H, width: W, height: 4 + random(`${seed}h${i}`) * 40, background: i % 3 === 0 ? C.accent : 'rgba(12,11,15,0.92)', opacity: 0.9 * k }} />
+        <div key={i} style={{ position: 'absolute', left: (random(`${seed}x${i}${fr}`) - 0.5) * 240 * k, top: random(`${seed}y${i}${fr}`) * H, width: W, height: 4 + random(`${seed}h${i}`) * 40, background: 'rgba(12,11,15,0.92)', opacity: 0.9 * k }} />
       ))}
-      <div style={{ position: 'absolute', left: 0, top: random(`${seed}l${fr}`) * H, width: W, height: 3, background: C.accent, opacity: k }} />
-    </AbsoluteFill>
-  );
-};
-
-/** The red bolt her teleports leave (the app's zap), across the whole frame. */
-const Bolt: React.FC<{ seed: number; from: [number, number]; to: [number, number]; len?: number }> = ({ seed, from, to, len = 14 }) => {
-  const fr = useCurrentFrame();
-  const k = fr / len;
-  if (k >= 1) return null;
-  const n = 22, dx = to[0] - from[0], dy = to[1] - from[1], L2 = Math.hypot(dx, dy), nx = -dy / L2, ny = dx / L2;
-  const pts = Array.from({ length: n + 1 }, (_, i) => { const u = i / n, j = i && i < n ? (random(`${seed}-${Math.floor(fr / 2)}-${i}`) * 2 - 1) * 46 : 0; return [from[0] + dx * u + nx * j, from[1] + dy * u + ny * j]; });
-  const head = Math.min(1, k / 0.4), tail = Math.max(0, (k - 0.3) / 0.7);
-  const seg = pts.slice(Math.floor(tail * n), Math.ceil(head * n) + 1).map((p) => p.join(',')).join(' ');
-  return (
-    <AbsoluteFill style={{ pointerEvents: 'none' }}>
-      <svg width={W} height={H}>
-        <polyline points={seg} fill="none" stroke="rgba(242,21,76,0.35)" strokeWidth={30} strokeLinejoin="miter" />
-        <polyline points={seg} fill="none" stroke={C.accent} strokeWidth={10} strokeLinejoin="miter" />
-        <polyline points={seg} fill="none" stroke="#fff" strokeWidth={3} strokeLinejoin="miter" />
-      </svg>
     </AbsoluteFill>
   );
 };
@@ -246,11 +225,6 @@ const overlays: Over[] = [
   { at: b(82), dur: b(2), node: <AbsoluteFill style={{ background: 'rgba(12,11,15,0.72)' }}><Ask line="Developers wanted." len={f(b(2))} /></AbsoluteFill> },
   { at: b(84), dur: END - b(84), node: <EndCard /> },
 ];
-// bolts: at the title, on her arrival, on the teleport
-const bolts: { at: number; from: [number, number]; to: [number, number] }[] = [
-  { at: b(16), from: [-60, 760], to: [W + 60, 300] },
-  { at: b(52) + TP_LEAD - 0.32, from: [1380, 600], to: [380, 560] },
-];
 const sfx: { at: number; name: string; volume: number }[] = [
   { at: b(16) - 0.05, name: 'braam', volume: 0.6 },
   { at: b(52) + TP_LEAD - 0.45, name: 'teleport_whoosh', volume: 0.7 },
@@ -269,7 +243,6 @@ export const Trailer: React.FC = () => (
       </Sequence>
     ))}
     {overlays.map((o, i) => <Sequence key={`o${i}`} from={f(o.at)} durationInFrames={f(o.dur)}>{o.node}</Sequence>)}
-    {bolts.map((bo, i) => <Sequence key={`b${i}`} from={f(bo.at)} durationInFrames={16}><Bolt seed={i} from={bo.from} to={bo.to} /></Sequence>)}
     {sfx.map((s, i) => <Sequence key={`s${i}`} from={Math.max(0, f(s.at))}><Audio src={staticFile(`audio/sfx/${s.name}.mp3`)} volume={s.volume} /></Sequence>)}
     {cuts.filter((c, i) => i > 0 && c.dur <= BEAT + 0.01).map((c, i) => <Sequence key={`g${i}`} from={f(c.at)}><Audio src={staticFile('audio/sfx/glitch1.mp3')} volume={0.12} /></Sequence>)}
     <Audio src={staticFile('audio/score.mp3')} volume={(fr) => 0.75 * interpolate(fr, [TRAILER_FRAMES - 75, TRAILER_FRAMES - 3], [1, 0], clamp)} />

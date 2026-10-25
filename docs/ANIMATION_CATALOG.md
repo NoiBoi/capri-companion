@@ -71,7 +71,7 @@ Layered on every pose:
 - **Mouth:** opens only from real lip-sync.
 - **Motion:** head turn and gaze toward the cursor, breathing, and hair sway through one shared deformation field.
 - **Glitch bursts:** slice, shatter, ghost, tear.
-- **Teleport:** out/in effects, plus the red zap bolt across the screen.
+- **Teleport:** she tears into bands, splits colour and shatters into shards of herself where she stands, then the shards fly into her new spot and she snaps back together.
 - **Touch:** a poke squash and pat sparkles.
 
 **Not implemented:** walking, standing and side or back profiles. No clean full-figure stills of those exist to trace.

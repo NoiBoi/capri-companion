@@ -112,9 +112,10 @@ export function chooseDestination(target: TeleportTarget, c: TeleportContext): D
   } else {
     pool = pool.filter((s) => s.display === currentDisplay.id || target === 'random' || rand() < 0.35);
   }
-  const scored = pool
-    .filter((s) => !contains(s, c.cursor))
-    .filter((s) => dist(centre(s), here) > Math.min(w, 220)) // a real move
+  const moved = pool.filter((s) => dist(centre(s), here) > Math.min(w, 220)); // a real move
+  // keep clear of the cursor when there is a choice; asked to go somewhere, she still goes
+  const clear = moved.filter((s) => !contains(s, c.cursor));
+  const scored = (clear.length ? clear : moved)
     .map((s) => {
       const cover = c.avoid ? overlap(s, c.avoid) / area(s) : 0;
       // she rests on ledges: a seat on the taskbar beats floating, and "go left/right" always means

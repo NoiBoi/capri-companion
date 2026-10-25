@@ -17,6 +17,26 @@ export interface ActionContext {
   /** Character hooks (validated, renderer never sees model text). */
   teleport?(where: string): Promise<{ ok: boolean; detail: string }>;
   emote?(name: string): boolean;
+  /** Text in the user's active window (on-device OCR), with her scan effect over it. */
+  readScreen?(): Promise<{ ok: boolean; text: string; window: string; detail?: string }>;
+  /** One harmless prank, on request. */
+  mischief?(kind: MischiefKind): Promise<boolean>;
+}
+export const MISCHIEF_KINDS = ['glitch', 'cursor', 'note'] as const;
+export type MischiefKind = (typeof MISCHIEF_KINDS)[number];
+
+/** A study timer as reminders: focus, break, focus… with the last break skipped. Exported for tests. */
+export function studyPlan(focus: number, rest: number, rounds: number, start: number) {
+  const out: { text: string; at: number }[] = [];
+  let t = start;
+  for (let i = 1; i <= rounds; i++) {
+    t += focus * 60_000;
+    if (i === rounds) { out.push({ text: `Study session done: ${rounds} × ${focus} min`, at: t }); break; }
+    out.push({ text: `Study: break time (${rest} min), round ${i} of ${rounds} done`, at: t });
+    t += rest * 60_000;
+    out.push({ text: `Study: back to focus, round ${i + 1} of ${rounds}`, at: t });
+  }
+  return out;
 }
 
 export interface ToolResult { ok: boolean; summary: string; data?: unknown; untrusted?: boolean; cosmetic?: boolean }
@@ -193,6 +213,36 @@ export const TOOLS = {
     async run(a, ctx) {
       const ok = ctx.emote?.(a.emotion) ?? false;
       return { ok, summary: ok ? `(${a.emotion})` : 'emote unavailable', cosmetic: true };
+    },
+  }),
+  read_screen: def({
+    description: 'Read the text in the window the user is looking at (on-device OCR) so you can answer questions about it. args: {}. Only when the user asks about what is on their screen.',
+    schema: z.object({}).passthrough(),
+    describe: () => 'Read the text in your active window',
+    async run(_a, ctx) {
+      if (!ctx.readScreen) return { ok: false, summary: 'Screen reading unavailable' };
+      const r = await ctx.readScreen();
+      if (!r.ok) return { ok: false, summary: r.detail ?? 'Could not read the screen' };
+      return { ok: true, summary: `Read ${r.text.length} characters from ${r.window || 'the active window'}`, data: { window: r.window, text: r.text.slice(0, 6000) }, untrusted: true };
+    },
+  }),
+  study_timer: def({
+    description: 'Start a study timer (pomodoro): focus blocks with breaks between. args: {"focus"?: minutes (default 25), "rest"?: minutes (default 5), "rounds"?: number (default 4)}',
+    schema: z.object({ focus: z.number().int().min(1).max(180).default(25), rest: z.number().int().min(1).max(60).default(5), rounds: z.number().int().min(1).max(12).default(4) }),
+    describe: (a) => `Study timer: ${a.rounds} × ${a.focus} min focus, ${a.rest} min breaks`,
+    async run(a, ctx) {
+      const plan = studyPlan(a.focus, a.rest, a.rounds, ctx.now());
+      for (const p of plan) ctx.reminders.add(p.text, p.at, 'timer');
+      return { ok: true, summary: `Study timer running: ${a.rounds} × ${a.focus} min, first break at ${new Date(plan[0].at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` };
+    },
+  }),
+  mischief: def({
+    description: `Play one harmless prank on the user, only when they ask for chaos or dare you. args: {"kind": one of ${JSON.stringify(MISCHIEF_KINDS)}} (glitch = their screen glitches for a moment, cursor = you borrow their mouse cursor for a second, note = you leave a "you've been hacked" sticky note)`,
+    schema: z.object({ kind: z.enum(MISCHIEF_KINDS) }),
+    describe: (a) => `Prank: ${a.kind}`,
+    async run(a, ctx) {
+      const ok = (await ctx.mischief?.(a.kind)) ?? false;
+      return { ok, summary: ok ? `(${a.kind} prank)` : 'Prank unavailable right now', cosmetic: true };
     },
   }),
 } satisfies Record<ToolName, ToolDef<z.ZodTypeAny>>;

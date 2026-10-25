@@ -48,10 +48,12 @@ let dashing = 0; // pose override for previews/tests only
 
 const fx = new TeleportFx(() => document.createElement('canvas'));
 const model = new CapriModel();
-let variantFor = '', variant = 0, lastP: Params | null = null;
+let variantFor = '', variant = 0, lastP: Params | null = null, shownPose: PoseName | null = null;
 function modelPose(): PoseName {
+  // while she breaks apart she keeps the pose she was in; the new spot's pose appears as she arrives
+  if (fx.phase === 'out' && shownPose) return shownPose;
   if (variantFor !== behavior.posture) { variantFor = behavior.posture; variant = Math.random(); }
-  return modelPoseFor({ surface, posture: behavior.posture, sleeping: behavior.state === 'sleeping', dragging, variant, back: (lastP?.back ?? 0) > 0.5 });
+  return (shownPose = modelPoseFor({ surface, posture: behavior.posture, sleeping: behavior.state === 'sleeping', dragging, variant, back: (lastP?.back ?? 0) > 0.5 }));
 }
 const anim = new Animator();
 const behavior = new Behavior();

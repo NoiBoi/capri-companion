@@ -2,25 +2,28 @@ import { prng } from './geometry';
 import { PALETTE as C } from './palette';
 
 /**
- * Teleport effect, composited from the rendered character (offscreen canvas).
- * Departure ≈ chromatic split + scan-band tearing → vertical collapse to a scanline + shard burst.
- * Arrival ≈ shards converge → scanline expands → slight overshoot → clean.
- * Grounded in her observed glitch-shard visuals (N 2:54) and violet/green palette; the
- * dissolve itself is an inference (she enters by hard cuts in the show).
+ * Teleport effect, composited from the rendered character (offscreen canvas). Everything happens on her
+ * own silhouette: the effect measures where her pixels are at the start of each phase, tears her into
+ * horizontal bands across her body, splits her colours, and breaks her into shards cut from her own
+ * pixels — so the glitch is exactly where she is, and where she lands.
+ * Departure: bands jitter wider and wider, colour split, she shatters outward and is gone.
+ * Arrival: shards fly in to their places on her body, bands snap into line, one hard flicker, clean.
+ * After her glitch-shard visuals (N 2:54) and the show's hard-cut entrances.
  */
 export type FxPhase = 'out' | 'in';
-interface Shard { x: number; y: number; vx: number; vy: number; rot: number; vr: number; size: number; color: string }
+interface Shard { x: number; y: number; dx: number; dy: number; rot: number; vr: number; size: number; color: string }
+type Box = { x: number; y: number; w: number; h: number };
 
-export const FX_DURATION: Record<FxPhase, number> = { out: 0.45, in: 0.55 };
+export const FX_DURATION: Record<FxPhase, number> = { out: 0.42, in: 0.4 };
 
-const easeIn = (x: number) => x * x * x;
-const easeOutBack = (x: number) => { const c = 1.7; return 1 + (c + 1) * (x - 1) ** 3 + c * (x - 1) ** 2; };
+const easeOut = (x: number) => 1 - (1 - x) ** 3;
 
 export class TeleportFx {
   phase: FxPhase | null = null;
   t = 0;
   id = 0;
   private shards: Shard[] = [];
+  private box: Box | null = null; // her silhouette, device px, measured on the first frame of a phase
   private tint: Record<string, HTMLCanvasElement> = {};
   /** Phases completed (for tests/diagnostics). */
   readonly log: string[] = [];
@@ -34,17 +37,36 @@ export class TeleportFx {
   /** Whether the character should be considered invisible (between out and in). */
   hidden = false;
 
-  start(phase: FxPhase, id: number, focus: { x: number; y: number; w: number; h: number }) {
+  /** `_focus` is kept for callers; the effect finds her itself from the rendered frame. */
+  start(phase: FxPhase, id: number, _focus?: unknown) {
     this.phase = phase;
     this.t = 0;
     this.id = id;
     this.hidden = false;
-    const r = prng(id * 7919 + (phase === 'out' ? 1 : 2));
-    const cols = [C.hair, C.hair, C.mask, C.violet, C.ink, C.white];
-    this.shards = Array.from({ length: 46 }, () => {
-      const x = focus.x + (r() - 0.5) * focus.w, y = focus.y + (r() - 0.5) * focus.h;
-      const a = r() * Math.PI * 2, sp = 180 + r() * 520;
-      return { x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 80, rot: r() * 6, vr: (r() - 0.5) * 18, size: 3 + r() * 11, color: cols[Math.floor(r() * cols.length)] };
+    this.box = null;
+    this.shards = [];
+  }
+
+  /** Her bounding box and shards sampled from her opaque pixels (with their colours). */
+  private measure(src: HTMLCanvasElement, dpr: number) {
+    const W = src.width, H = src.height;
+    const data = src.getContext('2d')!.getImageData(0, 0, W, H).data;
+    let x0 = W, y0 = H, x1 = -1, y1 = -1;
+    const step = Math.max(2, Math.round(3 * dpr));
+    const opaque: number[] = [];
+    for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step) {
+      if (data[(y * W + x) * 4 + 3] > 120) { opaque.push(x, y); if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    }
+    this.box = x1 < 0 ? { x: W * 0.2, y: H * 0.1, w: W * 0.6, h: H * 0.8 } : { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    const r = prng(this.id * 7919 + (this.phase === 'out' ? 1 : 2));
+    const n = opaque.length / 2;
+    const cx = this.box.x + this.box.w / 2, cy = this.box.y + this.box.h * 0.45;
+    this.shards = Array.from({ length: n ? 70 : 0 }, () => {
+      const k = Math.floor(r() * n), x = opaque[2 * k], y = opaque[2 * k + 1];
+      const i = (y * W + x) * 4;
+      const a = Math.atan2(y - cy, x - cx) + (r() - 0.5) * 0.9;
+      const dist = (0.35 + r() * 0.9) * Math.max(this.box!.w, this.box!.h) * 0.6;
+      return { x, y, dx: Math.cos(a) * dist, dy: Math.sin(a) * dist, rot: r() * 6, vr: (r() - 0.5) * 14, size: (3 + r() * 9) * dpr, color: `rgb(${data[i]},${data[i + 1]},${data[i + 2]})` };
     });
   }
 
@@ -57,66 +79,59 @@ export class TeleportFx {
       if (!this.hidden) dst.drawImage(src, 0, 0);
       return;
     }
+    if (!this.box) this.measure(src, dpr);
+    const box = this.box!;
     this.t += dt;
     const u = this.u;
     const out = this.phase === 'out';
-    // "presence": 1 = fully formed, 0 = collapsed to a line
-    const presence = out ? 1 - easeIn(Math.max(0, (u - 0.35) / 0.65)) : u < 0.35 ? 0 : easeOutBack(Math.min(1, (u - 0.35) / 0.65));
-    const chroma = (out ? u : 1 - u) * 12 * dpr;
-    const tear = out ? u : 1 - u;
-    const cy = H * 0.42; // collapse toward chest/face line, keeps face readable until the last moment
+    // how broken she is: 0 = whole, 1 = gone
+    const broken = out ? Math.min(1, u / 0.85) : 1 - easeOut(Math.min(1, u / 0.8));
+    const r = prng(Math.floor(this.t * 60) + this.id * 31);
+    const flick = r() < 0.18; // the show's hard-cut stutter: a frame here and there drops out
 
-    // chromatic separation copies (violet left, green right)
-    if (chroma > 0.5 && presence > 0.02) {
-      for (const [col, dx] of [[C.violet, -chroma], [C.mask, chroma]] as const) {
-        const tc = this.tinted(src, col);
-        dst.save();
-        dst.globalAlpha = 0.55 * Math.min(1, presence * 1.5);
-        dst.translate(0, cy); dst.scale(1, presence); dst.translate(0, -cy);
-        dst.drawImage(tc, dx, 0);
-        dst.restore();
-      }
-    }
-    // main image with scan-band tearing
-    if (presence > 0.02) {
-      dst.save();
-      dst.translate(0, cy); dst.scale(1, presence); dst.translate(0, -cy);
-      const bands = 14;
-      const bh = Math.ceil(H / bands);
-      const r = prng(Math.floor(this.t * 30) + this.id);
+    // body: horizontal bands across her own height, offset sideways more the more broken she is;
+    // bands drop out as she breaks, and fill back in on arrival
+    const present = out ? 1 - Math.max(0, (u - 0.55) / 0.45) : Math.min(1, u / 0.35);
+    if (present > 0 && !(flick && broken > 0.5)) {
+      const bands = 18, bh = Math.ceil(box.h / bands) + 1;
+      const chroma = broken * 14 * dpr;
       for (let i = 0; i < bands; i++) {
-        const shift = r() < tear * 0.8 ? (r() - 0.5) * W * 0.12 * tear : 0;
-        dst.drawImage(src, 0, i * bh, W, bh, shift, i * bh, W, bh);
+        if (r() > present + 0.15) continue; // missing band
+        const y = box.y + i * (box.h / bands);
+        const shift = (r() < 0.7 ? (r() - 0.5) * 2 : 0) * box.w * 0.22 * broken;
+        if (chroma > 1) {
+          for (const [col, dx] of [[C.violet, -chroma], [C.mask, chroma]] as const) {
+            dst.globalAlpha = 0.6 * broken;
+            dst.drawImage(this.tinted(src, col), 0, y, W, bh, shift + dx, y, W, bh);
+          }
+        }
+        dst.globalAlpha = 1;
+        dst.drawImage(src, 0, y, W, bh, shift, y, W, bh);
       }
-      dst.restore();
+      dst.globalAlpha = 1;
     }
-    // the scanline: bright at the moment of collapse/expansion
-    const lineK = out ? Math.max(0, (u - 0.6) / 0.4) : Math.max(0, 1 - u / 0.45);
-    if (lineK > 0) {
-      const lw = (W * 0.7) * (out ? 1 - lineK * 0.85 : 0.15 + (1 - lineK) * 0.85);
-      dst.save();
-      dst.globalAlpha = Math.sin(Math.min(1, lineK) * Math.PI) * 0.95;
-      dst.fillStyle = C.mask;
-      dst.fillRect(W / 2 - lw / 2, cy - 1.5 * dpr, lw, 3 * dpr);
-      dst.fillStyle = C.white;
-      dst.fillRect(W / 2 - lw / 4, cy - 0.5 * dpr, lw / 2, 1 * dpr);
-      dst.restore();
+    // glitch blocks: solid slabs of her colours over her body while she is breaking
+    const blocks = Math.round(broken * (1 - broken) * 4 * 9);
+    for (let i = 0; i < blocks; i++) {
+      dst.fillStyle = [C.hair, C.mask, C.violet, C.ink][Math.floor(r() * 4)];
+      dst.globalAlpha = 0.85;
+      dst.fillRect(box.x + r() * box.w * 0.9, box.y + r() * box.h, (8 + r() * 46) * dpr, (2 + r() * 7) * dpr);
     }
-    // shards: burst outward on departure, converge on arrival
-    const sk = out ? Math.max(0, (u - 0.3) / 0.7) : Math.max(0, 1 - u / 0.6);
+    dst.globalAlpha = 1;
+    // shards cut from her: fly out from where they were on her body, or fly in to it
+    const sk = out ? Math.max(0, (u - 0.25) / 0.75) : 1 - Math.min(1, u / 0.7);
     if (sk > 0) {
-      dst.save();
       for (const s of this.shards) {
-        const tt = out ? sk * 0.55 : sk * 0.55;
-        const x = s.x * dpr + s.vx * tt * dpr * (out ? 1 : 1), y = s.y * dpr + s.vy * tt * dpr + 200 * tt * tt * dpr;
-        dst.globalAlpha = Math.max(0, out ? 1 - sk : sk) * 0.9;
+        const tt = easeOut(sk);
+        dst.globalAlpha = out ? Math.max(0, 1 - sk * 0.9) : Math.min(1, sk * 1.4);
         dst.fillStyle = s.color;
-        dst.translate(x, y); dst.rotate(s.rot + s.vr * tt);
-        const z = s.size * dpr;
+        dst.setTransform(1, 0, 0, 1, s.x + s.dx * tt, s.y + s.dy * tt + 60 * dpr * tt * tt);
+        dst.rotate(s.rot + s.vr * tt);
+        const z = s.size;
         dst.beginPath(); dst.moveTo(-z, -z * 0.4); dst.lineTo(z, 0); dst.lineTo(-z * 0.3, z * 0.6); dst.closePath(); dst.fill();
-        dst.setTransform(1, 0, 0, 1, 0, 0);
       }
-      dst.restore();
+      dst.setTransform(1, 0, 0, 1, 0, 0);
+      dst.globalAlpha = 1;
     }
     if (u >= 1) {
       const done = this.phase;
@@ -124,8 +139,8 @@ export class TeleportFx {
       this.hidden = done === 'out';
       this.log.push(`${this.id}:${done}`);
       if (this.log.length > 40) this.log.shift();
+      dst.clearRect(0, 0, W, H);
       if (!this.hidden) dst.drawImage(src, 0, 0);
-      else dst.clearRect(0, 0, W, H);
       this.onDone?.(this.id, done);
     }
   }
