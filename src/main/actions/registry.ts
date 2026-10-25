@@ -21,6 +21,8 @@ export interface ActionContext {
   readScreen?(): Promise<{ ok: boolean; text: string; window: string; detail?: string }>;
   /** One harmless prank, on request. */
   mischief?(kind: MischiefKind): Promise<boolean>;
+  /** Carry out a task with the real mouse and keyboard (screen → model → input loop). */
+  useComputer?(task: string): Promise<{ ok: boolean; summary: string; steps: number }>;
 }
 export const MISCHIEF_KINDS = ['glitch', 'cursor', 'note'] as const;
 export type MischiefKind = (typeof MISCHIEF_KINDS)[number];
@@ -243,6 +245,16 @@ export const TOOLS = {
     async run(a, ctx) {
       const ok = (await ctx.mischief?.(a.kind)) ?? false;
       return { ok, summary: ok ? `(${a.kind} prank)` : 'Prank unavailable right now', cosmetic: true };
+    },
+  }),
+  use_computer: def({
+    description: 'Use the computer yourself to do a task the user asked for: you look at the screen and use the mouse and keyboard (open apps, browse, click, type, scroll). args: {"task": a clear, complete description of what to do}. Use it when the user asks you to do something on their PC that no other tool covers.',
+    schema: z.object({ task: z.string().min(3).max(500) }),
+    describe: (a) => `Use your mouse and keyboard to: ${a.task} (press Esc to stop her)`,
+    async run(a, ctx) {
+      if (!ctx.useComputer) return { ok: false, summary: 'Computer control is unavailable' };
+      const r = await ctx.useComputer(a.task);
+      return { ok: r.ok, summary: `${r.summary} (${r.steps} step${r.steps === 1 ? '' : 's'})` };
     },
   }),
 } satisfies Record<ToolName, ToolDef<z.ZodTypeAny>>;

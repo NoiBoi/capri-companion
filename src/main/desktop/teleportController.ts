@@ -51,7 +51,13 @@ export class TeleportController {
     });
   }
 
-  /** Teleport now. Manual teleports work with or without an AI connection. */
+  /** Fly straight to a spot (computer control: she follows what she's working on). Skips if she's mid-move. */
+  async flyTo(dest: Destination) {
+    if (this.busy) return;
+    this.busy = true;
+    try { await this.glide(dest); this.d.moved?.(dest, 'glide'); } finally { this.busy = false; }
+  }
+
   /** Glide across the desktop (B 4:03 dash): the window slides, hair streams behind her. */
   private async glide(dest: Destination): Promise<void> {
     const cur = this.d.bounds();

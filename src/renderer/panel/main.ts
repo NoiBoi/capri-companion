@@ -446,7 +446,7 @@ const TOOL_INFO: Record<ToolName, string> = {
   open_url: 'Open web pages', launch_app: 'Launch approved apps', search_files: 'Search file names',
   create_note: 'Save notes', list_notes: 'Read notes', set_reminder: 'Set reminders', start_timer: 'Start timers', cancel_timer: 'Cancel timers',
   get_time: 'Check the time', remember: 'Remember facts', teleport: 'Teleport on request', emote: 'Expressions',
-  read_screen: 'Read your screen', study_timer: 'Study timers', mischief: 'Pranks on request',
+  read_screen: 'Read your screen', study_timer: 'Study timers', mischief: 'Pranks on request', use_computer: 'Use your computer',
 };
 async function renderPrivacy() {
   const d = await api.invoke('diagnostics:get');

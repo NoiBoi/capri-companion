@@ -29,6 +29,7 @@ export const TOOL_NAMES = [
   'read_screen',
   'study_timer',
   'mischief',
+  'use_computer',
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 export const Policy = z.enum(['allow', 'confirm', 'deny']);
@@ -126,6 +127,7 @@ export const DEFAULT_POLICIES: Record<ToolName, Policy> = {
   read_screen: 'confirm', // reads the text in your active window: ask every time
   study_timer: 'allow',
   mischief: 'allow',
+  use_computer: 'confirm', // she takes over the mouse and keyboard for a task: ask every time
 };
 
 export const DEFAULT_SETTINGS: Settings = {

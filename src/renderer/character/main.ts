@@ -246,6 +246,7 @@ api.on('cue', (raw) => {
     case 'interact': canvas.style.filter = c.enabled ? 'drop-shadow(0 0 1.5px #22f27a) drop-shadow(0 0 1px #22f27a)' : ''; break; // click-through lifted for a moment
     case 'presence': idleSec = c.idleSec; quiet = c.quiet; break;
     case 'remark': behavior.react('wave'); showBubble(c.text); break;
+    case 'bubble': showBubble(c.text); break;
     case 'teleport': onTeleport(c.phase, c.id, c.effects); break;
     case 'clip': {
       const e = EMOTE_MAP[c.name];

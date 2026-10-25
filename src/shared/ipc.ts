@@ -45,6 +45,7 @@ export type CharacterCue =
   | { type: 'interact'; enabled: boolean }
   | { type: 'presence'; idleSec: number; quiet: boolean }
   | { type: 'remark'; text: string }
+  | { type: 'bubble'; text: string } // a line in her speech bubble, no gesture
   | { type: 'connection'; state: ConnectionStatus['state'] }
   | { type: 'teleport'; phase: 'out' | 'in'; id: number; effects: boolean }
   | { type: 'clip'; name: string }

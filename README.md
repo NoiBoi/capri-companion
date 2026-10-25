@@ -54,7 +54,9 @@ Things to try: "come sit on the left side of my screen", "open the calculator", 
 
 This is the first public beta. Expect rough edges. If you want to test new builds first, [sign up on the site](https://theagencymge.github.io/capri/). Bugs and ideas go in [Issues](https://github.com/TheAgencyMGE/capri-companion/issues).
 
-Coming next: sitting on the text box you're typing in, reading your screen, mischief mode, a study timer, voice lines with mute, and letting her navigate your PC on her own.
+**New on main, coming in the next build:** she can use your PC herself. Ask her to do something ("open Calculator and work out 12 times 7") and, once you allow it, she looks at your screen and drives the mouse and keyboard, flying along beside whatever she's working on. Hold Esc to stop her. Needs a Gemini key.
+
+Also coming: sitting on the text box you're typing in, reading your screen, mischief mode, a study timer, voice lines with mute.
 
 ## Build from source
 

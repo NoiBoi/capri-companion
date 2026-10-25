@@ -2,8 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, globalShortcut, screen, safeStorage, shell, dialog,
-  Notification, powerMonitor, session, type IpcMainInvokeEvent, type MenuItemConstructorOptions,
+  Notification, powerMonitor, session, desktopCapturer, type IpcMainInvokeEvent, type MenuItemConstructorOptions,
 } from 'electron';
+import { GoogleGenAI } from '@google/genai';
+import { runTask, type Screen } from './agent/computer';
+import * as hands from './desktop/input';
 import { z } from 'zod';
 import type { ActionRequest, CharacterCue, Diagnostics, InvokeChannel } from '../shared/ipc';
 import type { Settings } from '../shared/settings';
@@ -164,6 +167,7 @@ async function init() {
     now: () => Date.now(),
     teleport: (where) => teleporter.go(where as TeleportTarget, 'ai'),
     emote: (name) => { cue({ type: 'clip', name }); return true; },
+    useComputer: (task) => useComputer(task),
   };
   convo = new Conversation({
     settings: () => settings.get(),
@@ -228,7 +232,7 @@ async function init() {
   powerMonitor.on('resume', () => { reminders.tick(); reclampCharacter(); void monitor.check('resume'); });
 
   if (!s0.firstRunComplete) setTimeout(() => openPanel('welcome'), 800);
-  if (TEST) (globalThis as Record<string, unknown>).__capri = { get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, get startupMs() { return startupMs; }, get speakCount() { return speakCount; }, presenceTick, settleAfterDrop, throwCharacter, get throwing() { return !!throwTimer; }, pendingConfirms, log };
+  if (TEST) (globalThis as Record<string, unknown>).__capri = { get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, get startupMs() { return startupMs; }, get speakCount() { return speakCount; }, presenceTick, settleAfterDrop, throwCharacter, useComputer, get throwing() { return !!throwTimer; }, pendingConfirms, log };
 }
 
 // ---------------------------------------------------------------- desktop-pet handling: drop onto a ledge, throw
@@ -443,6 +447,7 @@ let lastHit = false;
 function applyMouseMode(hit: boolean) {
   lastHit = hit;
   if (!charWin || charWin.isDestroyed()) return;
+  if (agentCtrl) { charWin.setIgnoreMouseEvents(true); return; } // while she drives, every click goes past her
   const s = settings.get();
   const passThrough = (s.character.clickThrough && Date.now() > interactUntil) || !hit;
   charWin.setIgnoreMouseEvents(passThrough, { forward: true });
@@ -540,6 +545,94 @@ function raiseCharacter() {
 function raiseTick() {
   const fg = foregroundHandle();
   if (fg !== lastFg) { lastFg = fg; raiseCharacter(); }
+}
+// ---------------------------------------------------------------- computer control
+// vision models in order of click accuracy; each has its own per-minute quota on free keys
+const COMPUTER_MODELS = ['gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-3.5-flash-lite'];
+const cooldown = new Map<string, number>();
+let agentCtrl: AbortController | null = null;
+async function captureScreen(): Promise<Screen> {
+  const d = screen.getPrimaryDisplay();
+  const pw = Math.round(d.size.width * d.scaleFactor), ph = Math.round(d.size.height * d.scaleFactor);
+  const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1280, height: Math.round((1280 * ph) / pw) } });
+  const src = sources.find((x) => x.display_id === String(d.id)) ?? sources[0];
+  return { jpegBase64: src.thumbnail.toJPEG(80).toString('base64'), width: pw, height: ph, x: Math.round(d.bounds.x * d.scaleFactor), y: Math.round(d.bounds.y * d.scaleFactor) };
+}
+/** She carries out a task with the real mouse and keyboard. Esc (held) or the stop button ends it at once. */
+async function useComputer(task: string): Promise<{ ok: boolean; summary: string; steps: number }> {
+  const key = secretFor('gemini');
+  if (!key) return { ok: false, summary: 'Using the computer needs a Gemini API key (Model → Gemini API key).', steps: 0 };
+  if (!hands.inputAvailable()) return { ok: false, summary: 'Mouse and keyboard control is unavailable on this system.', steps: 0 };
+  if (agentCtrl) return { ok: false, summary: "I'm already in the middle of a task.", steps: 0 };
+  const ctrl = (agentCtrl = new AbortController());
+  const ai = new GoogleGenAI({ apiKey: key });
+  const escWatch = setInterval(() => { if (hands.escapeDown()) ctrl.abort(); }, 80);
+  const panelWasOpen = !!panelWin && !panelWin.isDestroyed() && panelWin.isVisible();
+  if (panelWasOpen) panelWin!.hide(); // out of the way: she needs the screen
+  applyMouseMode(false);
+  cue({ type: 'bubble', text: 'On it. Hold Esc to stop me.' });
+  log.info('agent: start', { chars: task.length });
+  try {
+    const r = await runTask(task, {
+      capture: captureScreen,
+      decide: async (prompt, s, signal) => {
+        // free-tier keys allow only a few requests a minute per model: on "too many requests" or "busy"
+        // move to the next vision model, and if all of them are cooling down, wait it out
+        for (let tries = 0; tries < 8; tries++) {
+          const now = Date.now();
+          const model = COMPUTER_MODELS.find((m) => (cooldown.get(m) ?? 0) <= now);
+          if (!model) {
+            const wait = Math.min(...COMPUTER_MODELS.map((m) => cooldown.get(m)!)) - now;
+            cue({ type: 'bubble', text: 'Catching my breath…' });
+            await new Promise<void>((r, j) => { const t = setTimeout(r, wait); signal.addEventListener('abort', () => { clearTimeout(t); j(new Error('aborted')); }, { once: true }); });
+            continue;
+          }
+          try {
+            const res = await ai.models.generateContent({
+              model,
+              contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: s.jpegBase64 } }] }],
+              config: { responseMimeType: 'application/json', temperature: 0.2, abortSignal: signal },
+            });
+            return res.text ?? '';
+          } catch (e) {
+            const msg = String((e as Error).message ?? e);
+            if (!/\b(429|503)\b|RESOURCE_EXHAUSTED|UNAVAILABLE|high demand/i.test(msg)) throw e;
+            const retry = /retry in ([\d.]+)s|"retryDelay":"(\d+)s"/.exec(msg);
+            const sec = retry ? Number(retry[1] ?? retry[2]) : /503|UNAVAILABLE|high demand/i.test(msg) ? 8 : 30;
+            cooldown.set(model, Date.now() + Math.min(60, sec + 1) * 1000);
+            log.info('agent: model cooling down', { model, sec });
+          }
+        }
+        throw new Error('The AI service is busy right now');
+      },
+      hands: { moveTo: (x, y) => hands.moveTo(x, y), click: (b, n) => hands.click(b, n), typeText: (t) => hands.typeText(t), keys: (k) => hands.keys(k), scroll: (n) => hands.scroll(n) },
+      onStep: (step, at) => {
+        if (step.say) cue({ type: 'bubble', text: step.say });
+        if (at && charWin && !charWin.isDestroyed()) {
+          // fly beside the spot she's working on, never on top of it
+          const d = screen.getPrimaryDisplay(), sf = d.scaleFactor, b = charWin.getBounds(), a = d.workArea;
+          const px = at.x / sf, py = at.y / sf;
+          const right = px + 60 + b.width <= a.x + a.width;
+          const x = right ? px + 60 : px - 60 - b.width;
+          const y = Math.min(Math.max(a.y, py - b.height * 0.45), a.y + a.height - b.height * SEAT_RATIO);
+          void teleporter.flyTo({ x: Math.round(x), y: Math.round(y), width: b.width, height: b.height, kind: 'spot' });
+        }
+      },
+      stopRequested: () => ctrl.signal.aborted,
+      log: (m, data) => log.info(m, data as Record<string, unknown>),
+    }, ctrl.signal);
+    log.info('agent: end', { ok: r.ok, steps: r.steps });
+    cue({ type: 'bubble', text: r.ok ? 'Done.' : r.summary.startsWith('Stopped') ? 'Stopped.' : 'I got stuck on that one.' });
+    return r;
+  } catch (e) {
+    log.warn('agent: failed', { error: e as Error });
+    return { ok: false, summary: ctrl.signal.aborted ? 'Stopped by the user.' : `Something went wrong: ${(e as Error).message.slice(0, 120)}`, steps: 0 };
+  } finally {
+    clearInterval(escWatch);
+    agentCtrl = null;
+    applyMouseMode(false);
+    if (panelWasOpen && panelWin && !panelWin.isDestroyed()) panelWin.show();
+  }
 }
 function raiseSoon() { for (const ms of [400, 1200, 2500, 4000]) setTimeout(raiseCharacter, ms); }
 function presenceTick() {
@@ -723,7 +816,7 @@ function registerIpc() {
     lastInteraction = Date.now();
     return { messageId: await convo.send(text) };
   });
-  handle('chat:stop', 'any', none, () => convo.stop());
+  handle('chat:stop', 'any', none, () => { agentCtrl?.abort(); convo.stop(); });
   handle('chat:history', 'panel', z.object({ limit: z.number().int().min(1).max(2000).optional() }).optional(), (a) => history.recent(a?.limit ?? 200));
   handle('chat:clear', 'panel', none, () => history.clear());
 
