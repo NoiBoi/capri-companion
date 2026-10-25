@@ -53,23 +53,25 @@ The rig's legs are now two-bone chains (thigh/shin/foot) with foreshortening, so
 
 **Not observed in the footage, so not implemented:** walking. She floats, dashes and appears by hard cuts. Crouching, kneeling and lying flat aren't in the sampled footage either.
 
-## v4: real-footage poses (default art)
+## v5: traced vector model (current)
 
-She is now drawn from cut-outs of the show itself (`assets/capri`, see its SOURCES.md). This is how desktop-pet projects like Shimeji and Desktop Mate work: a set of poses, each a short run of drawings, chosen by what she is doing.
+The rig and the footage cut-outs are replaced by one vector model traced from three real stills (see ARCHITECTURE ADR-2). The behavior machine's postures map onto those poses (`modelPose()` in `src/renderer/character/main.ts`):
 
-| Pose | From | Used when |
-|---|---|---|
-| `stand` | N 1:49–1:54 (67 drawings) | standing or floating; contrapposto, balance, being dragged |
-| `sit` | N 2:21–2:25 | sitting on the taskbar or a window top (alternates with `lounge`) |
-| `lounge` | N 1:27–1:37 (48 drawings): on her front, chin propped, legs up | on a ledge; reclining |
-| `lie` | N 0:29–0:31: lying on her side | asleep; reclining |
-| `glitch` | B 4:19–4:21: her glitch-out drawings | flashed in her place during tear and ghost glitch bursts |
+| Situation | Model pose |
+|---|---|
+| on the taskbar | `lie` (lying on her side), or `crouch` |
+| on a window top | `sit` |
+| reclining | `lie` |
+| in the air | `crouch` or `sit` |
+| being dragged | `crouch` |
+| asleep | `lie` on a ledge, `crouch` in the air |
 
-The show's own drawings and holds are kept; it runs on twos and threes. On top of them she gets:
-- a float bob and breathing
-- mirroring to face where she's looking (the snap round is a glitch frame, like a cut)
-- dangling and swinging from the grab point while dragged
-- glitch bursts: band-slice dislocation, flying shards, a hue-shifted ghost and stutter frames
-- a squash on a poke and sparkles on a head pat
+Layered on every pose:
+- **Live face:** blinks, squint, wide eyes, happy eyes, blank stare, many eyes.
+- **Mouth:** opens only from real lip-sync.
+- **Motion:** head turn and gaze toward the cursor, breathing, and hair sway through one shared deformation field.
+- **Glitch bursts:** slice, shatter, ghost, tear.
+- **Teleport:** out/in effects, plus the red zap bolt across the screen.
+- **Touch:** a poke squash and pat sparkles.
 
-The vector rig (v1–v3) remains as `character.art = 'vector'`.
+**Not implemented:** walking, standing and side or back profiles. No clean full-figure stills of those exist to trace.

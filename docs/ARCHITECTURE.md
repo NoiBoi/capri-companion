@@ -17,8 +17,8 @@
 └──────────────── IPC (contextBridge, typed channel allow-list) ──────────────────┘
       │                                              │
 ┌─────┴──────── character renderer ──────┐  ┌────────┴─────── panel renderer ───────┐
-│ rig/ vector shard rig (Canvas 2D)      │  │ chat, history, voice, settings,      │
-│ animation/ param blending, springs     │  │ memory, permissions, diagnostics     │
+│ model/ traced vector model (Canvas 2D) │  │ chat, history, voice, settings,      │
+│ framing/ model-derived window size     │  │ memory, permissions, diagnostics     │
 │ behavior/ state machine (idle…sleep)   │  │ action confirmation dialogs          │
 │ speech/ TTS + lip-sync, mic capture    │  └──────────────────────────────────────┘
 │ hit-test → click-through forwarding    │
@@ -33,12 +33,12 @@
 **Alternatives.** Tauri (Rust was available) has a smaller footprint, but WebView2 transparency with click-through forwarding needs custom Win32 work, and there's no built-in TTS or secret store. Native WinUI/WPF would need a separate renderer for the vector rig and a rebuilt UI.
 **Cost.** About 100 MB installed and roughly 150 MB RAM baseline. To compensate, the renderer is vanilla TS (no framework), rendering is throttled while idle, and it pauses while hidden.
 
-### ADR-2: Character = procedural 2D vector shard rig, not 3D and not a sprite
-**Context.** No authentic or licensed model exists (see the dossier). Capri's on-screen design is *flat, hard-edged polygon art* with sparkle texture and violet offset outlines.
-**Decision.** Build an original rig in code: polygons attached to a bone hierarchy (root → hips → torso → neck → head → face parts, plus hair clusters with spring physics). Parameters like `turn`, `tilt`, `blink`, `mouthOpen`, `smile` and `browTension` deform and parallax the layers, Live2D-style. Rendering uses Canvas 2D with DPI-aware backing stores.
-**Why not 3D.** A shaded 3D mesh would look *less* like her: the show draws her flat. Lit 3D would add cost and lose the graphic style. A Three.js toon render of flat polygons is essentially what the 2D rig already does.
-**Why not sprites.** Sprites can't blink, lip-sync, or blend states without a large frame set. They also can't change resolution cleanly.
-**Consistency.** Geometry is deterministic data, so her face can't drift between frames. Sparkle texture uses a fixed-seed PRNG.
+### ADR-2: Character = vector model traced from real stills, framed from its own bounds
+**Context.** The earlier procedural shard rig looked generic, and the show-footage cut-out pack was private-use only and cropped badly on the desktop.
+**Decision.** `tools/vectorize.py` and `tools/build_model.py` trace three real stills (sitting, lying on her side, crouching) into palette polygons: crimson, shade, ink, green, violet, and glitter hair. Hair tips and legs cut off by the shot are rebuilt past the crop: narrow tips as spikes, a wide cut through the hair cloud as a low jagged dome. The model is normalised to eye spacing = 26 units and written to `assets/capri/model.json`.
+- **Rendering.** `model.ts` draws the polygons through one deformation field (hair sway, head turn, breathing) with a glitter pattern, mirroring and glitch bursts (slice, shatter, ghost, tear).
+- **Face.** `face.ts` draws a live face (blink, squint, wide, happy, blank, many eyes). The mouth only opens while real audio plays.
+- **Framing.** `src/shared/framing.ts` computes the window size from the bounds of every pose, mirrored, plus an effects margin. All poses share one seat line (`SEAT_RATIO`), so she rests on the taskbar or a window top at the same height whatever the pose. Unit and e2e tests assert that no pose or expression touches the window edge.
 
 ### ADR-3: Text action protocol for tools (provider-agnostic)
 The model requests actions with `<action>{"tool":…,"args":{…}}</action>` blocks. This works the same on local models with no native tool calling. Each request is parsed, validated with zod, checked against the policy, confirmed in the UI when required, and executed by trusted code. Results come back marked as *untrusted data*. The model can never run a shell or an arbitrary executable.
@@ -82,9 +82,16 @@ The character window is `focusable:false` and `skipTaskbar`, with an always-on-t
 - A failure never produces a mock reply.
 
 **Retries.** The SDK's internal retries are disabled; there is one bounded policy instead:
-- rate limit or overload: up to 2 retries, honouring the server's `retryDelay`
-- network loss: 1 retry
+- rate limit or overload: up to 2 retries, honouring the server's `retryDelay`; a requested wait over 4 s skips straight to the fallback model's own quota, or fails at once with "retry in ~N s" (free tier: 15 requests/min)
+- network loss or a stalled request: 1 retry
 - auth or bad request: no retry
+- a model that rejects the thinking level: retried once with the model's own default, remembered for the session
+
+**Stalls.** The SDK timeout covers only the response headers, and its body reader ignores abort signals, so every stream read is raced against a watchdog:
+- no first event within 15 s means a stuck request
+- no event within the request timeout mid-stream means a stalled stream
+
+Either way she leaves "thinking" with an error instead of hanging.
 
 Retries happen only before any text has streamed, so output is never duplicated.
 
@@ -119,19 +126,32 @@ The model can't drive the renderer. It may request `emote {emotion ∈ 23 fixed 
 Phases (listening, thinking, speaking, error) drive the behavior state machine. Lip-sync beats any gesture clip, and errors or interruptions always return her to idle (tested).
 
 ### ADR-12: Design system
-One stylesheet with tokens taken from the verified palette:
-- ink surfaces
-- neon green for live/primary states (her mask)
-- crimson for emphasis and danger (her hair)
-- blue for speaking/info (her eyes)
-- violet offset shadows (her outline)
-
-Other choices:
-- **Shard-cut corners** on panels, buttons and chips.
-- **Type:** Bahnschrift, Windows' built-in DIN-style technical face, for labels; Segoe UI Variable for reading; Cascadia Mono for data.
-- **Icons:** a custom angular SVG set, with her almond eye as the brand mark. Built as DOM nodes so they work under the strict CSP.
-- **Motion:** minimal (≤220 ms enter, blinking status gems), and respects `prefers-reduced-motion`.
-- **Not themable:** the Windows tray menu is a native menu, so it can't use the design system.
+The panel is deliberately plain so it reads as a product, not a theme:
+- **Surfaces:** near-black (`--bg #0c0b0f`, `--surface #121117`, `--raised #18161e`), 1 px lines, 2 px radius. No gradients, glows or shadows.
+- **Accent:** one crimson (`#f2154c`), plus green for "online".
+- **Type:** Segoe UI Variable, with Cascadia Mono for data.
+- **Layout:** seven sections (Chat, Model, Voice, Character, Memory, Privacy, System). Each field is a short label on the left and its control on the right, with no explanatory subtext.
+- **Accessibility:** full keyboard navigation, ARIA roles on the tab rail, and `prefers-reduced-motion` is respected.
+- **Not themable:** the Windows tray menu is a native menu.
 
 ### ADR-13: Off-screen test mode
 With `CAPRI_TEST=1 CAPRI_OFFSCREEN=1`, every harness (unit/e2e/preview/perf/icon) renders windows off-screen and never shows them, never registers global shortcuts or a tray icon, and never posts notifications. Automated runs don't disturb the user's desktop. Set `CAPRI_ONSCREEN=1` to watch the tests instead.
+
+### ADR-14: One speech gate
+Every utterance goes through `speechAllowed(reason)` (`src/shared/speechPolicy.ts`). The only reasons are:
+- `reply`: an answer to something the user said.
+- `reminder`: a reminder the user set. Silent in DND and fullscreen.
+- `proactive`: an idle remark. Off by default; needs both *idle remarks* and *say remarks out loud*.
+
+Each utterance is logged with its reason. The speaking animation is tied to the audio engine's real start and end events, never to text arriving. An e2e test idles, reconnects, teleports and fires remark timers, and asserts that nothing is spoken.
+
+### ADR-15: Window position is only written by moves
+Saving her position triggers a settings change. The settings handler resizes her window only when the *scale* setting changes. At fractional DPI a window's size reads back ±1 px, and "correcting" it moved her 1 px, which saved again: an endless drift. An e2e test teleports her three times and asserts that the window and `settings.json` stay untouched afterwards.
+
+### ADR-16: Trailer from a real recording
+`scripts/record-demo.mjs` records the real app (no test hooks) on the real desktop:
+- Capture uses Chromium desktop capture through `scripts/screen-recorder.cjs`. GDI grabbing manages only about 12 fps at 1080p.
+- It drives real mouse input and types into the real panel.
+- It writes each beat's time and the window layout to `marks.json`.
+
+The Remotion edit (`trailer/src/Trailer.tsx`) cuts and frames from that file, so a new take re-times itself. Nothing in the app is staged.

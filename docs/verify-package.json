@@ -1,11 +1,11 @@
 {
-  "date": "2026-10-25T02:42:55.927Z",
+  "date": "2026-10-25T17:12:07.300Z",
   "installer": "Capri-Setup-1.0.0.exe",
   "results": [
     {
       "name": "silent install completes",
       "ok": true,
-      "detail": "12.4 s"
+      "detail": "10.9 s"
     },
     {
       "name": "app.asar present",
@@ -35,12 +35,12 @@
     {
       "name": "installed size reported",
       "ok": true,
-      "detail": "383 MB on disk"
+      "detail": "384 MB on disk"
     },
     {
       "name": "no API keys or .env files in the installed app",
       "ok": true,
-      "detail": "148 files + asar listing scanned, dev key searched byte-for-byte"
+      "detail": "149 files + asar listing scanned, dev key searched byte-for-byte"
     },
     {
       "name": "installer does not bundle .env.local",
@@ -50,12 +50,12 @@
     {
       "name": "e2e suite passes on packaged build",
       "ok": true,
-      "detail": "Test Files  1 passed (1) |       Tests  33 passed | 2 skipped (35)"
+      "detail": "Test Files  1 passed (1) |       Tests  38 passed | 2 skipped (40)"
     },
     {
       "name": "packaged performance measured",
       "ok": true,
-      "detail": "startup 379 ms, idle 1.7% CPU / 403 MB, 30.3 fps idle"
+      "detail": "startup 308 ms, idle 1.6% CPU / 452 MB, 47.7 fps idle"
     },
     {
       "name": "uninstall removes the program",

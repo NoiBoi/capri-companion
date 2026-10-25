@@ -1,6 +1,6 @@
 # Testing & performance
 
-Results from 2026-10-24 (v2 upgrade) on an AMD Ryzen 7 7730U (16 threads, Radeon iGPU), 14 GB RAM, Windows 11 Home (build 26300), one monitor at 125% scaling.
+Results from 2026-10-25 (the overhaul) on an AMD Ryzen 7 7730U (16 threads, Radeon iGPU), 14 GB RAM, Windows 11 Home (build 26300), one monitor at 125% scaling.
 
 All automated runs use **off-screen mode** (ADR-13): no windows, tray icon, hotkeys or notifications appear on the desktop.
 
@@ -8,13 +8,24 @@ All automated runs use **off-screen mode** (ADR-13): no windows, tray icon, hotk
 
 | Suite | Command | Result |
 |---|---|---|
-| Typecheck | `npx tsc -p tsconfig.json` | clean |
-| Unit (7 files) | `npm test` | **164 / 164 passed** |
-| End-to-end, dev bundle | `npm run test:e2e` | **33 / 33 passed** (2 opt-in tests skipped) |
+| Typecheck | `npx tsc --noEmit -p .` | clean |
+| Unit (9 files) | `npm test` | **176 / 176 passed** |
+| End-to-end, dev bundle | `npm run test:e2e` | **38 / 38 passed** (microphone and live-Gemini tests opt-in) |
 | **Live Gemini e2e** | `CAPRI_LIVE_GEMINI=1 npm run test:e2e` | **passed** against the real API |
-| Live microphone e2e | `CAPRI_E2E_MIC=1 npm run test:e2e` | passed in v1; not re-run here, to leave your mic alone while you were busy |
-| Packaged build | `npm run verify:package` | **12 / 12 checks**: install, layout, key scan, 29/29 e2e against the installed exe, perf, uninstall |
-| Live Gemini probe | `node scripts/gemini-probe.mjs` | auth OK, 60 models visible, stream + multi-turn OK (see ADR-9) |
+| Packaged build | `npm run verify:package` | **12 / 12 checks**: install, layout, key scan, 38/38 e2e against the installed exe, perf (startup 308 ms, idle 1.6% CPU, 47.7 fps), uninstall |
+| Live Gemini probe | `node scripts/gemini-probe.mjs` | auth OK, 60 models visible, stream (first token 0.73 s) + multi-turn OK |
+| Real-desktop take | `node scripts/record-demo.mjs` | full scripted session on the real desktop, no test hooks (see the trailer) |
+
+## Bugs found by the overhaul's real-desktop takes (all fixed, all with tests)
+
+| Symptom | Cause | Test |
+|---|---|---|
+| She crept 1 px down-right every 0.3 s after any move, and `settings.json` was rewritten 3×/s | at 125% DPI the window size reads back ±1 px; the settings handler "fixed" it, moving her, which saved the position again | e2e "after a teleport she stays exactly where she landed" (fails without the fix) |
+| She sat in "thinking" for a minute or more | an occasional Gemini request never streams, and the SDK's body reader ignores aborts | unit: quiet stream after headers; request that never starts |
+| Long silent waits on free-tier keys | 429 retry delays (~40 s) were waited out twice | unit: long quota wait goes to the fallback or fails fast |
+| `gemini-3.8-flash` failed every message | it rejects `thinking_level: minimal` | unit: retried with the model's default, remembered |
+| Raw `<emote>{…}</emote>` text in her replies | the model improvised a tool-name tag | unit: improvised tags run as actions; unknown tags stay text |
+| Action status "done" wrapped to two lines | flex shrink | visual |
 
 ## Live Gemini verification (real API, local key)
 
