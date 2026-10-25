@@ -144,7 +144,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { background: var(--acce
 .msg code { font-family: var(--mono); font-size: 12px; background: var(--raised); padding: 1px 4px; }
 .msg pre { background: var(--surface); border: 1px solid var(--line); padding: 8px 10px; overflow-x: auto; white-space: pre; }
 .msg.action { align-self: flex-start; display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 12px; max-width: 100%; }
-.msg.action .tag { text-transform: lowercase; }
+.msg.action .tag { text-transform: lowercase; flex: none; white-space: nowrap; }
 .empty { margin: auto 0; padding: 30px 0; display: flex; flex-direction: column; gap: 14px; color: var(--muted); }
 .empty .try { display: flex; flex-wrap: wrap; gap: 6px; }
 .empty .try button { height: 28px; padding: 0 10px; border: 1px solid var(--line-strong); background: none; color: var(--text); cursor: pointer; }

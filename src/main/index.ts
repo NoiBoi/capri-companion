@@ -286,6 +286,7 @@ function stopThrow() {
 function createCharacter() {
   const s = settings.get();
   charWin = createCharacterWindow(s, preloadPath(), log);
+  lastScale = s.character.scale;
   drag = new DragController(() => charWin, (moved) => {
     if (moved) {
       perchRect = null;
@@ -403,6 +404,7 @@ function requestConfirmation(req: ActionRequest): Promise<boolean> {
 // ---------------------------------------------------------------- settings side-effects
 let lastAiSig = '';
 let lastTpSig = '';
+let lastScale = NaN; // the character scale her window was last sized for
 function onSettingsChanged(s: Settings) {
   const sig = JSON.stringify([s.ai.provider, s.ai.gemini, s.ai.ollama, s.ai.openai, s.ai.anthropic]);
   if (sig !== lastAiSig) { lastAiSig = sig; void monitor.check('settings changed'); }
@@ -410,9 +412,13 @@ function onSettingsChanged(s: Settings) {
   if (tsig !== lastTpSig) { lastTpSig = tsig; teleporter?.rearm(); }
   log.setLevel(s.privacy.logLevel);
   if (charWin && !charWin.isDestroyed()) {
-    const size = characterSize(s.character.scale);
-    const b = charWin.getBounds();
-    if (b.width !== size.width || b.height !== size.height) {
+    // only an actual scale change resizes her: at fractional DPI the size reads back ±1 px, and
+    // "fixing" that moved her a pixel, which saved the position, which landed here again (a slow
+    // endless drift down-right, writing settings three times a second)
+    if (s.character.scale !== lastScale) {
+      lastScale = s.character.scale;
+      const size = characterSize(s.character.scale);
+      const b = charWin.getBounds();
       // keep her feet planted: anchor bottom-centre
       const nb = { x: Math.round(b.x + b.width / 2 - size.width / 2), y: b.y + b.height - size.height, ...size };
       charWin.setBounds(clampToDisplays(nb, displaysNow()));

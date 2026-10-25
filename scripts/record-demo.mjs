@@ -3,7 +3,7 @@
 // window move, a real app launch). Nothing is staged inside the app: it runs without CAPRI_TEST.
 //   node scripts/record-demo.mjs
 // Output: trailer/public/demo/desktop.mp4 (full screen, constant 30 fps) and marks.json (event times in
-// seconds on the video clock).
+// seconds on the video clock, plus `layout`: her window and the panel at each beat, in video pixels).
 // Needs the local Gemini key in .env.local (loaded by the app itself; this script never reads it).
 // Minimises every window for the take and restores them afterwards.
 import { _electron as electron } from 'playwright-core';
@@ -62,6 +62,7 @@ let t0 = 0;
 rec.stdout.on('data', (b) => { const m = /REC_START (\d+)/.exec(String(b)); if (m) t0 = +m[1]; });
 while (!t0) await sleep(20);
 const marks = {};
+const layout = {}; // where her window and the panel are at each beat, in video pixels (for the trailer camera)
 const mark = (name) => { marks[name] = +((Date.now() - t0) / 1000).toFixed(2); console.log(`${marks[name].toFixed(2).padStart(6)}s  ${name}`); };
 mark('desktop');
 await sleep(1500);
@@ -79,12 +80,15 @@ try {
     return win ? win.getContentBounds() : null;
   }, which);
   const px = (v) => Math.round(v * scale);
+  const rect = (r) => (r ? [px(r.x), px(r.y), px(r.width), px(r.height)] : null);
+  const where = async (name) => { layout[name] = { her: rect(await bounds('character.html')), panel: rect(await bounds('panel.html')) }; };
   await sleep(5000);
 
   // cursor: she tracks it, then a double-click opens the chat
   const b = await bounds('character.html');
   const cx = px(b.x + b.width * 0.5), cy = px(b.y + b.height * 0.42);
   mark('cursor');
+  await where('cursor');
   await moveTo(px(b.x - 260), px(b.y + 40), 900); await sleep(700);
   await moveTo(px(b.x + b.width + 120), px(b.y - 80), 1200); await sleep(700);
   await moveTo(cx, cy, 800); await sleep(500);
@@ -110,6 +114,7 @@ try {
 
   // a real conversation
   mark('chat');
+  await where('chat');
   await say('hey capri. what are you doing on my desktop?');
   await settled();
   await sleep(2600);
@@ -121,6 +126,7 @@ try {
   for (let i = 0; i < 100; i++) { const now = await bounds('character.html'); if (now.x !== before.x || now.y !== before.y) break; await sleep(100); }
   mark('moved');
   await settled();
+  await where('moved');
   await sleep(3000);
 
   // a real desktop action, through the permission prompt
@@ -147,6 +153,7 @@ try {
     await moveTo(px(p.x + p.width + 200), px(p.y + 300), 900);
   }
   mark('idle');
+  await where('idle');
   await sleep(7000);
   mark('end');
 } catch (e) {
@@ -166,5 +173,5 @@ try {
 // constant 30 fps on the same clock so the marks line up with the edit
 execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', '-i', webm, '-fps_mode', 'cfr', '-r', '30', '-c:v', 'libx264', '-preset', 'slow', '-crf', '14', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', video]);
 fs.rmSync(webm, { force: true });
-fs.writeFileSync(path.join(out, 'marks.json'), JSON.stringify(marks, null, 2) + '\n');
+fs.writeFileSync(path.join(out, 'marks.json'), JSON.stringify({ ...marks, layout }, null, 2) + '\n');
 console.log('wrote', path.relative(root, video), 'and marks.json');

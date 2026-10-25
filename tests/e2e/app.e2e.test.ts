@@ -521,6 +521,21 @@ describe('teleportation', () => {
     await model.close();
   });
 
+  it('after a teleport she stays exactly where she landed (no DPI-rounding creep, no settings churn)', async () => {
+    const ud = profile();
+    const { app } = await launch(ud);
+    const pos = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => !x.isFocusable())!.getBounds());
+    for (const where of ['left', 'corner', 'right']) {
+      await app.evaluate((_e, w) => (globalThis as unknown as { __capri: { teleporter: { go(t: string, r: string): Promise<unknown> } } }).__capri.teleporter.go(w, 'manual'), where);
+      await new Promise((r) => setTimeout(r, 900)); // the landing save settles
+      const landed = await pos();
+      const mtime = fs.statSync(path.join(ud, 'settings.json')).mtimeMs;
+      await new Promise((r) => setTimeout(r, 2000));
+      expect(await pos(), `after teleport ${where}`).toEqual(landed);
+      expect(fs.statSync(path.join(ud, 'settings.json')).mtimeMs, `settings rewritten after teleport ${where}`).toBe(mtime);
+    }
+  });
+
   it('a teleport zaps a red bolt across the screen to her new spot; glides do not', async () => {
     const { app } = await launch(profile());
     const zaps = () => app.evaluate(() => (globalThis as unknown as { __capri: { zapCount: number } }).__capri.zapCount);
