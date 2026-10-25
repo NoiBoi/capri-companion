@@ -188,7 +188,13 @@ async function init() {
       const from = charWin.getBounds();
       charWin.setBounds(r);
       // a real jump (not a glide): a red bolt zaps across the screen to where she lands
-      if (how === 'teleport' && settings.get().teleport.effects) zap(from, r);
+      if (how === 'teleport' && settings.get().teleport.effects) {
+        zap(from, r);
+        // showing the bolt's screen-saver-level overlay clears her always-on-top flag on Windows; without
+        // this she drops behind every window after a teleport (invisible over a maximised app)
+        raiseCharacter();
+        setTimeout(raiseCharacter, 800);
+      }
     },
     moved: (dest) => {
       // remember the window she's sitting on so she can react if it moves or closes
