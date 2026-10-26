@@ -30,7 +30,9 @@ export function spriteBase(input: { sleeping: boolean; dragging: boolean; ledge:
   return input.ledge ? 'perch' : 'idle';
 }
 
-/** The original artwork looks left; mirroring is needed to look right. */
-export function spriteFacing(target: number, current = 1): number {
-  return Math.abs(target) < 0.18 ? current : target < 0 ? 1 : -1;
+/** Sitting looks right in the original strip; the standing family looks left. */
+export function spriteFacing(target: number, current = 1, clip: SpriteClip = 'idle'): number {
+  if (Math.abs(target) < 0.18) return current;
+  const source = clip.startsWith('perch') ? 1 : -1;
+  return (target < 0 ? -1 : 1) * source;
 }

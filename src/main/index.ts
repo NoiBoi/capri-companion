@@ -11,7 +11,8 @@ import { claudeSignIn, claudeSignOut, claudeStatus, claudeSubmitCode } from './a
 import { newId } from './store/jsonFile';
 import * as hands from './desktop/input';
 import { z } from 'zod';
-import type { ActionRequest, CharacterCue, Diagnostics, InvokeChannel } from '../shared/ipc';
+import type { ActionRequest, CharacterCue, Diagnostics, InvokeChannel, ChatMessage, AssistantPhase } from '../shared/ipc';
+import { BuddyBubble } from './bubble';
 import type { Settings } from '../shared/settings';
 import { IDLE_REMARKS, mayInterrupt } from '../shared/behaviorRules';
 import { speechAllowed, type SpeechReason } from '../shared/speechPolicy';
@@ -43,7 +44,7 @@ app.setAppUserModelId('dev.capri.buddy');
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', (_event, argv) => { if (argv.includes('--quit')) app.quit(); else openPanel('chat'); });
+  app.on('second-instance', (_event, argv) => { if (argv.includes('--quit')) app.quit(); else bubble?.open(); });
   app.whenReady().then(init).catch((e) => {
     dialog.showErrorBox('Capri failed to start', String(e?.stack || e));
     app.exit(1);
@@ -61,6 +62,7 @@ let reminders: ReminderStore;
 let convo: Conversation;
 let offline: LLMProvider;
 let charWin: BrowserWindow | null = null;
+let bubble: BuddyBubble;
 let panelWin: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let drag: DragController;
@@ -200,6 +202,7 @@ async function init() {
   notes = new NotesStore(dir);
   reminders = new ReminderStore(dir);
   offline = new OfflineProvider();
+  bubble = new BuddyBubble({ anchor: () => charWin && !charWin.isDestroyed() ? charWin.getBounds() : null, enabled: () => settings.get().character.speechBubbles && !userHidden && !fullscreenHidden, preload: preloadPath(), log });
   loadWin32(log);
   devGeminiKey = TEST && process.env.CAPRI_NO_DEV_KEY === '1' ? undefined : loadDevKey();
   wake = new WakeWordListener(log);
@@ -284,7 +287,7 @@ async function init() {
   powerMonitor.on('resume', () => { reminders.tick(); reclampCharacter(); void monitor.check('resume'); });
 
   if (!s0.firstRunComplete) setTimeout(() => openPanel('welcome'), 800);
-  else if (!TEST && process.argv.includes('--panel')) setTimeout(() => openPanel('chat'), 800);
+  else if (!TEST && process.argv.includes('--panel')) setTimeout(() => bubble.open(), 800);
   if (TEST) (globalThis as Record<string, unknown>).__capri = { get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, get startupMs() { return startupMs; }, get speakCount() { return speakCount; }, presenceTick, settleAfterDrop, throwCharacter, useComputer, exploreTick, get throwing() { return !!throwTimer; }, pendingConfirms, log };
 }
 
@@ -350,7 +353,7 @@ function createCharacter() {
     if (moved) {
       detachPerch();
       settleAfterDrop(); // she stays where you let go (no flinging)
-    } else { lastInteraction = Date.now(); cue({ type: 'react', reaction: 'happy' }); }
+    } else { lastInteraction = Date.now(); cue({ type: 'react', reaction: 'happy' }); interaction('poke'); }
   });
   // At fractional DPI Windows shifts new frameless windows by a few px; without this
   // correction the saved position creeps a little on every launch.
@@ -379,6 +382,7 @@ function createCharacter() {
   // 'moved' only fires for user moves on Windows; also persist programmatic/snap moves (debounced)
   let moveTimer: NodeJS.Timeout | null = null;
   charWin.on('move', () => {
+    bubble?.reposition();
     if (drag.active || !settled) return;
     if (moveTimer) clearTimeout(moveTimer);
     // whatever moved her, re-check what's under her so she never keeps lying on a ledge that's gone
@@ -431,9 +435,22 @@ function openPanel(tab: string = 'chat') {
 
 function toPanel(channel: string, payload: unknown) {
   if (panelWin && !panelWin.isDestroyed()) panelWin.webContents.send(channel, payload);
+  if (!bubble) return;
+  if (channel === 'chat:message' && (payload as { message: ChatMessage }).message.role === 'user') bubble.begin();
+  else if (channel === 'chat:phase') bubble.phase((payload as { phase: AssistantPhase }).phase);
+  else if (channel === 'chat:delta') { const p = payload as { messageId: string; delta: string }; bubble.delta(p.messageId, p.delta); }
+  else if (channel === 'chat:done') { const m = (payload as { message: ChatMessage }).message; bubble.done(m); if (m.content && !m.meta?.error) cue({ type: 'textTalk', text: m.content }); }
 }
 function cue(c: CharacterCue) {
+  if (c.type === 'bubble' || c.type === 'remark') bubble?.remark(c.text);
   if (charWin && !charWin.isDestroyed()) charWin.webContents.send('cue', c);
+}
+let lastInteractionBubble = 0;
+function interaction(kind: 'pat' | 'poke') {
+  if (convo?.busy || Date.now() - lastInteractionBubble < 12000) return;
+  lastInteractionBubble = Date.now();
+  const lines = kind === 'pat' ? ['Careful. I could get used to that.', 'Okay, you can stay.', 'Keep going. This is your job now.'] : ['Hey. I felt that.', 'You have my attention. Make it interesting.', 'Poking the construct. Bold choice.'];
+  bubble.remark(lines[Math.floor(Math.random() * lines.length)]);
 }
 /** The single gate for speaking out loud: every utterance names its reason and is logged. */
 let speakCount = 0;
@@ -449,6 +466,7 @@ function setCharacterVisible(visible: boolean) {
   if (!charWin) return;
   if (visible) { reveal(charWin); if (settings.get().character.alwaysOnTop) charWin.setAlwaysOnTop(true, 'floating'); }
   else conceal(charWin);
+  if (!visible) bubble?.hide();
   cue({ type: 'pause', paused: !visible });
   updateTrayMenu();
 }
@@ -575,7 +593,7 @@ async function onAudio(wav: Uint8Array, durationMs: number) {
 
 // ---------------------------------------------------------------- periodic
 function ownHandles(): bigint[] {
-  return [charWin, panelWin].filter((w): w is BrowserWindow => !!w && !w.isDestroyed()).map((w) => handleToBigint(w.getNativeWindowHandle()));
+  return [charWin, panelWin, bubble?.window].filter((w): w is BrowserWindow => !!w && !w.isDestroyed()).map((w) => handleToBigint(w.getNativeWindowHandle()));
 }
 function isFullscreenNow() { return settings.get().character.hideOnFullscreen && win32Status() === 'active' && isOtherAppFullscreen(ownHandles()); }
 function perchTick() {
@@ -592,6 +610,7 @@ let lastCursorSample = '';
 function cursorTick() {
   if (TEST || !charWin || charWin.isDestroyed() || userHidden || fullscreenHidden) return;
   const c = screen.getCursorScreenPoint(), b = charWin.getBounds();
+  bubble?.reposition();
   const sample = `${c.x},${c.y},${b.x},${b.y},${b.width},${b.height}`;
   if (sample === lastCursorSample) return;
   lastCursorSample = sample;
@@ -811,7 +830,7 @@ function trayIcon() {
 function createTray() {
   tray = new Tray(trayIcon());
   tray.setToolTip('Capri');
-  tray.on('click', () => openPanel('chat'));
+  tray.on('click', () => bubble.open());
   updateTrayMenu();
 }
 function updateTrayMenu() {
@@ -819,7 +838,7 @@ function updateTrayMenu() {
   const s = settings.get();
   const visible = shown(charWin);
   const items: MenuItemConstructorOptions[] = [
-    { label: 'Chat…  (Ctrl+Alt+Space)', click: () => openPanel('chat') },
+    { label: 'Chat…  (Ctrl+Alt+Space)', click: () => bubble.open() },
     { label: recording ? 'Stop listening' : 'Push to talk  (Ctrl+Alt+T)', enabled: s.voice.micPermission, click: () => (recording ? stopRecording() : startRecording()) },
     { type: 'separator' },
     { label: visible ? 'Hide Capri  (Ctrl+Alt+H)' : 'Show Capri  (Ctrl+Alt+H)', click: toggleHidden },
@@ -857,7 +876,7 @@ const shortcutStatus: Record<string, string> = {};
 function registerShortcuts() {
   // [preferred, fallback] — another app may already own the preferred combo
   const map: [string[], string, () => void][] = [
-    [['Control+Alt+Space', 'Control+Alt+K'], 'Open chat', () => { summonNearCursor(); openPanel('chat'); }],
+    [['Control+Alt+Space', 'Control+Alt+K'], 'Open chat', () => { summonNearCursor(); bubble.open(); }],
     [['Control+Alt+T', 'Control+Alt+Y'], 'Push-to-talk', () => (recording ? stopRecording() : startRecording())],
     [['Control+Alt+H', 'Control+Alt+J'], 'Hide / show', toggleHidden],
     [['Control+Alt+C', 'Control+Alt+V'], 'Interact (click-through)', toggleInteract],
@@ -879,12 +898,13 @@ function charMenu() {
   const s = settings.get();
   const seatWindow = windowBesidePet(); // capture before the native menu takes focus
   Menu.buildFromTemplate([
-    { label: 'Chat', click: () => openPanel('chat') },
+    { label: 'Chat', click: () => bubble.open() },
     { label: 'Push to talk', enabled: s.voice.micPermission, click: () => startRecording() },
     { label: 'Stop talking', click: () => convo.stop() },
     { label: 'Teleport', click: () => void teleporter.go('auto', 'manual') },
     { label: 'Sit on this window', enabled: !!seatWindow, click: () => void sitOnWindow(seatWindow) },
     { label: 'Animation', submenu: [['Automatic', 'auto'], ['Stand', 'idle'], ['Sit', 'perch'], ['Grin', 'grin'], ['Sleep', 'sleep'], ['Glitch', 'glitch'], ['Hang', 'dangle']].map(([label, name]) => ({ label, type: 'radio' as const, checked: s.character.animation === name, click: () => settings.update({ character: { animation: name } }) })) },
+    { label: 'Facing', submenu: [['Follow cursor', 'cursor'], ['Original artwork', 'original'], ['Left', 'left'], ['Right', 'right']].map(([label, name]) => ({ label, type: 'radio' as const, checked: s.character.facing === name, click: () => settings.update({ character: { facing: name } }) })) },
     { label: 'Teleport to other monitor', enabled: screen.getAllDisplays().length > 1, click: () => void teleporter.go('other_monitor', 'manual') },
     { type: 'separator' },
     { label: 'Click-through', type: 'checkbox', checked: s.character.clickThrough, click: (i) => settings.update({ character: { clickThrough: i.checked } }) },
@@ -910,14 +930,17 @@ function setupPermissions() {
 }
 
 // ---------------------------------------------------------------- IPC
-type Origin = 'char' | 'panel' | 'any';
+type Origin = 'char' | 'panel' | 'bubble' | 'chat' | 'any';
 function fromOrigin(e: IpcMainInvokeEvent, origin: Origin) {
   const id = e.sender.id;
   const isChar = !!charWin && !charWin.isDestroyed() && charWin.webContents.id === id;
   const isPanel = !!panelWin && !panelWin.isDestroyed() && panelWin.webContents.id === id;
+  const isBubble = !!bubble?.window && !bubble.window.isDestroyed() && bubble.window.webContents.id === id;
   if (origin === 'char') return isChar;
   if (origin === 'panel') return isPanel;
-  return isChar || isPanel;
+  if (origin === 'bubble') return isBubble;
+  if (origin === 'chat') return isPanel || isBubble;
+  return isChar || isPanel || isBubble;
 }
 function handle<S extends z.ZodTypeAny>(ch: InvokeChannel, origin: Origin, schema: S, fn: (arg: z.infer<S>) => unknown) {
   ipcMain.handle(ch, async (e, raw) => {
@@ -946,7 +969,7 @@ function registerIpc() {
   });
   handle('secrets:delete', 'panel', str(40), (key) => { if (SecretStore.isKey(key)) secrets.delete(key); void monitor.check('key removed'); return true; });
 
-  handle('chat:send', 'panel', z.object({ text: str(20_000), viaVoice: z.boolean().optional() }), async ({ text }) => {
+  handle('chat:send', 'chat', z.object({ text: str(20_000), viaVoice: z.boolean().optional() }), async ({ text }) => {
     lastInteraction = Date.now();
     return { messageId: await convo.send(text) };
   });
@@ -1005,7 +1028,12 @@ function registerIpc() {
   // character renderer
   handle('char:hit', 'char', z.boolean(), (hit) => applyMouseMode(hit));
   handle('char:drag', 'char', z.enum(['start', 'end']), (c) => (c === 'start' ? drag.begin() : drag.end()));
-  handle('char:click', 'char', none, () => { lastInteraction = Date.now(); openPanel('chat'); });
+  handle('char:click', 'char', none, () => { lastInteraction = Date.now(); bubble.open(); });
+  handle('char:interaction', 'char', z.enum(['pat', 'poke']), interaction);
+  handle('bubble:open', 'any', none, () => bubble.open());
+  handle('bubble:close', 'bubble', none, () => bubble.dismiss());
+  handle('bubble:get', 'bubble', none, () => bubble.state);
+  handle('bubble:resize', 'bubble', z.number().finite().min(40).max(1200), (height) => bubble.resize(height));
   handle('char:menu', 'char', none, charMenu);
   handle('char:speechState', 'char', z.object({ utteranceId: str(100), state: z.enum(['start', 'end', 'error']) }), ({ state }) => convo.onSpeechEvent(state));
   handle('char:audio', 'char', z.object({ wav: z.instanceof(Uint8Array), durationMs: z.number().min(0).max(120_000) }), ({ wav, durationMs }) => {
@@ -1077,6 +1105,7 @@ function cleanup() {
   teleporter?.stopAuto();
   wake?.stop();
   convo?.stop();
+  bubble?.close();
   drag?.end();
   settings?.flush();
   globalShortcut.unregisterAll();

@@ -32,6 +32,7 @@ export interface ActionResult { id: string; ok: boolean; summary: string; data?:
 
 /** Coarse status shown on the character + panel */
 export type AssistantPhase = 'idle' | 'listening' | 'transcribing' | 'thinking' | 'speaking' | 'error' | 'offline';
+export interface BubbleState { text: string; phase: AssistantPhase; composer: boolean; side: 'left' | 'right' }
 
 /** Cues the main process sends to the character renderer */
 export type CharacterCue =
@@ -46,6 +47,7 @@ export type CharacterCue =
   | { type: 'presence'; idleSec: number; quiet: boolean }
   | { type: 'remark'; text: string }
   | { type: 'bubble'; text: string } // a line in her speech bubble, no gesture
+  | { type: 'textTalk'; text: string }
   | { type: 'workPose'; pose: 'back' | 'crouch' | 'sit' | null } // while she works on the PC (null = back to normal)
   | { type: 'connection'; state: ConnectionStatus['state'] }
   | { type: 'teleport'; phase: 'out' | 'in'; id: number; effects: boolean }
@@ -154,6 +156,11 @@ export interface InvokeMap {
   'char:micError': [string, void];
   'char:fps': [number, void];
   'char:ready': [void, void];
+  'char:interaction': ['pat' | 'poke', void];
+  'bubble:open': [void, void];
+  'bubble:close': [void, void];
+  'bubble:get': [void, BubbleState];
+  'bubble:resize': [number, void];
   'tts:fetch': [string, Uint8Array];
   'connection:get': [void, ConnectionStatus];
   'teleport:now': [string | void, { ok: boolean; detail: string }];
@@ -169,10 +176,12 @@ export const INVOKE_CHANNELS: InvokeChannel[] = [
   'app:resetAll', 'app:quit', 'app:restart', 'apps:pick', 'folders:pick', 'panel:open', 'panel:close',
   'voice:ptt', 'char:hit', 'char:drag', 'char:click', 'char:menu', 'char:speechState', 'char:audio',
   'char:micError', 'char:fps', 'char:ready', 'tts:fetch', 'connection:get', 'connection:check', 'teleport:now', 'char:teleport',
+  'char:interaction', 'bubble:open', 'bubble:close', 'bubble:get', 'bubble:resize',
 ];
 export const EVENT_CHANNELS = [
   'chat:delta', 'chat:done', 'chat:message', 'chat:phase', 'action:confirm', 'action:result', 'memory:changed',
   'settings:changed', 'reminder:fired', 'transcript', 'panel:tab', 'cue', 'connection:status',
+  'bubble:state',
 ] as const;
 
 export const SECRET_KEYS = ['gemini', 'openai', 'anthropic', 'openaiVoice'] as const;

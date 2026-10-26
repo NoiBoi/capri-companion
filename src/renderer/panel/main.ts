@@ -424,6 +424,8 @@ async function renderCharacter() {
       field('Opacity', range('character.opacity', 'Opacity', 0.2, 1, 0.05, pct)),
       field('Animation', range('character.animationIntensity', 'Animation intensity', 0, 1.5, 0.05, pct)),
       field('Pose / animation', select('character.animation', 'Pose / animation', [['auto', 'Automatic'], ['idle', 'Stand'], ['perch', 'Sit'], ['grin', 'Grin'], ['sleep', 'Sleep'], ['glitch', 'Glitch'], ['dangle', 'Hang']])),
+      field('Facing', select('character.facing', 'Facing', [['cursor', 'Follow cursor'], ['original', 'Original artwork'], ['left', 'Left'], ['right', 'Right']])),
+      sw('Speech bubbles', 'character.speechBubbles'),
       field('Frame rate', select('character.fpsCap', 'Frame rate', [['15', '15 fps'], ['30', '30 fps'], ['60', '60 fps'], ['120', '120 fps']], undefined, Number)),
       sw('Glitch effects', 'character.glitchEffects')),
     group('On the desktop',

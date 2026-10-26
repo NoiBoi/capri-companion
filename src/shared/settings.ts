@@ -40,6 +40,8 @@ export const SettingsSchema = z.object({
   firstRunComplete: z.boolean(),
   character: z.object({
     animation: z.enum(['auto', 'idle', 'perch', 'grin', 'sleep', 'glitch', 'dangle']),
+    facing: z.enum(['cursor', 'original', 'left', 'right']),
+    speechBubbles: z.boolean(),
     scale: z.number().min(0.4).max(2.5),
     opacity: z.number().min(0.2).max(1),
     animationIntensity: z.number().min(0).max(1.5),
@@ -139,6 +141,8 @@ export const DEFAULT_SETTINGS: Settings = {
   firstRunComplete: false,
   character: {
     animation: 'auto',
+    facing: 'cursor',
+    speechBubbles: true,
     scale: 1,
     opacity: 1,
     animationIntensity: 1,

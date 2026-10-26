@@ -107,6 +107,18 @@ export function createPanelWindow(near: Rectangle, preload: string, log: Logger,
   return win;
 }
 
+/** Small attached speech bubble; becomes focusable only when the user opens its composer. */
+export function createBubbleWindow(preload: string, log: Logger): BrowserWindow {
+  const win = new BrowserWindow({ width: 340, height: 170, frame: false, transparent: true, backgroundColor: '#00000000',
+    resizable: false, minimizable: false, maximizable: false, fullscreenable: false, hasShadow: false,
+    skipTaskbar: true, focusable: false, show: false, alwaysOnTop: true, title: 'Capri bubble',
+    webPreferences: { offscreen: OFFSCREEN, preload, contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: true, backgroundThrottling: false } });
+  win.setAlwaysOnTop(true, 'floating');
+  harden(win, log);
+  void win.loadFile(path.join(RENDERER_DIR, 'bubble.html'));
+  return win;
+}
+
 /**
  * Drag the character window with the cursor. Main-process driven (works with
  * focusable:false and across monitors with different DPI). Ends on mouseup or,

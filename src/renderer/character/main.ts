@@ -32,7 +32,6 @@ const canvas = document.getElementById('stage') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d', { alpha: true, desynchronized: false })!;
 const off = document.createElement('canvas'); // glitch post-process source
 const offCtx = off.getContext('2d')!;
-const bubble = document.getElementById('bubble') as HTMLDivElement;
 
 let settings: Settings;
 let phase: AssistantPhase = 'idle';
@@ -47,6 +46,7 @@ let dragging = false;
 let forced: Partial<Params> | null = null;
 let surface: Surface = 'taskbar';
 let dashing = 0; // pose override for previews/tests only
+let textTalkUntil = 0;
 
 const fx = new TeleportFx(() => document.createElement('canvas'));
 const model = new CapriSpriteModel();
@@ -130,7 +130,8 @@ function tick(dt: number) {
   p.mouthOpen = Math.max(0, speaker.speaking ? level : p.mouthOpen); // lip-sync wins over gesture clips
 
   const teleporting = fx.active || fx.hidden;
-  model.faceToward(pointer ? pointer.x : p.turn);
+  model.faceToward(pointer ? pointer.x : 0);
+  if (!settings.voice.ttsEnabled && !speaker.speaking && performance.now() < textTalkUntil) p.mouthOpen = 0.12 + 0.30 * Math.abs(Math.sin(performance.now() / 95));
   if (model.stutter > 0 && !teleporting) { model.stutter--; return; } // glitch stutter: hold the last image a few frames
   const glitch = !teleporting && settings.character.glitchEffects && (p.glitch > 0.05 || model.burst > 0);
   const g = glitch || teleporting ? offCtx : ctx;
@@ -138,7 +139,7 @@ function tick(dt: number) {
   g.clearRect(0, 0, canvas.width, canvas.height);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   lastP = p;
-  model.draw(g, p, dt, { pose: modelPose(), ledge: surface === 'taskbar' || surface === 'window', taskbar: surface === 'taskbar', dragging, glitchEnabled: settings.character.glitchEffects, intensity, animation: settings.character.animation }, W, H);
+  model.draw(g, p, dt, { pose: modelPose(), ledge: surface === 'taskbar' || surface === 'window', taskbar: surface === 'taskbar', dragging, glitchEnabled: settings.character.glitchEffects, intensity, animation: settings.character.animation, facing: settings.character.facing }, W, H);
   if (glitch) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -162,6 +163,7 @@ function trackPat(x: number, y: number) {
   if (patTurns.length >= 4 && now > patCool) {
     patTurns = []; patCool = now + 2500;
     model.pat();
+    void api.invoke('char:interaction', 'pat');
     behavior.react('happy');
   }
 }
@@ -214,15 +216,6 @@ window.addEventListener('mouseup', (e) => {
 window.addEventListener('dblclick', () => { if (hit) void api.invoke('char:click'); });
 window.addEventListener('contextmenu', (e) => { e.preventDefault(); if (hit) void api.invoke('char:menu'); });
 
-// ---------------------------------------------------------------- speech bubble (idle remarks only)
-let bubbleTimer = 0;
-function showBubble(text: string) {
-  bubble.textContent = text;
-  bubble.classList.add('show');
-  clearTimeout(bubbleTimer);
-  bubbleTimer = window.setTimeout(() => bubble.classList.remove('show'), 6000);
-}
-
 // ---------------------------------------------------------------- microphone
 async function micStart(autoStop: boolean) {
   try {
@@ -254,8 +247,9 @@ api.on('cue', (raw) => {
     case 'pause': setPaused(c.paused); if (c.paused) speaker.stopAll(); break;
     case 'interact': canvas.style.filter = c.enabled ? 'drop-shadow(0 0 1.5px #22f27a) drop-shadow(0 0 1px #22f27a)' : ''; break; // click-through lifted for a moment
     case 'presence': idleSec = c.idleSec; quiet = c.quiet; break;
-    case 'remark': behavior.react('wave'); showBubble(c.text); break;
-    case 'bubble': showBubble(c.text); break;
+    case 'remark': behavior.react('wave'); break;
+    case 'bubble': break; // the attached bubble window owns text layout
+    case 'textTalk': textTalkUntil = performance.now() + Math.min(10000, Math.max(1800, c.text.length * 40)); behavior.react('happy'); break;
     case 'workPose': workPose = c.pose; break;
     case 'teleport': onTeleport(c.phase, c.id, c.effects); break;
     case 'clip': {

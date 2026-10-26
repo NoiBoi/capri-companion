@@ -36,6 +36,10 @@ describe('desktop buddy regressions', () => {
     expect(spriteFacing(1)).toBe(-1);
     expect(spriteFacing(-1)).toBe(1);
     expect(spriteFacing(0.02, -1)).toBe(-1);
+    expect(spriteFacing(1, 1, 'perch')).toBe(1);
+    expect(spriteFacing(-1, 1, 'perch')).toBe(-1);
+    expect(spriteFacing(1, 1, 'perch_blink')).toBe(1);
+    expect(spriteFacing(1, 1, 'perch_glitch')).toBe(1);
   });
   it('snaps by the seat line even when the target window is not foreground', () => {
     const pet = { x: 300, y: 200, width: 200, height: 300 };

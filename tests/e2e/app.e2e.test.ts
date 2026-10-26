@@ -799,3 +799,67 @@ describe('sprite interaction regressions', () => {
     expect(log.some((s) => s.endsWith(':in'))).toBe(true);
   });
 });
+
+describe('attached bubble chat', () => {
+  it('chats directly from the attached input without creating the large panel', async () => {
+    const server = await mockModel(() => 'There you are. I was getting bored in here.');
+    const { app, char } = await launch(openaiProfile(server.url));
+    const next = app.waitForEvent('window');
+    await char.evaluate(() => (window as unknown as { capri: { invoke(c: string): Promise<unknown> } }).capri.invoke('char:click'));
+    const bubble = await next;
+    await bubble.waitForSelector('#input');
+    await bubble.fill('#input', 'Hey Capri'); await bubble.press('#input', 'Enter');
+    await bubble.waitForFunction(() => document.getElementById('message')!.textContent?.includes('getting bored'));
+    const windows = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => ({ title: w.getTitle(), focusable: w.isFocusable(), size: w.getSize() })));
+    expect(windows).toHaveLength(2);
+    expect(windows.find((w) => w.title === 'Capri bubble')?.focusable).toBe(true);
+    expect(windows.find((w) => w.title === 'Capri bubble')?.size[1]).toBeLessThanOrEqual(360);
+    const secretAttempt = await bubble.evaluate(async () => { try { await (window as unknown as { capri: { invoke(c: string): Promise<unknown> } }).capri.invoke('secrets:status'); return 'allowed'; } catch { return 'blocked'; } });
+    expect(secretAttempt).toBe('blocked');
+    await bubble.press('#input', 'Escape');
+    expect(await app.evaluate(({ BrowserWindow }) => (BrowserWindow.getAllWindows().find((w) => w.getTitle() === 'Capri bubble') as unknown as { capriShown?: boolean }).capriShown)).toBe(false);
+    await server.close();
+  });
+
+  it('shows muted replies after the large panel is closed, and wraps long text inside the screen', async () => {
+    const server = await mockModel(() => ({ delayMs: 12, text: 'Still here. ' + 'This is a longer bubble reply that should remain readable. '.repeat(12) }));
+    const { app, char } = await launch(openaiProfile(server.url));
+    const panel = await openPanel(app, char);
+    const next = app.waitForEvent('window');
+    await panel.fill('textarea', 'Talk to me from your bubble.'); await panel.press('textarea', 'Enter');
+    const bubble = await next;
+    await app.evaluate(() => (globalThis as unknown as { __capri: { panelWin: { close(): void } } }).__capri.panelWin.close());
+    await bubble.waitForFunction(() => (document.getElementById('message')!.textContent?.length ?? 0) > 600);
+    await bubble.waitForTimeout(300);
+    expect(await bubble.locator('#composer').isHidden()).toBe(true);
+    const layout = await app.evaluate(({ BrowserWindow, screen }) => { const w = BrowserWindow.getAllWindows().find((w) => w.getTitle() === 'Capri bubble')!, b = w.getBounds(), a = screen.getDisplayMatching(b).workArea; return { height: b.height, inside: b.x >= a.x && b.y >= a.y && b.x + b.width <= a.x + a.width + 2 && b.y + b.height <= a.y + a.height + 2 }; });
+    expect(layout.height).toBeLessThanOrEqual(360); expect(layout.inside).toBe(true);
+    expect(await bubble.evaluate(() => document.getElementById('message')!.scrollHeight > document.getElementById('message')!.clientHeight)).toBe(true);
+    expect(await char.evaluate(() => (window as unknown as { __capriDebug: { speaker: { speaking: boolean } } }).__capriDebug.speaker.speaking)).toBe(false);
+    await bubble.click('#reply'); await bubble.waitForSelector('#input', { state: 'visible' });
+    await server.close();
+  });
+
+  it('uses opposite source-facing metadata for standing and sitting, and can preserve original artwork', async () => {
+    const { app, char } = await launch(profile({ character: { glitchEffects: false, animationIntensity: 0 } }));
+    type D = { __capriDebug: { manual(on: boolean): void; step(dt: number, n: number): void; setPointer(x: number): void; model: { facing: number; activeClip: string } } };
+    await char.evaluate(() => (window as unknown as D).__capriDebug.manual(true));
+    const choose = async (animation: string, facing = 'cursor') => { await app.evaluate((_e, patch) => (globalThis as unknown as { __capri: { settings: { update(p: object): void } } }).__capri.settings.update({ character: patch }), { animation, facing }); await char.waitForTimeout(50); };
+    const look = (x: number) => char.evaluate((x) => { const d = (window as unknown as D).__capriDebug; d.setPointer(x); d.step(1 / 30, 2); return d.model.facing; }, x);
+    await choose('idle'); expect(await look(1)).toBe(-1); expect(await look(-1)).toBe(1);
+    await choose('perch'); expect(await look(1)).toBe(1); expect(await look(-1)).toBe(-1);
+    await choose('perch', 'original'); expect(await look(1)).toBe(1); expect(await look(-1)).toBe(1);
+    await choose('idle', 'original'); expect(await look(1)).toBe(1); expect(await look(-1)).toBe(1);
+  });
+
+  it('plays a complete blink while a sitting pose is selected', async () => {
+    const { char } = await launch(profile({ character: { animation: 'perch', animationIntensity: 1, glitchEffects: false } }));
+    const result = await char.evaluate(() => {
+      const d = (window as unknown as { __capriDebug: { manual(on: boolean): void; force(p: object): void; step(dt: number, n: number): void; model: { activeClip: string; activeFrame: number } } }).__capriDebug;
+      d.manual(true); d.force({ sleep: 0, blinkL: 1, blinkR: 1 }); d.step(1 / 30, 1);
+      d.force({ sleep: 0, blinkL: 0, blinkR: 0 }); d.step(1 / 30, 9);
+      return { clip: d.model.activeClip, frame: d.model.activeFrame };
+    });
+    expect(result.clip).toBe('perch_blink'); expect(result.frame).toBeGreaterThanOrEqual(2);
+  });
+});

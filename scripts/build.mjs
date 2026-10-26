@@ -13,9 +13,9 @@ const common = { bundle: true, sourcemap: prod ? false : 'linked', minify: prod,
 await Promise.all([
   build({ ...common, entryPoints: [path.join(root, 'src/main/index.ts')], outfile: path.join(out, 'main/index.js'), platform: 'node', format: 'cjs', external: ['electron', 'koffi'] }),
   build({ ...common, entryPoints: [path.join(root, 'src/preload/preload.ts')], outfile: path.join(out, 'preload/preload.js'), platform: 'node', format: 'cjs', external: ['electron'] }),
-  build({ ...common, entryPoints: { character: path.join(root, 'src/renderer/character/main.ts'), panel: path.join(root, 'src/renderer/panel/main.ts') }, outdir: path.join(out, 'renderer'), platform: 'browser', format: 'iife' }),
+  build({ ...common, entryPoints: { character: path.join(root, 'src/renderer/character/main.ts'), panel: path.join(root, 'src/renderer/panel/main.ts'), bubble: path.join(root, 'src/renderer/bubble.ts') }, outdir: path.join(out, 'renderer'), platform: 'browser', format: 'iife' }),
 ]);
-for (const f of ['character.html', 'panel.html', 'panel.css']) {
+for (const f of ['character.html', 'panel.html', 'panel.css', 'bubble.html', 'bubble.css']) {
   const src = path.join(root, 'src/renderer', f);
   if (fs.existsSync(src)) fs.copyFileSync(src, path.join(out, 'renderer', f));
 }

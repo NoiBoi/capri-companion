@@ -1,5 +1,25 @@
 # Capri Buddy: private artwork integration
 
+## 0.2.2 bubbles and character presence
+
+- Double-click, the chat shortcut, the tray, and the launcher open a compact
+  attached speech bubble with an input, rather than the full settings/chat panel.
+  Normal model replies appear there even when voice and the large panel are off.
+- The bubble follows Capri, wraps and scrolls long replies, shows thinking/stop
+  controls, and can be dismissed with Escape. It can send chat but cannot access
+  API keys, edit settings, or approve computer actions; those remain in the panel.
+- Seated artwork looks right in the original strip, while standing artwork looks
+  left. Facing now uses the active clip's source direction, including blink/glitch
+  variants. Facing > Original artwork keeps every strip unmirrored.
+- Blinks play the complete four-frame sequence instead of being cut off by the
+  faster procedural eyelid timer. Standing and sitting selections retain blinks.
+- Added small idle fidgets, a seated lean around the contact line, visual talking
+  for muted text replies, and rate-limited local poke/head-pat bubble responses.
+- Conversation instructions favor concise, playful responses over generic helper
+  introductions. This is interpretation, not a claim of exact character fidelity.
+- `node scripts/verify-bubble-live.mjs` checks a real Codex reply through the bubble
+  in an isolated profile, without opening the large panel.
+
 ## 0.2.1 interaction fixes
 
 - Window seats track a native window handle, not whichever app currently has focus.
