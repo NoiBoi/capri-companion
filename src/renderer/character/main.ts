@@ -41,6 +41,7 @@ let quiet = false;
 let paused = false;
 let pointer: { x: number; y: number } | null = null;
 let lastPointerAt = 0;
+let cursorLocal: { x: number; y: number } | null = null;
 let hit = false;
 let dragging = false;
 let forced: Partial<Params> | null = null;
@@ -104,7 +105,8 @@ function setPaused(p: boolean) {
   if (p) cancelAnimationFrame(raf);
   else { last = performance.now(); raf = requestAnimationFrame(loop); }
 }
-document.addEventListener('visibilitychange', () => setPaused(document.hidden));
+// Main pauses genuinely hidden pets explicitly. Covering the native window must
+// not stop teleport effects or leave a stale mouse hit region behind.
 
 function tick(dt: number) {
   if (!settings) return;
@@ -128,7 +130,7 @@ function tick(dt: number) {
   p.mouthOpen = Math.max(0, speaker.speaking ? level : p.mouthOpen); // lip-sync wins over gesture clips
 
   const teleporting = fx.active || fx.hidden;
-  model.faceToward(Math.abs(p.turn) > 0.2 ? p.turn : pointer ? p.gazeX : 0);
+  model.faceToward(pointer ? pointer.x : p.turn);
   if (model.stutter > 0 && !teleporting) { model.stutter--; return; } // glitch stutter: hold the last image a few frames
   const glitch = !teleporting && settings.character.glitchEffects && (p.glitch > 0.05 || model.burst > 0);
   const g = glitch || teleporting ? offCtx : ctx;
@@ -136,7 +138,7 @@ function tick(dt: number) {
   g.clearRect(0, 0, canvas.width, canvas.height);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   lastP = p;
-  model.draw(g, p, dt, { pose: modelPose(), ledge: surface === 'taskbar' || surface === 'window', taskbar: surface === 'taskbar', dragging, glitchEnabled: settings.character.glitchEffects }, W, H);
+  model.draw(g, p, dt, { pose: modelPose(), ledge: surface === 'taskbar' || surface === 'window', taskbar: surface === 'taskbar', dragging, glitchEnabled: settings.character.glitchEffects, intensity, animation: settings.character.animation }, W, H);
   if (glitch) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -144,6 +146,7 @@ function tick(dt: number) {
     model.post(ctx, off, Math.max(0.3, p.glitch, model.burst * 0.9));
   }
   if (teleporting) fx.render(ctx, off, dt, dpr);
+  if (!dragging && cursorLocal) setHit(!teleporting && model.hitTest(ctx, cursorLocal.x, cursorLocal.y, dpr));
 }
 
 // head pats: the cursor rubbing back and forth over her head (Desktop Mate / Shimeji style)
@@ -174,26 +177,28 @@ fx.onDone = (id, ph) => {
 };
 function onTeleport(phaseName: 'out' | 'in', id: number, effects: boolean) {
   setHit(false);
-  if (!effects || paused) {
+  if (!effects) {
     fx.phase = null;
     fx.hidden = phaseName === 'out';
     if (phaseName === 'in') ctx.clearRect(0, 0, canvas.width, canvas.height);
     void api.invoke('char:teleport', { id, phase: phaseName });
     return;
   }
+  setPaused(false);
   fx.start(phaseName, id, { x: W / 2, y: H * 0.38, w: W * 0.8, h: H * 0.7 });
 }
 
 // ---------------------------------------------------------------- pointer: hit-test, drag, click
 function setHit(h: boolean) { if (h !== hit) { hit = h; void api.invoke('char:hit', h); document.body.style.cursor = h ? 'grab' : 'default'; } }
 window.addEventListener('mousemove', (e) => {
+  cursorLocal = { x: e.clientX, y: e.clientY };
   lastPointerAt = performance.now();
   // gaze target relative to her head (≈ 34% down the frame)
   pointer = { x: (e.clientX - W / 2) / (W * 0.45), y: (e.clientY - H * 0.34) / (H * 0.35) };
   if (!dragging) setHit(!fx.active && !fx.hidden && model.hitTest(ctx, e.clientX, e.clientY, dpr));
   trackPat(e.clientX, e.clientY);
 });
-window.addEventListener('mouseleave', () => { pointer = null; if (!dragging) setHit(false); });
+window.addEventListener('mouseleave', () => { cursorLocal = null; pointer = null; if (!dragging) setHit(false); });
 window.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || !hit) return;
   dragging = true;
@@ -254,6 +259,8 @@ api.on('cue', (raw) => {
     case 'workPose': workPose = c.pose; break;
     case 'teleport': onTeleport(c.phase, c.id, c.effects); break;
     case 'clip': {
+      const spriteEmotes: Record<string, 'idle' | 'perch' | 'grin' | 'sleep' | 'glitch' | 'dangle'> = { sit: 'perch', curl_up: 'perch', stand: 'idle', grin: 'grin', laugh: 'grin', happy: 'grin', smug: 'grin', power_stance: 'glitch', menace: 'glitch', recline: 'sleep', yawn: 'sleep' };
+      if (spriteEmotes[c.name]) model.requestAnimation(spriteEmotes[c.name]);
       const e = EMOTE_MAP[c.name];
       if (e?.posture) behavior.setPosture(surface === 'air' && e.posture === 'sit_edge' ? 'air_sit' : e.posture);
       else if (e?.react) behavior.react(e.react);
@@ -262,6 +269,11 @@ api.on('cue', (raw) => {
     }
     case 'connection': break;
     case 'surface': surface = c.surface; break;
+    case 'pointer':
+      cursorLocal = { x: c.x, y: c.y };
+      pointer = Math.hypot(c.x - W / 2, c.y - H / 2) < 1100 ? { x: (c.x - W / 2) / (W * 0.45), y: (c.y - H * 0.34) / (H * 0.35) } : null;
+      lastPointerAt = performance.now();
+      break;
     case 'dash': dashing = c.dir; break;
   }
 });

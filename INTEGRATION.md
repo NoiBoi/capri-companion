@@ -1,5 +1,25 @@
 # Capri Buddy: private artwork integration
 
+## 0.2.1 interaction fixes
+
+- Window seats track a native window handle, not whichever app currently has focus.
+  A chosen seat stays pinned against automatic teleporting and follows the window
+  during movement/resizing. Closing or minimizing it releases the seat in place.
+- Drop snapping searches visible windows below the character, including background
+  windows, and uses the same contact line as the sprite renderer.
+- Corrected the source artwork's facing direction. Cursor tracking works beyond
+  the transparent window and expires when the cursor stops moving.
+- Hit testing uses the opaque base sprite rather than particles, glow or teleport
+  pixels, and updates as the animation changes underneath a stationary cursor.
+- The animation intensity control changes sprite playback and movement; zero
+  freezes playback. A persistent Animation selector exposes the actual supplied
+  strips instead of unsupported vector-only poses.
+- Teleport effects resume a covered/paused renderer; departure/arrival completion
+  listeners are registered before sending the effect cue.
+- Validation: 196 unit checks, 40 desktop checks (two optional checks skipped),
+  plus an explicit native-window snap/focus-change/move/resize check. Rendering
+  and contact alignment were checked again after aligning the snap line.
+
 This local branch combines TheAgencyMGE's companion with the original
 lachydotmcg PNG strips. No remote fork or public upload was created.
 

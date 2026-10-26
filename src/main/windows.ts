@@ -71,7 +71,7 @@ export function createCharacterWindow(s: Settings, preload: string, log: Logger)
       sandbox: true,
       nodeIntegration: false,
       spellcheck: false,
-      backgroundThrottling: true,
+      backgroundThrottling: false,
     },
   });
   if (s.character.alwaysOnTop) win.setAlwaysOnTop(true, 'floating');

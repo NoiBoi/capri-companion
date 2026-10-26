@@ -58,12 +58,14 @@ export class TeleportController {
     this.busy = true;
     const id = ++this.seq, fx = this.d.settings().teleport.effects;
     try {
+      const departure = this.waitAck(id, 'out', fx ? 1500 : 400);
       this.d.cue({ type: 'teleport', phase: 'out', id, effects: fx });
-      await this.waitAck(id, 'out', fx ? 1500 : 400);
+      await departure;
       this.d.move(dest, 'teleport');
       this.d.moved?.(dest, 'teleport');
+      const arrival = this.waitAck(id, 'in', fx ? 1800 : 400);
       this.d.cue({ type: 'teleport', phase: 'in', id, effects: fx });
-      await this.waitAck(id, 'in', fx ? 1800 : 400);
+      await arrival;
     } finally { this.busy = false; }
   }
 
@@ -100,7 +102,7 @@ export class TeleportController {
     const s = this.d.settings();
     const dest = chooseDestination(target, {
       displays: this.d.displays(), current: cur, cursor: this.d.cursor(),
-      avoid: s.teleport.avoidActiveWindow ? this.d.activeWindow() : null,
+      avoid: target === 'perch' || s.teleport.avoidActiveWindow ? this.d.activeWindow() : null,
     });
     if (!dest) return { ok: false, detail: target === 'perch' ? 'No window to sit on (needs a non-maximised window with room above it)' : 'No free spot to teleport to' };
     this.busy = true;
@@ -119,12 +121,14 @@ export class TeleportController {
     const id = ++this.seq;
     const fx = s.teleport.effects;
     try {
+      const departure = this.waitAck(id, 'out', fx ? 1500 : 400);
       this.d.cue({ type: 'teleport', phase: 'out', id, effects: fx });
-      const outOk = await this.waitAck(id, 'out', fx ? 1500 : 400);
+      const outOk = await departure;
       this.d.move(dest, 'teleport');
       this.d.moved?.(dest, 'teleport');
+      const arrival = this.waitAck(id, 'in', fx ? 1800 : 400);
       this.d.cue({ type: 'teleport', phase: 'in', id, effects: fx });
-      const inOk = await this.waitAck(id, 'in', fx ? 1800 : 400);
+      const inOk = await arrival;
       this.count++;
       this.last = `${new Date().toLocaleTimeString()} (${reason}, ${target}) → ${dest.x},${dest.y}`;
       this.d.log.info('teleport', { reason, target, x: dest.x, y: dest.y, outOk, inOk });

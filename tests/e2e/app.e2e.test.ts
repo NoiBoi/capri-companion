@@ -470,9 +470,9 @@ describe('teleportation', () => {
     const sat = await drop(500, Math.round(win.y + 10 - size0.height * SEAT_RATIO));
     expect(Math.abs(sat.y + sat.height * SEAT_RATIO - win.y)).toBeLessThanOrEqual(3);
     // 120 px away from any edge: she stays put
-    const free = await drop(420, 150);
+    const free = await drop(420, 250);
     expect(Math.abs(free.x - 420)).toBeLessThanOrEqual(3);
-    expect(Math.abs(free.y - 150)).toBeLessThanOrEqual(3);
+    expect(Math.abs(free.y - 250)).toBeLessThanOrEqual(3);
     // thirty moves later she is exactly the same size (fractional-DPI rounding used to grow her)
     let last = free;
     for (let i = 0; i < 30; i++) last = await drop(200 + (i % 5) * 37, 120 + (i % 3) * 29);
@@ -701,21 +701,36 @@ describe('postures & placement', () => {
     expect(hipDrop).toBeGreaterThan(150); // she really sat down
   });
 
-  it('perches on the active window, then hops off when that window moves', async () => {
+  it('keeps a chosen window seat across focus changes and follows the same window when it moves', async () => {
     const { app, char } = await launch(profile());
     await char.waitForTimeout(800);
     // a fake "active window" so the test never depends on the user's real desktop
-    await app.evaluate(() => { (globalThis as Record<string, unknown>).__capriFgOverride = { x: 150, y: 560, width: 900, height: 240 }; });
+    await app.evaluate(() => {
+      (globalThis as Record<string, unknown>).__capriFgOverride = { x: 150, y: 560, width: 900, height: 240 };
+      (globalThis as Record<string, unknown>).__capriWindowsOverride = [{ handle: 11n, rect: { x: 150, y: 560, width: 900, height: 240 } }];
+    });
     const r = await char.evaluate(() => (window as unknown as { capri: { invoke(c: string, a: string): Promise<{ ok: boolean }> } }).capri.invoke('teleport:now', 'perch'));
     expect(r.ok).toBe(true);
     const b = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => !x.isFocusable())!.getBounds());
     expect(Math.abs(b.y + b.height * SEAT_RATIO - 560)).toBeLessThanOrEqual(4); // seat on the window's top edge (DPI rounding)
     await char.waitForFunction(() => (window as unknown as Dbg).__capriDebug.surface === 'window', undefined, { timeout: 4000 });
-    // the user drags that window away → she startles and jumps somewhere safe
+    // Clicking another app must not invalidate the original attachment.
     await app.evaluate(() => { (globalThis as Record<string, unknown>).__capriFgOverride = { x: 400, y: 300, width: 700, height: 400 }; });
-    await char.waitForFunction(() => (window as unknown as Dbg).__capriDebug.surface !== 'window', undefined, { timeout: 8000 });
+    await char.waitForTimeout(2300);
+    expect((await dbg(char)).surface).toBe('window');
+    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => !x.isFocusable())!.getBounds().y)).toBe(b.y);
+    // Move and resize the attached window without focusing it.
+    await app.evaluate(() => { (globalThis as Record<string, unknown>).__capriWindowsOverride = [{ handle: 11n, rect: { x: 400, y: 650, width: 700, height: 400 } }]; });
+    await char.waitForTimeout(300);
     const after = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => !x.isFocusable())!.getBounds());
-    expect(after.y).not.toBe(b.y);
+    expect(Math.abs(after.y + after.height * SEAT_RATIO - 650)).toBeLessThanOrEqual(4);
+    expect((await dbg(char)).surface).toBe('window');
+    const blocked = await app.evaluate(async () => {
+      const a = (globalThis as unknown as { __capri: { monitor: { reportSuccess(p: string): void }; teleporter: { autoTick(): Promise<string | null> }; settings: { update(p: object): void } } }).__capri;
+      a.settings.update({ teleport: { auto: true } }); a.monitor.reportSuccess('test');
+      return a.teleporter.autoTick();
+    });
+    expect(blocked).toBe('sitting where you placed her');
   });
 
   it('peeks in from a screen edge with the leaning posture', async () => {
@@ -737,5 +752,50 @@ describe('postures & placement', () => {
     await panel.fill('textarea', 'sit down'); await panel.press('textarea', 'Enter');
     await char.waitForFunction(() => (window as unknown as Dbg).__capriDebug.behavior.posture === 'sit_edge', undefined, { timeout: 10_000 });
     await model.close();
+  });
+});
+
+describe('sprite interaction regressions', () => {
+  it('selects real sprite animations, freezes them at zero intensity, and keeps effect pixels outside the hitbox', async () => {
+    const { app, char } = await launch(profile({ character: { glitchEffects: false } }));
+    type D = { __capriDebug: { manual(on: boolean): void; step(dt: number, n: number): void; setSurface(s: string): void; setPointer(x: number): void; force(p: object): void; model: { activeClip: string; activeFrame: number; facing: number }; hitAt(x: number, y: number): boolean } };
+    await char.evaluate(() => { const d = (window as unknown as D).__capriDebug; d.manual(true); d.setSurface('air'); d.setPointer(1); d.force({ sleep: 0, mouthOpen: 0, mouthSmile: 0.35, blinkL: 0, blinkR: 0 }); });
+    const setting = async (patch: object) => { await app.evaluate((_e, p) => (globalThis as unknown as { __capri: { settings: { update(p: object): unknown } } }).__capri.settings.update(p), patch); await char.waitForTimeout(50); };
+    for (const animation of ['idle', 'perch', 'grin', 'sleep', 'glitch', 'dangle']) {
+      await setting({ character: { animation } });
+      const actual = await char.evaluate(() => { const d = (window as unknown as D).__capriDebug; d.step(1 / 30, 8); return d.model.activeClip; });
+      expect(actual).toBe(animation);
+    }
+    await setting({ character: { animation: 'idle', animationIntensity: 0 } });
+    const frozen = await char.evaluate(() => {
+      const d = (window as unknown as D).__capriDebug; d.step(1 / 30, 1); const before = d.model.activeFrame; d.step(1 / 30, 120);
+      const c = document.querySelector('canvas')!, g = c.getContext('2d')!;
+      const px = g.getImageData(0, 0, c.width, c.height).data;
+      let bottom = 0; for (let i = 3; i < px.length; i += 4) if (px[i] >= 128) bottom = Math.floor((i / 4) / c.width);
+      g.fillRect(0, 0, c.width, c.height);
+      return { before, after: d.model.activeFrame, transparentCornerHit: d.hitAt(0, 0), facing: d.model.facing, contact: bottom / c.height };
+    });
+    expect(frozen.after).toBe(frozen.before);
+    expect(frozen.transparentCornerHit).toBe(false);
+    expect(frozen.facing).toBe(-1); // source art looks left; mirrored to look at a cursor on the right
+    expect(Math.abs(frozen.contact - SEAT_RATIO)).toBeLessThan(0.02);
+    const left = await char.evaluate(() => { const d = (window as unknown as D).__capriDebug; d.setPointer(-1); d.step(1 / 30, 2); return d.model.facing; });
+    expect(left).toBe(1);
+  });
+
+  it('plays teleport effects even if the character renderer was covered or paused', async () => {
+    const { app, char } = await launch(profile());
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => !w.isFocusable())!.webContents.send('cue', { type: 'pause', paused: true }));
+    await char.waitForFunction(() => (window as unknown as { __capriDebug: { paused: boolean } }).__capriDebug.paused);
+    const moving = char.evaluate(() => (window as unknown as { capri: { invoke(c: string, arg: string): Promise<{ ok: boolean }> } }).capri.invoke('teleport:now', 'random'));
+    await char.waitForFunction(() => (window as unknown as { __capriDebug: { fx: { phase: string | null; t: number } } }).__capriDebug.fx.phase === 'out');
+    await char.waitForTimeout(80);
+    const during = await char.evaluate(() => { const d = (window as unknown as { __capriDebug: { paused: boolean; fx: { t: number } } }).__capriDebug; return { paused: d.paused, elapsed: d.fx.t }; });
+    expect(during.paused).toBe(false);
+    expect(during.elapsed).toBeGreaterThan(0);
+    expect((await moving).ok).toBe(true);
+    const log = await char.evaluate(() => (window as unknown as { __capriDebug: { fx: { log: string[] } } }).__capriDebug.fx.log);
+    expect(log.some((s) => s.endsWith(':out'))).toBe(true);
+    expect(log.some((s) => s.endsWith(':in'))).toBe(true);
   });
 });

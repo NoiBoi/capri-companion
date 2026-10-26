@@ -29,7 +29,8 @@ import { Conversation } from './ai/conversation';
 import type { ActionContext } from './actions/registry';
 import { createCharacterWindow, createPanelWindow, characterSize, displaysNow, DragController, OFFSCREEN, reveal, conceal, shown } from './windows';
 import { clampToDisplays } from './desktop/displays';
-import { foregroundHandle, foregroundRect, handleToBigint, isOtherAppFullscreen, loadWin32, win32Status } from './desktop/win32';
+import { foregroundHandle, foregroundRect, handleToBigint, isOtherAppFullscreen, loadWin32, win32Status, externalWindows, windowRect } from './desktop/win32';
+import { snapWindow, attachToWindow, type PerchWindow } from './desktop/perch';
 import { probeWindowsRecognizer, transcribeOpenAI, transcribeWindows, WakeWordListener } from './voice/speech';
 
 const T0 = performance.timeOrigin;
@@ -69,6 +70,46 @@ let characterReady: (() => void) | null = null;
 let monitor: ConnectionMonitor;
 let teleporter: TeleportController;
 let perchRect: DRect | null = null;
+let perchHandle: bigint | null = null;
+let perchFraction = 0.5;
+let perchPinned = false;
+let pendingPerch: PerchWindow | null = null;
+
+function windowsForPlacement(): PerchWindow[] {
+  if (TEST && (globalThis as Record<string, unknown>).__capriWindowsOverride !== undefined) return (globalThis as unknown as { __capriWindowsOverride: PerchWindow[] }).__capriWindowsOverride;
+  if (TEST && (globalThis as Record<string, unknown>).__capriFgOverride !== undefined) { const r = fgRectDip(); return r ? [{ handle: -1n, rect: r }] : []; }
+  return externalWindows(ownHandles()).map((w) => ({ handle: w.handle, rect: screen.screenToDipRect(null, w.rect) }));
+}
+function trackedWindow(): DRect | null {
+  if (TEST) return windowsForPlacement().find((w) => w.handle === perchHandle)?.rect ?? null;
+  const r = perchHandle ? windowRect(perchHandle) : null;
+  return r ? screen.screenToDipRect(null, r) : null;
+}
+function detachPerch() { perchRect = null; perchHandle = null; perchPinned = false; }
+function attachPerch(w: PerchWindow, pinned: boolean) {
+  if (!charWin) return;
+  const a = attachToWindow(herBounds(), w.rect, SEAT_RATIO);
+  perchHandle = w.handle; perchRect = w.rect; perchFraction = a.fraction; perchPinned = pinned;
+  charWin.setBounds(a.bounds);
+}
+function windowBesidePet(): PerchWindow | null {
+  if (!charWin) return null;
+  const ws = windowsForPlacement(), b = herBounds(), c = screen.getCursorScreenPoint();
+  const fg = fgRectDip();
+  const contains = (r: DRect, x: number, y: number) => x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height;
+  return (perchHandle ? ws.find((w) => w.handle === perchHandle) : null)
+    ?? snapWindow(ws, b, SEAT_RATIO, 80)
+    ?? ws.find((w) => contains(w.rect, c.x, c.y))
+    ?? ws.find((w) => contains(w.rect, b.x + b.width / 2, b.y + b.height * SEAT_RATIO))
+    ?? ws.find((w) => w.handle === foregroundHandle())
+    ?? (TEST && fg ? ws.find((w) => w.rect.x === fg.x && w.rect.y === fg.y && w.rect.width === fg.width) : null) ?? null;
+}
+async function sitOnWindow(w = windowBesidePet()) {
+  if (teleporter.active) return { ok: false, detail: 'Already teleporting.' };
+  if (!w) return { ok: false, detail: 'No window underneath Capri to sit on.' };
+  pendingPerch = w;
+  try { return await teleporter.go('perch', 'manual'); } finally { pendingPerch = null; }
+}
 /** Active app window in DIP. Tests may substitute a fake window so they never depend on the user's real desktop. */
 function fgRectDip(): DRect | null {
   const o = TEST ? (globalThis as { __capriFgOverride?: DRect | null }).__capriFgOverride : undefined;
@@ -199,16 +240,19 @@ async function init() {
     },
     moved: (dest) => {
       // remember the window she's sitting on so she can react if it moves or closes
-      perchRect = dest.kind === 'perch' ? fgRectDip() : null;
+      if (dest.kind === 'perch') {
+        const w = pendingPerch ?? windowsForPlacement().find((w) => Math.abs(w.rect.y - (dest.y + dest.height * SEAT_RATIO)) < 8);
+        if (w) attachPerch(w, !!pendingPerch); else detachPerch();
+      } else detachPerch();
       savePosition();
       sendSurface();
     },
     displays: displaysNow,
     cursor: () => screen.getCursorScreenPoint(),
-    activeWindow: fgRectDip,
+    activeWindow: () => pendingPerch?.rect ?? windowBesidePet()?.rect ?? fgRectDip(),
     cue,
     aiConnected: () => monitor.connected,
-    blocked: () => (convo.busy ? 'conversation in progress' : recording ? 'listening' : drag.active ? 'being dragged' : throwTimer ? 'being thrown' : fullscreenHidden ? 'fullscreen app' : userHidden ? 'hidden'
+    blocked: () => (perchPinned && perchRect ? 'sitting where you placed her' : convo.busy ? 'conversation in progress' : recording ? 'listening' : drag.active ? 'being dragged' : throwTimer ? 'being thrown' : fullscreenHidden ? 'fullscreen app' : userHidden ? 'hidden'
       : !mayInterrupt(settings.get(), { fullscreen: fullscreenHidden, hidden: userHidden }) ? 'do not disturb / quiet hours' : null),
     // tests may pin the user's idle time so results don't depend on whether someone is at the machine
     userIdleSec: () => (TEST && typeof (globalThis as { __capriIdleOverride?: number }).__capriIdleOverride === 'number' ? (globalThis as { __capriIdleOverride?: number }).__capriIdleOverride! : powerMonitor.getSystemIdleTime()),
@@ -230,6 +274,8 @@ async function init() {
   monitor.start();
   teleporter.startAuto();
   intervals.push(setInterval(fullscreenTick, 2000));
+  intervals.push(setInterval(perchTick, 80));
+  intervals.push(setInterval(cursorTick, 40));
   intervals.push(setInterval(raiseTick, 250));
   intervals.push(setInterval(presenceTick, 30_000));
   screen.on('display-removed', reclampCharacter);
@@ -251,12 +297,12 @@ function herBounds() { const b = charWin!.getBounds(); return { x: b.x, y: b.y, 
 function settleAfterDrop() {
   if (!charWin || charWin.isDestroyed()) return;
   const b = herBounds();
-  const seat = b.y + b.height * SEAT_RATIO, cx = b.x + b.width / 2;
-  const fg = fgRectDip();
+  const seat = b.y + b.height * SEAT_RATIO;
+  detachPerch();
+  const target = snapWindow(windowsForPlacement(), b, SEAT_RATIO);
   const work = displayFor(b, displaysNow()).workArea;
-  if (fg && cx > fg.x && cx < fg.x + fg.width && Math.abs(seat - fg.y) < 24 && fg.y - b.height * SEAT_RATIO >= work.y - b.height * 0.1) {
-    charWin.setBounds({ ...b, y: Math.round(fg.y - b.height * SEAT_RATIO) });
-    perchRect = fg;
+  if (target && target.rect.y - b.height * SEAT_RATIO >= work.y - b.height * 0.1) {
+    attachPerch(target, true);
   } else if (Math.abs(work.y + work.height - seat) < 24) {
     charWin.setBounds({ ...b, y: Math.round(work.y + work.height - b.height * SEAT_RATIO) }); // rest on the taskbar
   }
@@ -302,7 +348,7 @@ function createCharacter() {
   lastScale = s.character.scale;
   drag = new DragController(() => charWin, herSize, (moved) => {
     if (moved) {
-      perchRect = null;
+      detachPerch();
       settleAfterDrop(); // she stays where you let go (no flinging)
     } else { lastInteraction = Date.now(); cue({ type: 'react', reaction: 'happy' }); }
   });
@@ -534,16 +580,24 @@ function ownHandles(): bigint[] {
 function isFullscreenNow() { return settings.get().character.hideOnFullscreen && win32Status() === 'active' && isOtherAppFullscreen(ownHandles()); }
 function perchTick() {
   if (!perchRect || !charWin || teleporter.active || drag.active) return;
-  const now = fgRectDip();
-  const same = now && Math.abs(now.x - perchRect.x) < 8 && Math.abs(now.y - perchRect.y) < 8 && Math.abs(now.width - perchRect.width) < 8;
-  if (same) return;
-  // her seat moved or vanished: she startles and jumps somewhere safe
-  perchRect = null;
-  cue({ type: 'react', reaction: 'surprised' });
-  setTimeout(() => void teleporter.go('corner', 'manual'), 350);
+  const now = trackedWindow();
+  if (!now) { detachPerch(); sendSurface(true); savePosition(); return; }
+  const b = herBounds();
+  const a = attachToWindow(b, now, SEAT_RATIO, perchFraction);
+  perchRect = now;
+  if (Math.abs(b.x - a.bounds.x) > 1 || Math.abs(b.y - a.bounds.y) > 1) { charWin.setBounds(a.bounds); savePosition(); }
+  sendSurface();
+}
+let lastCursorSample = '';
+function cursorTick() {
+  if (TEST || !charWin || charWin.isDestroyed() || userHidden || fullscreenHidden) return;
+  const c = screen.getCursorScreenPoint(), b = charWin.getBounds();
+  const sample = `${c.x},${c.y},${b.x},${b.y},${b.width},${b.height}`;
+  if (sample === lastCursorSample) return;
+  lastCursorSample = sample;
+  cue({ type: 'pointer', x: c.x - b.x, y: c.y - b.y });
 }
 function fullscreenTick() {
-  perchTick();
   if (!charWin || userHidden) return;
   const fs_ = isFullscreenNow();
   if (fs_ && !fullscreenHidden) { fullscreenHidden = true; setCharacterVisible(false); log.info('hidden for fullscreen app'); }
@@ -771,7 +825,7 @@ function updateTrayMenu() {
     { label: visible ? 'Hide Capri  (Ctrl+Alt+H)' : 'Show Capri  (Ctrl+Alt+H)', click: toggleHidden },
     { label: 'Teleport  (Ctrl+Alt+P)', enabled: visible, click: () => void teleporter.go('auto', 'manual') },
     { label: 'Teleport to cursor', enabled: visible, click: () => void teleporter.go('near_cursor', 'manual') },
-    { label: 'Sit on the active window', enabled: visible, click: () => void teleporter.go('perch', 'manual') },
+    { label: 'Sit on the nearby window', enabled: visible, click: () => void sitOnWindow() },
     { label: 'Peek in from the edge', enabled: visible, click: () => void teleporter.go('peek', 'manual') },
     { label: 'Click-through', type: 'checkbox', checked: s.character.clickThrough, click: (i) => settings.update({ character: { clickThrough: i.checked } }) },
     { label: 'Interact for 15s  (Ctrl+Alt+C)', enabled: s.character.clickThrough, click: toggleInteract },
@@ -823,13 +877,14 @@ function registerShortcuts() {
 
 function charMenu() {
   const s = settings.get();
+  const seatWindow = windowBesidePet(); // capture before the native menu takes focus
   Menu.buildFromTemplate([
     { label: 'Chat', click: () => openPanel('chat') },
     { label: 'Push to talk', enabled: s.voice.micPermission, click: () => startRecording() },
     { label: 'Stop talking', click: () => convo.stop() },
     { label: 'Teleport', click: () => void teleporter.go('auto', 'manual') },
-    { label: 'Sit on this window', click: () => void teleporter.go('perch', 'manual') },
-    { label: 'Pose', submenu: [['Sit', 'sit'], ['Stand', 'stand'], ['Recline', 'recline'], ['Curl up', 'curl_up'], ['Power stance', 'power_stance']].map(([label, name]) => ({ label, click: () => cue({ type: 'clip', name }) })) },
+    { label: 'Sit on this window', enabled: !!seatWindow, click: () => void sitOnWindow(seatWindow) },
+    { label: 'Animation', submenu: [['Automatic', 'auto'], ['Stand', 'idle'], ['Sit', 'perch'], ['Grin', 'grin'], ['Sleep', 'sleep'], ['Glitch', 'glitch'], ['Hang', 'dangle']].map(([label, name]) => ({ label, type: 'radio' as const, checked: s.character.animation === name, click: () => settings.update({ character: { animation: name } }) })) },
     { label: 'Teleport to other monitor', enabled: screen.getAllDisplays().length > 1, click: () => void teleporter.go('other_monitor', 'manual') },
     { type: 'separator' },
     { label: 'Click-through', type: 'checkbox', checked: s.character.clickThrough, click: (i) => settings.update({ character: { clickThrough: i.checked } }) },
@@ -924,7 +979,7 @@ function registerIpc() {
   handle('claude:code', 'panel', str(500), async (code) => { const s = await claudeSubmitCode(code); if (s.loggedIn) void monitor.check('claude sign-in'); return s; });
   handle('claude:signout', 'panel', none, async () => { await claudeSignOut(); void monitor.check('claude sign-out'); });
   handle('connection:get', 'any', none, () => monitor.status);
-  handle('teleport:now', 'any', z.enum(TELEPORT_TARGETS as [TeleportTarget, ...TeleportTarget[]]).optional(), (t) => teleporter.go(t ?? 'auto', 'manual'));
+  handle('teleport:now', 'any', z.enum(TELEPORT_TARGETS as [TeleportTarget, ...TeleportTarget[]]).optional(), (t) => t === 'perch' ? sitOnWindow() : teleporter.go(t ?? 'auto', 'manual'));
   handle('char:teleport', 'char', z.object({ id: z.number().int(), phase: z.enum(['out', 'in']) }), ({ id, phase }) => teleporter.ack(id, phase));
   handle('connection:check', 'panel', none, async () => { await monitor.check('manual'); return monitor.status; });
   handle('diagnostics:get', 'panel', none, diagnostics);

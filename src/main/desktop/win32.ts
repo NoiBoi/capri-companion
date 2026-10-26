@@ -6,6 +6,8 @@ type Fn = (...a: unknown[]) => unknown;
 interface Api {
   GetForegroundWindow: Fn; GetWindowRect: Fn; MonitorFromWindow: Fn; GetMonitorInfoW: Fn;
   GetClassNameW: Fn; SHQueryUserNotificationState: Fn; GetAsyncKeyState: Fn; address: (p: unknown) => bigint;
+  EnumWindows: Fn; IsWindowVisible: Fn; IsIconic: Fn; IsWindow: Fn; GetWindow: Fn;
+  DwmGetWindowAttribute: Fn;
 }
 let api: Api | null = null;
 let loadError: string | null = null;
@@ -18,6 +20,8 @@ export function loadWin32(log?: Logger): boolean {
     const koffi = require('koffi');
     const user32 = koffi.load('user32.dll');
     const shell32 = koffi.load('shell32.dll');
+    const dwm = koffi.load('dwmapi.dll');
+    koffi.proto('bool __stdcall CAPRI_ENUM_WINDOW(void* hwnd, intptr_t param)');
     const RECT = koffi.struct('CAPRI_RECT', { left: 'long', top: 'long', right: 'long', bottom: 'long' });
     koffi.struct('CAPRI_MONITORINFO', { cbSize: 'uint32', rcMonitor: RECT, rcWork: RECT, dwFlags: 'uint32' });
     api = {
@@ -29,6 +33,12 @@ export function loadWin32(log?: Logger): boolean {
       GetAsyncKeyState: user32.func('int16 __stdcall GetAsyncKeyState(int vKey)'),
       SHQueryUserNotificationState: shell32.func('long __stdcall SHQueryUserNotificationState(_Out_ int* state)'),
       address: (p: unknown) => (p ? BigInt(koffi.address(p)) : 0n),
+      EnumWindows: user32.func('bool __stdcall EnumWindows(CAPRI_ENUM_WINDOW* callback, intptr_t param)'),
+      IsWindowVisible: user32.func('bool __stdcall IsWindowVisible(void* hwnd)'),
+      IsIconic: user32.func('bool __stdcall IsIconic(void* hwnd)'),
+      IsWindow: user32.func('bool __stdcall IsWindow(void* hwnd)'),
+      GetWindow: user32.func('void* __stdcall GetWindow(void* hwnd, uint32 command)'),
+      DwmGetWindowAttribute: dwm.func('long __stdcall DwmGetWindowAttribute(void* hwnd, uint32 attr, void* value, uint32 size)'),
     };
     return true;
   } catch (e) {
@@ -40,6 +50,44 @@ export function loadWin32(log?: Logger): boolean {
 export const win32Status = () => (api ? 'active' : 'unavailable') as 'active' | 'unavailable';
 
 const SHELL_CLASSES = new Set(['Progman', 'WorkerW', 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd']);
+export interface ExternalWindow { handle: bigint; rect: { x: number; y: number; width: number; height: number } }
+
+/** Follow a specific window regardless of which app has keyboard focus. Physical pixels. */
+export function windowRect(handle: bigint): ExternalWindow['rect'] | null {
+  if (!api || !handle) return null;
+  try {
+    if (!api.IsWindow(handle) || !api.IsWindowVisible(handle) || api.IsIconic(handle)) return null;
+    const r: { left?: number; top?: number; right?: number; bottom?: number } = {};
+    if (!api.GetWindowRect(handle, r)) return null;
+    // DWM's visible frame excludes the invisible resize border around ordinary windows.
+    const native = new Int32Array(4);
+    if (api.DwmGetWindowAttribute(handle, 9, native, 16) === 0) [r.left, r.top, r.right, r.bottom] = native;
+    const rect = { x: r.left!, y: r.top!, width: r.right! - r.left!, height: r.bottom! - r.top! };
+    return rect.width > 80 && rect.height > 60 ? rect : null;
+  } catch { return null; }
+}
+
+/** Visible application windows in front-to-back order; no titles or contents are read. */
+export function externalWindows(ownHandles: bigint[]): ExternalWindow[] {
+  if (!api) return [];
+  const result: ExternalWindow[] = [];
+  try {
+    api.EnumWindows((hwnd: unknown) => {
+      const handle = api!.address(hwnd);
+      if (!handle || ownHandles.includes(handle) || api!.GetWindow(hwnd, 4 /* owner */)) return true;
+      const buf = new Uint16Array(128);
+      const n = api!.GetClassNameW(hwnd, buf, buf.length) as number;
+      const cls = String.fromCharCode(...buf.slice(0, Math.max(0, n)));
+      if (SHELL_CLASSES.has(cls) || cls === '#32768' || cls === 'tooltips_class32') return true;
+      const cloaked = new Int32Array(1);
+      if (api!.DwmGetWindowAttribute(hwnd, 14, cloaked, 4) === 0 && cloaked[0]) return true;
+      const rect = windowRect(handle);
+      if (rect) result.push({ handle, rect });
+      return true;
+    }, 0);
+  } catch { /* return the windows collected before an unavailable window */ }
+  return result;
+}
 
 /**
  * True when some other app is fullscreen (game, video, presentation).

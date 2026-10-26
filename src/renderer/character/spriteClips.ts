@@ -26,6 +26,11 @@ export function spriteBase(input: { sleeping: boolean; dragging: boolean; ledge:
   if (input.dragging) return 'dangle';
   if (input.sleeping) return 'sleep';
   // Only the standing art has a matching jaw overlay. Speaking takes precedence over perching.
-  if (input.speaking) return 'idle';
+  if (input.speaking && !input.ledge) return 'idle';
   return input.ledge ? 'perch' : 'idle';
+}
+
+/** The original artwork looks left; mirroring is needed to look right. */
+export function spriteFacing(target: number, current = 1): number {
+  return Math.abs(target) < 0.18 ? current : target < 0 ? 1 : -1;
 }

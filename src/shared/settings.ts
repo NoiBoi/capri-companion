@@ -39,6 +39,7 @@ export const SettingsSchema = z.object({
   version: z.literal(1),
   firstRunComplete: z.boolean(),
   character: z.object({
+    animation: z.enum(['auto', 'idle', 'perch', 'grin', 'sleep', 'glitch', 'dangle']),
     scale: z.number().min(0.4).max(2.5),
     opacity: z.number().min(0.2).max(1),
     animationIntensity: z.number().min(0).max(1.5),
@@ -137,6 +138,7 @@ export const DEFAULT_SETTINGS: Settings = {
   version: 1,
   firstRunComplete: false,
   character: {
+    animation: 'auto',
     scale: 1,
     opacity: 1,
     animationIntensity: 1,

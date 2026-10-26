@@ -51,6 +51,7 @@ export type CharacterCue =
   | { type: 'teleport'; phase: 'out' | 'in'; id: number; effects: boolean }
   | { type: 'clip'; name: string }
   | { type: 'surface'; surface: 'taskbar' | 'window' | 'air' | 'edge_left' | 'edge_right' }
+  | { type: 'pointer'; x: number; y: number }
   | { type: 'dash'; dir: -1 | 1 | 0 };
 
 export interface ConnectionStatus {
