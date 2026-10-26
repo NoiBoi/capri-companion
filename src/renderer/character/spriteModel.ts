@@ -27,6 +27,8 @@ export class CapriSpriteModel extends VectorModel {
   private motionTime = 0;
   private hitCanvas = document.createElement('canvas');
   private hitCtx = this.hitCanvas.getContext('2d', { willReadFrequently: true })!;
+  private teleportUntil = 0;
+  teleportAnimation(_clip: 'perch_glitch') { this.teleportUntil = this.t + 0.7; this.clipTime = 0; }
   private request: { clip: SpriteClip; until: number } | null = null;
   requestAnimation(clip: SpriteClip, seconds = 20) { this.request = { clip, until: this.t + seconds }; }
 
@@ -47,7 +49,7 @@ export class CapriSpriteModel extends VectorModel {
   override pat() { this.reactionUntil = this.t + 3; this.patUntil = this.t + 1.2; }
   override glitchNow(_kind: 'slice' | 'shatter' | 'ghost' | 'tear' = 'slice', len = 0.3) { this.burstUntil = this.t + len; }
 
-  override draw(ctx: CanvasRenderingContext2D, p: Params, dt: number, inp: ModelInputs & { taskbar?: boolean; intensity?: number; animation?: 'auto' | SpriteClip; sleeping?: boolean; facing?: 'cursor' | 'original' | 'left' | 'right' }, W: number, H: number) {
+  override draw(ctx: CanvasRenderingContext2D, p: Params, dt: number, inp: ModelInputs & { attachment?: 'perch' | 'hang' | 'moving' | null; taskbar?: boolean; intensity?: number; animation?: 'auto' | SpriteClip; sleeping?: boolean; facing?: 'cursor' | 'original' | 'left' | 'right' }, W: number, H: number) {
     this.t += dt;
     const intensity = Math.max(0, inp.intensity ?? 1);
     const motionDt = dt * intensity;
@@ -82,12 +84,15 @@ export class CapriSpriteModel extends VectorModel {
       else if (!perched && (this.t < this.reactionUntil || p.happyEyes > 0.3 || p.mouthSmile > 0.75)) clip = 'grin';
     }
     if (selected && selected !== 'idle' && selected !== 'perch' && !inp.dragging) clip = selected;
+    if (inp.attachment === 'moving' && !inp.dragging) clip = this.motionTime < this.blinkUntil ? 'blink' : 'idle';
+    if (inp.attachment === 'hang' && !inp.dragging) clip = 'dangle';
+    if (this.t < this.teleportUntil && !inp.dragging) clip = 'perch_glitch';
     const facing = inp.facing ?? 'cursor';
     const target = facing === 'left' ? -1 : facing === 'right' ? 1 : this.lookDirection;
     const direction = facing === 'original' || !target || clip === 'sleep' ? 1 : spriteFacing(target, this.direction, clip);
     if (!inp.dragging) this.direction = direction;
     if (clip !== this.activeClip) { this.activeClip = clip; this.clipTime = 0; }
-    else this.clipTime += motionDt;
+    else this.clipTime += this.t < this.teleportUntil ? dt : motionDt;
     this.activeFrame = spriteFrame(clip, this.clipTime, clip !== 'wake');
     const img = this.images.get(clip);
     if (!img) return;
@@ -97,9 +102,10 @@ export class CapriSpriteModel extends VectorModel {
     const scale = Math.min(W * 0.88 / 384, H * 0.90 / 384);
     const dw = def.width * scale, dh = 384 * scale;
     // The visible contact point must match the main process's snap line in air too.
-    const anchor = H * SEAT_RATIO;
+    const hanging = inp.attachment === 'hang';
+    const anchor = H * (hanging ? 0.08 : SEAT_RATIO);
     // Perch seat is 79% down the source cell, as in lachydotmcg's original renderer.
-    const sourceAnchor = isPerch ? 384 * 0.79 : 367;
+    const sourceAnchor = hanging ? 0 : isPerch ? 384 * 0.79 : 367;
     const bob = inp.ledge || sleeping || inp.dragging ? 0 : Math.sin(this.motionTime * 1.75) * 2 * intensity;
     const x = (W - dw) / 2;
     const y = anchor - sourceAnchor * scale + bob;

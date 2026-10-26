@@ -1,5 +1,17 @@
 # Capri Buddy: private artwork integration
 
+## 0.2.4 window movement and hanging
+
+An attached window changing position or size puts Capri in idle/blink at her
+old position. She waits until the left mouse button is released and geometry
+has settled for 240 ms, then plays the original perch_glitch strip through both
+teleport phases. The destination is resolved after departure to catch Windows
+snap/maximize adjustments, preserving her relative place along the window.
+High windows use the original dangle strip below the top edge. Available
+headroom is calculated for the window's monitor and character scale, with a
+small hysteresis band to avoid pose flicker. Moving the window down restores
+perching. Closing or minimizing the target releases the attachment.
+
 ## 0.2.3 stable bubble sizing
 
 Bubble movement now writes a fixed requested width and a cached content height.

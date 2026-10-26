@@ -50,7 +50,8 @@ export type CharacterCue =
   | { type: 'textTalk'; text: string }
   | { type: 'workPose'; pose: 'back' | 'crouch' | 'sit' | null } // while she works on the PC (null = back to normal)
   | { type: 'connection'; state: ConnectionStatus['state'] }
-  | { type: 'teleport'; phase: 'out' | 'in'; id: number; effects: boolean }
+  | { type: 'teleport'; phase: 'out' | 'in'; id: number; effects: boolean; animation?: 'perch_glitch' }
+  | { type: 'attachment'; mode: 'perch' | 'hang' | 'moving' | null }
   | { type: 'clip'; name: string }
   | { type: 'surface'; surface: 'taskbar' | 'window' | 'air' | 'edge_left' | 'edge_right' }
   | { type: 'pointer'; x: number; y: number }

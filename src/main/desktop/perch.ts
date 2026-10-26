@@ -1,6 +1,15 @@
 import type { Rect } from './displays';
 
 export interface PerchWindow { handle: bigint; rect: Rect }
+export const HANG_RATIO = 0.08;
+
+/** Leave room for the whole seated silhouette; otherwise suspend her below the edge. */
+export function windowAttachment(pet: Rect, window: Rect, seatRatio: number, screenTop: number, fraction?: number, previous?: 'perch' | 'hang') {
+  // Hysteresis prevents flickering between poses near the threshold.
+  const clearance = pet.height * (seatRatio - (previous === 'hang' ? 0.02 : 0.08));
+  const mode = window.y - screenTop < clearance ? 'hang' as const : 'perch' as const;
+  return { ...attachToWindow(pet, window, mode === 'hang' ? HANG_RATIO : seatRatio, fraction), mode };
+}
 
 /** Snap by the visible seat, rather than the large transparent renderer rectangle. */
 export function snapWindow(windows: PerchWindow[], pet: Rect, seatRatio: number, distance = 56): PerchWindow | null {

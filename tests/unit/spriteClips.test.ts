@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SPRITE_CLIPS, spriteBase, spriteFrame, spriteFacing, type SpriteClip } from '../../src/renderer/character/spriteClips';
-import { snapWindow, attachToWindow } from '../../src/main/desktop/perch';
+import { snapWindow, attachToWindow, windowAttachment, HANG_RATIO } from '../../src/main/desktop/perch';
 import { codexEventText } from '../../src/main/ai/codexAccount';
 
 describe('lachydotmcg artwork integration', () => {
@@ -46,6 +46,20 @@ describe('desktop buddy regressions', () => {
     const target = { handle: 5n, rect: { x: 200, y: 450, width: 600, height: 300 } };
     expect(snapWindow([{ handle: 8n, rect: { x: 0, y: 0, width: 100, height: 100 } }, target], pet, 0.8)?.handle).toBe(5n);
     expect(snapWindow([target], { ...pet, y: 50 }, 0.8)).toBeNull();
+  });
+  it('hangs below high windows and restores the seat with room above, on either monitor', () => {
+    const pet = { x: 300, y: 200, width: 200, height: 300 };
+    const high = { x: 100, y: -880, width: 800, height: 600 };
+    const hung = windowAttachment(pet, high, 0.712, -900, 0.3);
+    expect(hung.mode).toBe('hang');
+    expect(hung.bounds.y + pet.height * HANG_RATIO).toBe(high.y);
+    const seated = windowAttachment(hung.bounds, { ...high, y: -500 }, 0.712, -900, hung.fraction, hung.mode);
+    expect(seated.mode).toBe('perch');
+    expect(Math.abs(seated.bounds.y + pet.height * 0.712 + 500)).toBeLessThan(1);
+    expect(seated.bounds.x).toBe(hung.bounds.x);
+    const boundary = { ...high, y: -705 };
+    expect(windowAttachment(pet, boundary, 0.712, -900, 0.3, 'hang').mode).toBe('hang');
+    expect(windowAttachment(pet, boundary, 0.712, -900, 0.3, 'perch').mode).toBe('perch');
   });
   it('keeps the same relative seat when the attached window moves or resizes', () => {
     const pet = { x: 300, y: 200, width: 200, height: 300 };

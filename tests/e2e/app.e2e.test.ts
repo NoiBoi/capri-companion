@@ -719,9 +719,17 @@ describe('postures & placement', () => {
     await char.waitForTimeout(2300);
     expect((await dbg(char)).surface).toBe('window');
     expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => !x.isFocusable())!.getBounds().y)).toBe(b.y);
+    // Hold the mouse while moving: idle at the old spot until release.
+    await app.evaluate(() => { (globalThis as Record<string, unknown>).__capriWindowHeld = true; });
     // Move and resize the attached window without focusing it.
     await app.evaluate(() => { (globalThis as Record<string, unknown>).__capriWindowsOverride = [{ handle: 11n, rect: { x: 400, y: 650, width: 700, height: 400 } }]; });
-    await char.waitForTimeout(300);
+    await char.waitForTimeout(600);
+    expect((await dbg(char)).surface).toBe('air');
+    expect(await char.evaluate(() => (window as any).__capriDebug.model.activeClip)).toMatch(/^(idle|blink)$/);
+    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => !x.isFocusable())!.getBounds().y)).toBe(b.y);
+    await app.evaluate(() => { (globalThis as Record<string, unknown>).__capriWindowHeld = false; });
+    await char.waitForFunction(() => (window as any).__capriDebug.model.activeClip === 'perch_glitch');
+    await char.waitForTimeout(1700);
     const after = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => !x.isFocusable())!.getBounds());
     expect(Math.abs(after.y + after.height * SEAT_RATIO - 650)).toBeLessThanOrEqual(4);
     expect((await dbg(char)).surface).toBe('window');
@@ -731,6 +739,17 @@ describe('postures & placement', () => {
       return a.teleporter.autoTick();
     });
     expect(blocked).toBe('sitting where you placed her');
+    // Near the top, suspend her below the window edge; return to sitting lower down.
+    const top = await app.evaluate(({ screen }) => screen.getPrimaryDisplay().workArea.y);
+    await app.evaluate((_, top) => { (globalThis as any).__capriWindowsOverride = [{ handle: 11n, rect: { x: 400, y: top + 18, width: 700, height: 400 } }]; }, top);
+    await char.waitForFunction(() => (window as any).__capriDebug.model.activeClip === 'dangle', undefined, { timeout: 6000 });
+    const hanging = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => !x.isFocusable())!.getBounds());
+    expect(Math.abs(hanging.y + hanging.height * 0.08 - top - 18)).toBeLessThanOrEqual(4);
+    await char.waitForTimeout(250);
+    await app.evaluate(() => { (globalThis as any).__capriWindowsOverride = [{ handle: 11n, rect: { x: 400, y: 650, width: 700, height: 400 } }]; });
+    await char.waitForFunction(() => (window as any).__capriDebug.model.activeClip.startsWith('perch') && (window as any).__capriDebug.model.activeClip !== 'perch_glitch', undefined, { timeout: 6000 });
+    expect((await dbg(char)).surface).toBe('window');
+
   });
 
   it('peeks in from a screen edge with the leaning posture', async () => {

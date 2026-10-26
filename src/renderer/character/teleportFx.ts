@@ -21,6 +21,7 @@ const easeOut = (x: number) => 1 - (1 - x) ** 3;
 export class TeleportFx {
   phase: FxPhase | null = null;
   t = 0;
+  private duration = 0.42;
   id = 0;
   private shards: Shard[] = [];
   private box: Box | null = null; // her silhouette, device px, measured on the first frame of a phase
@@ -33,13 +34,14 @@ export class TeleportFx {
 
   get active() { return this.phase !== null; }
   /** 0..1 progress of the current phase. */
-  get u() { return this.phase ? Math.min(1, this.t / FX_DURATION[this.phase]) : 0; }
+  get u() { return this.phase ? Math.min(1, this.t / this.duration) : 0; }
   /** Whether the character should be considered invisible (between out and in). */
   hidden = false;
 
   /** `_focus` is kept for callers; the effect finds her itself from the rendered frame. */
-  start(phase: FxPhase, id: number, _focus?: unknown) {
+  start(phase: FxPhase, id: number, _focus?: unknown, duration = FX_DURATION[phase]) {
     this.phase = phase;
+    this.duration = duration;
     this.t = 0;
     this.id = id;
     this.hidden = false;

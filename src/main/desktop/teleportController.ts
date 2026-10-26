@@ -53,18 +53,19 @@ export class TeleportController {
 
   /** Fly straight to a spot (computer control: she follows what she's working on). Skips if she's mid-move. */
   /** Teleport (glitch out, reappear) to an exact spot: she follows what she's working on. Skips if busy. */
-  async jumpTo(dest: Destination) {
+  async jumpTo(dest: Destination | (() => Destination), animation?: 'perch_glitch') {
     if (this.busy) return;
     this.busy = true;
     const id = ++this.seq, fx = this.d.settings().teleport.effects;
     try {
       const departure = this.waitAck(id, 'out', fx ? 1500 : 400);
-      this.d.cue({ type: 'teleport', phase: 'out', id, effects: fx });
+      this.d.cue({ type: 'teleport', phase: 'out', id, effects: fx, animation });
       await departure;
-      this.d.move(dest, 'teleport');
-      this.d.moved?.(dest, 'teleport');
+      const target = typeof dest === 'function' ? dest() : dest;
+      this.d.move(target, 'teleport');
+      this.d.moved?.(target, 'teleport');
       const arrival = this.waitAck(id, 'in', fx ? 1800 : 400);
-      this.d.cue({ type: 'teleport', phase: 'in', id, effects: fx });
+      this.d.cue({ type: 'teleport', phase: 'in', id, effects: fx, animation });
       await arrival;
     } finally { this.busy = false; }
   }

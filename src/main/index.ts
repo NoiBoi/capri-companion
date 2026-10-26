@@ -30,8 +30,8 @@ import { Conversation } from './ai/conversation';
 import type { ActionContext } from './actions/registry';
 import { createCharacterWindow, createPanelWindow, characterSize, displaysNow, DragController, OFFSCREEN, reveal, conceal, shown } from './windows';
 import { clampToDisplays } from './desktop/displays';
-import { foregroundHandle, foregroundRect, handleToBigint, isOtherAppFullscreen, loadWin32, win32Status, externalWindows, windowRect } from './desktop/win32';
-import { snapWindow, attachToWindow, type PerchWindow } from './desktop/perch';
+import { foregroundHandle, foregroundRect, handleToBigint, isOtherAppFullscreen, loadWin32, win32Status, externalWindows, windowRect, leftButtonDown } from './desktop/win32';
+import { snapWindow, windowAttachment, HANG_RATIO, type PerchWindow } from './desktop/perch';
 import { probeWindowsRecognizer, transcribeOpenAI, transcribeWindows, WakeWordListener } from './voice/speech';
 
 const T0 = performance.timeOrigin;
@@ -76,21 +76,29 @@ let perchHandle: bigint | null = null;
 let perchFraction = 0.5;
 let perchPinned = false;
 let pendingPerch: PerchWindow | null = null;
+let perchMode: 'perch' | 'hang' = 'perch';
+let perchMoving = false;
+let perchChangedAt = 0;
+function placement(w: PerchWindow, fraction?: number) {
+  return windowAttachment(herBounds(), w.rect, SEAT_RATIO, displayFor(w.rect, displaysNow()).workArea.y, fraction, perchHandle === w.handle ? perchMode : undefined);
+}
 
 function windowsForPlacement(): PerchWindow[] {
   if (TEST && (globalThis as Record<string, unknown>).__capriWindowsOverride !== undefined) return (globalThis as unknown as { __capriWindowsOverride: PerchWindow[] }).__capriWindowsOverride;
   if (TEST && (globalThis as Record<string, unknown>).__capriFgOverride !== undefined) { const r = fgRectDip(); return r ? [{ handle: -1n, rect: r }] : []; }
   return externalWindows(ownHandles()).map((w) => ({ handle: w.handle, rect: screen.screenToDipRect(null, w.rect) }));
 }
-function trackedWindow(): DRect | null {
-  if (TEST) return windowsForPlacement().find((w) => w.handle === perchHandle)?.rect ?? null;
-  const r = perchHandle ? windowRect(perchHandle) : null;
+function trackedWindowFor(handle: bigint | null): DRect | null {
+  if (TEST) return windowsForPlacement().find((w) => w.handle === handle)?.rect ?? null;
+  const r = handle ? windowRect(handle) : null;
   return r ? screen.screenToDipRect(null, r) : null;
 }
-function detachPerch() { perchRect = null; perchHandle = null; perchPinned = false; }
-function attachPerch(w: PerchWindow, pinned: boolean) {
+function detachPerch() { perchRect = null; perchHandle = null; perchPinned = false; perchMoving = false; cue({ type: 'attachment', mode: null }); }
+function attachPerch(w: PerchWindow, pinned: boolean, fraction?: number) {
   if (!charWin) return;
-  const a = attachToWindow(herBounds(), w.rect, SEAT_RATIO);
+  const a = placement(w, fraction);
+  perchMode = a.mode; perchMoving = false;
+  cue({ type: 'attachment', mode: perchMode });
   perchHandle = w.handle; perchRect = w.rect; perchFraction = a.fraction; perchPinned = pinned;
   charWin.setBounds(a.bounds);
 }
@@ -110,7 +118,15 @@ async function sitOnWindow(w = windowBesidePet()) {
   if (teleporter.active) return { ok: false, detail: 'Already teleporting.' };
   if (!w) return { ok: false, detail: 'No window underneath Capri to sit on.' };
   pendingPerch = w;
-  try { return await teleporter.go('perch', 'manual'); } finally { pendingPerch = null; }
+  try {
+    await teleporter.jumpTo(() => {
+      const rect = trackedWindowFor(w.handle);
+      if (!rect) { pendingPerch = null; return { ...herBounds(), kind: 'spot' as const }; }
+      pendingPerch = { ...w, rect };
+      return { ...placement(pendingPerch).bounds, kind: 'perch' as const };
+    }, 'perch_glitch');
+    return { ok: true, detail: 'Attached to window.' };
+  } finally { pendingPerch = null; }
 }
 /** Active app window in DIP. Tests may substitute a fake window so they never depend on the user's real desktop. */
 function fgRectDip(): DRect | null {
@@ -122,7 +138,8 @@ function fgRectDip(): DRect | null {
 let lastSurface = '';
 /** Where she is on the desktop → which postures make sense (sitting on a ledge, peeking from an edge, floating). */
 function computeSurface(b: DRect): 'taskbar' | 'window' | 'air' | 'edge_left' | 'edge_right' {
-  if (perchRect && Math.abs(b.y + b.height * SEAT_RATIO - perchRect.y) < 14) return 'window';
+  if (perchMoving) return 'air';
+  if (perchRect && Math.abs(b.y + b.height * (perchMode === 'hang' ? HANG_RATIO : SEAT_RATIO) - perchRect.y) < 14) return 'window';
   const a = displayFor(b, displaysNow()).workArea;
   if (b.x < a.x - 10) return 'edge_left';
   if (b.x + b.width > a.x + a.width + 10) return 'edge_right';
@@ -304,7 +321,7 @@ function settleAfterDrop() {
   detachPerch();
   const target = snapWindow(windowsForPlacement(), b, SEAT_RATIO);
   const work = displayFor(b, displaysNow()).workArea;
-  if (target && target.rect.y - b.height * SEAT_RATIO >= work.y - b.height * 0.1) {
+  if (target) {
     attachPerch(target, true);
   } else if (Math.abs(work.y + work.height - seat) < 24) {
     charWin.setBounds({ ...b, y: Math.round(work.y + work.height - b.height * SEAT_RATIO) }); // rest on the taskbar
@@ -505,6 +522,7 @@ function onSettingsChanged(s: Settings) {
       // keep her feet planted: anchor bottom-centre
       const nb = { x: Math.round(b.x + b.width / 2 - size.width / 2), y: b.y + b.height - size.height, ...size };
       charWin.setBounds(clampToDisplays(nb, displaysNow()));
+      if (perchHandle && perchRect && !perchMoving) attachPerch({ handle: perchHandle, rect: perchRect }, perchPinned, perchFraction);
     }
     charWin.setOpacity(s.character.opacity);
     charWin.setAlwaysOnTop(s.character.alwaysOnTop, 'floating');
@@ -598,13 +616,28 @@ function ownHandles(): bigint[] {
 function isFullscreenNow() { return settings.get().character.hideOnFullscreen && win32Status() === 'active' && isOtherAppFullscreen(ownHandles()); }
 function perchTick() {
   if (!perchRect || !charWin || teleporter.active || drag.active) return;
-  const now = trackedWindow();
+  const now = trackedWindowFor(perchHandle);
   if (!now) { detachPerch(); sendSurface(true); savePosition(); return; }
-  const b = herBounds();
-  const a = attachToWindow(b, now, SEAT_RATIO, perchFraction);
-  perchRect = now;
-  if (Math.abs(b.x - a.bounds.x) > 1 || Math.abs(b.y - a.bounds.y) > 1) { charWin.setBounds(a.bounds); savePosition(); }
-  sendSurface();
+  const changed = (['x', 'y', 'width', 'height'] as const).some((k) => Math.abs(now[k] - perchRect![k]) > 1);
+  if (changed) {
+    perchRect = now; perchChangedAt = Date.now();
+    if (!perchMoving) { perchMoving = true; cue({ type: 'attachment', mode: 'moving' }); sendSurface(true); }
+    return;
+  }
+  const held = TEST ? !!(globalThis as Record<string, unknown>).__capriWindowHeld : leftButtonDown();
+  if (!perchMoving || held || Date.now() - perchChangedAt < 240) return;
+  const handle = perchHandle!, fraction = perchFraction, pinned = perchPinned;
+  pendingPerch = { handle, rect: now };
+  void teleporter.jumpTo(() => {
+    const latest = trackedWindowFor(handle);
+    // Resolve again after departure so a final OS snap lands on the actual edge.
+    if (!latest || perchHandle !== handle) { pendingPerch = null; return { ...herBounds(), kind: 'spot' as const }; }
+    pendingPerch = { handle, rect: latest };
+    return { ...placement(pendingPerch, fraction).bounds, kind: 'perch' as const };
+  }, 'perch_glitch').finally(() => {
+    pendingPerch = null;
+    if (perchHandle === handle) perchPinned = pinned;
+  });
 }
 let lastCursorSample = '';
 function cursorTick() {

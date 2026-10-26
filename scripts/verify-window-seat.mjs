@@ -29,10 +29,17 @@ try {
   await new Promise((r) => setTimeout(r, 350));
   const afterFocus = await app.evaluate(() => globalThis.__capri.charWin.getBounds());
   await app.evaluate(() => { const f = globalThis.__seatFixture, b = f.getBounds(); f.setBounds({ ...b, x: b.x + 140, y: b.y + 80, width: b.width + 80 }); });
-  await new Promise((r) => setTimeout(r, 500));
+  await new Promise((r) => setTimeout(r, 2200));
   const afterMove = await app.evaluate(() => ({ pet: globalThis.__capri.charWin.getBounds(), target: globalThis.__seatFixture.getBounds() }));
   const seatError = (v) => Math.abs(v.pet.y + v.pet.height * 0.7119789480593283 - v.target.y);
-  const report = { nativeWindow: true, snapped: seatError(start) < 5, stayedAfterFocus: Math.abs(start.pet.y - afterFocus.y) < 3, followedMove: seatError(afterMove) < 5 && afterMove.pet.x > start.pet.x + 80, secondWindow: second };
+  const top = await app.evaluate(({ screen }) => screen.getPrimaryDisplay().workArea.y);
+  await app.evaluate((_, top) => { const f = globalThis.__seatFixture; f.setPosition(f.getBounds().x, top + 12); }, top);
+  await char.waitForFunction(() => window.__capriDebug.model.activeClip === 'dangle', undefined, { timeout: 6500 });
+  const hanging = await app.evaluate(() => ({ pet: globalThis.__capri.charWin.getBounds(), target: globalThis.__seatFixture.getBounds() }));
+  const hungBelowEdge = Math.abs(hanging.pet.y + hanging.pet.height * 0.08 - hanging.target.y) < 5;
+  const capture = path.resolve(root, '../../work/seat-check'); fs.mkdirSync(capture, { recursive: true });
+  await char.screenshot({ path: path.join(capture, 'hanging.png'), omitBackground: true });
+  const report = { hungBelowEdge, nativeWindow: true, snapped: seatError(start) < 5, stayedAfterFocus: Math.abs(start.pet.y - afterFocus.y) < 3, followedMove: seatError(afterMove) < 5 && afterMove.pet.x > start.pet.x + 80, secondWindow: second };
   console.log(JSON.stringify(report));
-  if (!report.snapped || !report.stayedAfterFocus || !report.followedMove) throw new Error('Native seat check failed');
+  if (!report.snapped || !report.stayedAfterFocus || !report.followedMove || !report.hungBelowEdge) throw new Error('Native seat check failed');
 } finally { await app.close(); }

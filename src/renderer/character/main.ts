@@ -45,6 +45,7 @@ let hit = false;
 let dragging = false;
 let forced: Partial<Params> | null = null;
 let surface: Surface = 'taskbar';
+let attachment: 'perch' | 'hang' | 'moving' | null = null;
 let dashing = 0; // pose override for previews/tests only
 let textTalkUntil = 0;
 
@@ -139,7 +140,7 @@ function tick(dt: number) {
   g.clearRect(0, 0, canvas.width, canvas.height);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   lastP = p;
-  model.draw(g, p, dt, { pose: modelPose(), ledge: surface === 'taskbar' || surface === 'window', taskbar: surface === 'taskbar', dragging, glitchEnabled: settings.character.glitchEffects, intensity, animation: settings.character.animation, facing: settings.character.facing }, W, H);
+  model.draw(g, p, dt, { attachment, pose: modelPose(), ledge: surface === 'taskbar' || surface === 'window', taskbar: surface === 'taskbar', dragging, glitchEnabled: settings.character.glitchEffects, intensity, animation: settings.character.animation, facing: settings.character.facing }, W, H);
   if (glitch) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -177,7 +178,7 @@ fx.onDone = (id, ph) => {
     behavior.playClip(pick);
   }
 };
-function onTeleport(phaseName: 'out' | 'in', id: number, effects: boolean) {
+function onTeleport(phaseName: 'out' | 'in', id: number, effects: boolean, perchAnimation = false) {
   setHit(false);
   if (!effects) {
     fx.phase = null;
@@ -187,7 +188,7 @@ function onTeleport(phaseName: 'out' | 'in', id: number, effects: boolean) {
     return;
   }
   setPaused(false);
-  fx.start(phaseName, id, { x: W / 2, y: H * 0.38, w: W * 0.8, h: H * 0.7 });
+  fx.start(phaseName, id, { x: W / 2, y: H * 0.38, w: W * 0.8, h: H * 0.7 }, perchAnimation ? 0.7 : undefined);
 }
 
 // ---------------------------------------------------------------- pointer: hit-test, drag, click
@@ -251,7 +252,8 @@ api.on('cue', (raw) => {
     case 'bubble': break; // the attached bubble window owns text layout
     case 'textTalk': textTalkUntil = performance.now() + Math.min(10000, Math.max(1800, c.text.length * 40)); behavior.react('happy'); break;
     case 'workPose': workPose = c.pose; break;
-    case 'teleport': onTeleport(c.phase, c.id, c.effects); break;
+    case 'teleport': if (c.animation && c.effects) model.teleportAnimation(c.animation); onTeleport(c.phase, c.id, c.effects, !!c.animation); break;
+    case 'attachment': attachment = c.mode; break;
     case 'clip': {
       const spriteEmotes: Record<string, 'idle' | 'perch' | 'grin' | 'sleep' | 'glitch' | 'dangle'> = { sit: 'perch', curl_up: 'perch', stand: 'idle', grin: 'grin', laugh: 'grin', happy: 'grin', smug: 'grin', power_stance: 'glitch', menace: 'glitch', recline: 'sleep', yawn: 'sleep' };
       if (spriteEmotes[c.name]) model.requestAnimation(spriteEmotes[c.name]);
