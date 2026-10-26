@@ -32,6 +32,7 @@ import { createCharacterWindow, createPanelWindow, characterSize, displaysNow, D
 import { clampToDisplays } from './desktop/displays';
 import { foregroundHandle, foregroundRect, handleToBigint, isOtherAppFullscreen, loadWin32, win32Status, externalWindows, windowRect, leftButtonDown } from './desktop/win32';
 import { snapWindow, windowAttachment, HANG_RATIO, type PerchWindow } from './desktop/perch';
+import { MOODS, LIFE_EVENTS, type Mood, type LifeEvent } from '../shared/personality';
 import { speechRequest } from './voice/tts';
 import { probeWindowsRecognizer, transcribeOpenAI, transcribeWindows, WakeWordListener } from './voice/speech';
 
@@ -240,6 +241,7 @@ async function init() {
   convo = new Conversation({
     settings: () => settings.get(),
     provider: makeProvider,
+    companionContext: () => settings.get().character.personality ? `\nYour current companion mood is ${companionMood}. ${lastCompanionEvent && Date.now() - lastCompanionEventAt < 120000 ? `Recent interaction: ${lastCompanionEvent}.` : ''} Let this subtly color your delivery while staying helpful. Do not announce mood labels or invent events. Approved memories and conversation history provide familiarity; mention them only when relevant.\n` : '',
     history, memories: () => (settings.get().memory.enabled ? memory.approved() : []),
     actionCtx,
     emit: (ch, p) => toPanel(ch, p),
@@ -464,10 +466,21 @@ function cue(c: CharacterCue) {
   if (charWin && !charWin.isDestroyed()) charWin.webContents.send('cue', c);
 }
 let lastInteractionBubble = 0;
+let companionMood: Mood = 'neutral';
+let lastBubbleMood: Mood = 'neutral';
+let lastInitiativeAt = 0;
+let lastCompanionEvent: LifeEvent | null = null;
+let lastCompanionEventAt = 0;
 function interaction(kind: 'pat' | 'poke') {
-  if (convo?.busy || Date.now() - lastInteractionBubble < 12000) return;
-  lastInteractionBubble = Date.now();
-  const lines = kind === 'pat' ? ['Careful. I could get used to that.', 'Okay, you can stay.', 'Keep going. This is your job now.'] : ['Hey. I felt that.', 'You have my attention. Make it interesting.', 'Poking the construct. Bold choice.'];
+  lastInteraction = Date.now(); cue({ type: 'life', event: kind });
+}
+function companionRemark(kind: LifeEvent, mood: Mood) {
+  const escalation = kind === 'poke' && mood === 'annoyed' && lastBubbleMood !== 'annoyed';
+  if (!['pat', 'poke', 'return', 'window'].includes(kind) || convo?.busy || recording || bubble.state.composer || (!escalation && Date.now() - lastInteractionBubble < 12000)) return;
+  if ((kind === 'return' || kind === 'window') && (!settings.get().behavior.idleRemarks || !mayInterrupt(settings.get(), { fullscreen: fullscreenHidden, hidden: userHidden }))) return;
+  if (kind === 'return' || kind === 'window') { if (Date.now() - lastInitiativeAt < 90000) return; lastInitiativeAt = Date.now(); }
+  lastInteractionBubble = Date.now(); lastBubbleMood = mood;
+  const lines = kind === 'return' ? [lastCompanionEvent === 'pat' ? 'Back for more head pats?' : 'There you are. Kept your spot warm.', 'Welcome back, trouble.'] : kind === 'window' ? ['Rearranging my apartment again?', 'Okay. New view.'] : mood === 'annoyed' ? ['Again? You know I can feel that.', 'Keep poking. See what happens.'] : mood === 'content' ? ['Okay. That is actually nice.', 'Fine. You can keep doing that.'] : kind === 'pat' ? ['Careful. I could get used to that.', 'Okay, you can stay.', 'Keep going. This is your job now.'] : ['Hey. I felt that.', 'You have my attention. Make it interesting.', 'Poking the construct. Bold choice.'];
   bubble.remark(lines[Math.floor(Math.random() * lines.length)]);
 }
 /** The single gate for speaking out loud: every utterance names its reason and is logged. */
@@ -622,7 +635,7 @@ function perchTick() {
   const changed = (['x', 'y', 'width', 'height'] as const).some((k) => Math.abs(now[k] - perchRect![k]) > 1);
   if (changed) {
     perchRect = now; perchChangedAt = Date.now();
-    if (!perchMoving) { perchMoving = true; cue({ type: 'attachment', mode: 'moving' }); sendSurface(true); }
+    if (!perchMoving) { cue({ type: 'life', event: 'window' }); perchMoving = true; cue({ type: 'attachment', mode: 'moving' }); sendSurface(true); }
     return;
   }
   const held = TEST ? !!(globalThis as Record<string, unknown>).__capriWindowHeld : leftButtonDown();
@@ -820,9 +833,12 @@ async function exploreTick(idleSec: number) {
   log.info('explore: end', { ok: r.ok, steps: r.steps });
 }
 function raiseSoon() { for (const ms of [400, 1200, 2500, 4000]) setTimeout(raiseCharacter, ms); }
+let previousUserIdle = 0;
 function presenceTick() {
   const s = settings.get();
-  const idleSec = powerMonitor.getSystemIdleTime();
+  const idleSec = TEST && typeof (globalThis as any).__capriIdleOverride === 'number' ? (globalThis as any).__capriIdleOverride as number : powerMonitor.getSystemIdleTime();
+  if (previousUserIdle >= 180 && idleSec < 3) cue({ type: 'life', event: 'return' });
+  previousUserIdle = idleSec;
   const quiet = !mayInterrupt(s, { fullscreen: fullscreenHidden, hidden: userHidden });
   cue({ type: 'presence', idleSec, quiet });
   void exploreTick(idleSec).catch((e) => log.warn('explore failed', { error: e as Error }));
@@ -1063,6 +1079,11 @@ function registerIpc() {
   handle('char:hit', 'char', z.boolean(), (hit) => applyMouseMode(hit));
   handle('char:drag', 'char', z.enum(['start', 'end']), (c) => (c === 'start' ? drag.begin() : drag.end()));
   handle('char:click', 'char', none, () => { lastInteraction = Date.now(); bubble.open(); });
+  handle('char:personality', 'char', z.object({ mood: z.enum(MOODS), event: z.enum(LIFE_EVENTS).optional() }), ({ mood, event }) => {
+    if (!settings.get().character.personality) return;
+    companionMood = mood;
+    if (event) { companionRemark(event, mood); lastCompanionEvent = event; lastCompanionEventAt = Date.now(); }
+  });
   handle('char:interaction', 'char', z.enum(['pat', 'poke']), interaction);
   handle('bubble:open', 'any', none, () => bubble.open());
   handle('bubble:close', 'bubble', none, () => bubble.dismiss());
@@ -1082,13 +1103,15 @@ function registerIpc() {
   });
   handle('char:fps', 'char', z.number().min(0).max(1000), (fps) => { lastFps = fps; });
   handle('char:ready', 'char', none, () => characterReady?.());
-  handle('tts:fetch', 'char', str(4000), async (text) => {
+  handle('tts:fetch', 'char', z.union([str(4000), z.object({ text: str(4000), mood: z.enum(MOODS) })]), async (request) => {
+    const text = typeof request === 'string' ? request : request.text;
+    const mood = typeof request === 'string' ? undefined : request.mood;
     const v = settings.get().voice;
     const key = secrets.get('openaiVoice') ?? secrets.get('openai');
     const res = await httpFetch(`${v.openaiTts.baseUrl.replace(/\/+$/, '')}/audio/speech`, {
       method: 'POST', timeoutMs: 30_000,
       headers: { 'content-type': 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}) },
-      body: JSON.stringify(speechRequest(text, v)),
+      body: JSON.stringify(speechRequest(text, v, mood)),
     });
     return new Uint8Array(await res.arrayBuffer());
   });

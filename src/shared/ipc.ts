@@ -1,4 +1,5 @@
 // Typed IPC contract shared by main, preload and renderers.
+import type { Mood, LifeEvent } from './personality';
 import type { Settings, ToolName, Policy } from './settings';
 
 export type ChatRole = 'user' | 'assistant' | 'system' | 'action';
@@ -36,6 +37,7 @@ export interface BubbleState { text: string; phase: AssistantPhase; composer: bo
 
 /** Cues the main process sends to the character renderer */
 export type CharacterCue =
+  | { type: 'life'; event: LifeEvent }
   | { type: 'phase'; phase: AssistantPhase }
   | { type: 'react'; reaction: 'happy' | 'surprised' | 'annoyed' | 'curious' | 'wave' | 'nod' }
   | { type: 'speak'; utteranceId: string; text: string }
@@ -157,12 +159,13 @@ export interface InvokeMap {
   'char:micError': [string, void];
   'char:fps': [number, void];
   'char:ready': [void, void];
+  'char:personality': [{ mood: Mood; event?: LifeEvent }, void];
   'char:interaction': ['pat' | 'poke', void];
   'bubble:open': [void, void];
   'bubble:close': [void, void];
   'bubble:get': [void, BubbleState];
   'bubble:resize': [number, void];
-  'tts:fetch': [string, Uint8Array];
+  'tts:fetch': [string | { text: string; mood: Mood }, Uint8Array];
   'connection:get': [void, ConnectionStatus];
   'teleport:now': [string | void, { ok: boolean; detail: string }];
   'char:teleport': [{ id: number; phase: 'out' | 'in' }, void];
@@ -177,7 +180,7 @@ export const INVOKE_CHANNELS: InvokeChannel[] = [
   'app:resetAll', 'app:quit', 'app:restart', 'apps:pick', 'folders:pick', 'panel:open', 'panel:close',
   'voice:ptt', 'char:hit', 'char:drag', 'char:click', 'char:menu', 'char:speechState', 'char:audio',
   'char:micError', 'char:fps', 'char:ready', 'tts:fetch', 'connection:get', 'connection:check', 'teleport:now', 'char:teleport',
-  'char:interaction', 'bubble:open', 'bubble:close', 'bubble:get', 'bubble:resize',
+  'char:personality', 'char:interaction', 'bubble:open', 'bubble:close', 'bubble:get', 'bubble:resize',
 ];
 export const EVENT_CHANNELS = [
   'chat:delta', 'chat:done', 'chat:message', 'chat:phase', 'action:confirm', 'action:result', 'memory:changed',

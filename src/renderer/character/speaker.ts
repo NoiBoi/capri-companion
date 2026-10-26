@@ -1,6 +1,8 @@
+import type { Mood } from '../../shared/personality';
 import type { Settings } from '../../shared/settings';
 import { LipSync } from './lipsync';
 
+type Utterance = { id: string; text: string; mood?: Mood };
 type Report = (id: string, state: 'start' | 'end' | 'error') => void;
 
 /** Picks a default substitute voice: a female English Windows voice if available. */
@@ -15,46 +17,54 @@ export function pickVoice(voices: SpeechSynthesisVoice[], preferred: string): Sp
  * streams in, so the first words play while the model is still generating.
  */
 export class Speaker {
-  private queue: { id: string; text: string }[] = [];
+  private queue: Utterance[] = [];
+  private processing = false;
+  private generation = 0;
   private playing: { id: string; cancel: () => void } | null = null;
   readonly lips = new LipSync();
   private audioCtx: AudioContext | null = null;
-  constructor(private settings: () => Settings, private report: Report, private fetchAudio: (text: string) => Promise<Uint8Array>) {}
+  constructor(private settings: () => Settings, private report: Report, private fetchAudio: (text: string, mood?: Mood) => Promise<Uint8Array>) {}
 
   /** True only while audio is actually playing (between the engine's start and end events). */
   private audible = false;
   get speaking() { return this.audible; }
 
-  enqueue(id: string, text: string) {
+  enqueue(id: string, text: string, mood?: Mood) {
     if (this.queue.length > 50) this.queue.shift(); // bounded
-    this.queue.push({ id, text });
-    if (!this.playing) void this.next();
+    this.queue.push({ id, text, mood });
+    if (!this.processing) void this.next();
   }
 
   stopAll() {
+    this.generation++;
+    this.processing = false;
     const pending = this.queue.splice(0);
     for (const q of pending) this.report(q.id, 'end');
-    this.playing?.cancel();
+    const active = this.playing; this.playing = null; active?.cancel();
     try { speechSynthesis.cancel(); } catch { /* */ }
   }
 
   private async next() {
     const item = this.queue.shift();
     if (!item) { this.lips.stop(); return; }
+    this.processing = true;
+    const generation = this.generation;
     const v = this.settings().voice;
     try {
-      if (v.ttsEngine === 'openai') await this.playRemote(item, v);
+      if (v.ttsEngine === 'openai') await this.playRemote(item, v, generation);
       else await this.playSystem(item, v);
     } catch {
       // remote TTS failed → fall back to the local voice for this sentence
-      if (v.ttsEngine === 'openai') { try { await this.playSystem(item, v); } catch { this.report(item.id, 'error'); } }
-      else this.report(item.id, 'error');
+      if (generation === this.generation && v.ttsEngine === 'openai') { try { await this.playSystem(item, v); } catch { this.report(item.id, 'error'); } }
+      else if (generation === this.generation) this.report(item.id, 'error');
     }
+    if (generation !== this.generation) return;
     this.playing = null;
+    this.processing = false;
     void this.next();
   }
 
-  private playSystem(item: { id: string; text: string }, v: Settings['voice']) {
+  private playSystem(item: Utterance, v: Settings['voice']) {
     return new Promise<void>((resolve, reject) => {
       if (typeof speechSynthesis === 'undefined') return reject(new Error('no speechSynthesis'));
       const u = new SpeechSynthesisUtterance(item.text);
@@ -74,10 +84,12 @@ export class Speaker {
     });
   }
 
-  private async playRemote(item: { id: string; text: string }, v: Settings['voice']) {
-    const bytes = await this.fetchAudio(item.text);
+  private async playRemote(item: Utterance, v: Settings['voice'], generation: number) {
+    const bytes = await this.fetchAudio(item.text, item.mood);
+    if (generation !== this.generation) { this.report(item.id, 'end'); return; }
     this.audioCtx ??= new AudioContext();
     const buf = await this.audioCtx.decodeAudioData(bytes.slice().buffer);
+    if (generation !== this.generation) { this.report(item.id, 'end'); return; }
     const src = this.audioCtx.createBufferSource();
     src.buffer = buf;
     const gain = this.audioCtx.createGain();

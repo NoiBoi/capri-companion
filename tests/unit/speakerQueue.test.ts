@@ -1,0 +1,45 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Speaker } from '../../src/renderer/character/speaker';
+import { DEFAULT_SETTINGS } from '../../src/shared/settings';
+afterEach(() => vi.unstubAllGlobals());
+function setup() {
+  const sources: any[] = [];
+  class Context {
+    destination = {};
+    async decodeAudioData() { return {}; }
+    createBufferSource() { const src: any = { connect: (n: any) => n, start: vi.fn(), stop: () => src.onended?.(), onended: null }; sources.push(src); return src; }
+    createGain() { return { connect: (n: any) => n, gain: { value: 1 } }; }
+    createAnalyser() { return { connect: (n: any) => n, fftSize: 512, getFloatTimeDomainData: (a: Float32Array) => a.fill(0.1) }; }
+  }
+  vi.stubGlobal('AudioContext', Context); vi.stubGlobal('speechSynthesis', { cancel: vi.fn() });
+  const settings = structuredClone(DEFAULT_SETTINGS); settings.voice.ttsEngine = 'openai';
+  const resolves: ((b: Uint8Array) => void)[] = [];
+  const fetch = vi.fn((_text: string, _mood?: string) => new Promise<Uint8Array>(r => resolves.push(r)));
+  const report = vi.fn(); const speaker = new Speaker(() => settings, report, fetch);
+  return { speaker, sources, resolves, fetch, report };
+}
+describe('speech mood and sequencing', () => {
+  it('keeps fetches and playback sequential with the mood captured per utterance', async () => {
+    const a = setup(); a.speaker.enqueue('a', 'One.', 'annoyed'); a.speaker.enqueue('b', 'Two.', 'content');
+    expect(a.fetch).toHaveBeenCalledTimes(1); expect(a.fetch).toHaveBeenLastCalledWith('One.', 'annoyed');
+    a.resolves[0](new Uint8Array([1])); await vi.waitFor(() => expect(a.sources[0]?.start).toHaveBeenCalled());
+    expect(a.fetch).toHaveBeenCalledTimes(1); a.sources[0].onended();
+    await vi.waitFor(() => expect(a.fetch).toHaveBeenCalledTimes(2));
+    expect(a.fetch).toHaveBeenLastCalledWith('Two.', 'content');
+    a.speaker.stopAll(); a.resolves[1](new Uint8Array([1]));
+    await vi.waitFor(() => expect(a.report).toHaveBeenCalledWith('b', 'end'));
+  });
+  it('does not play a late remote response after stop', async () => {
+    const a = setup(); a.speaker.enqueue('a', 'One.', 'curious'); a.speaker.stopAll(); a.resolves[0](new Uint8Array([1]));
+    await vi.waitFor(() => expect(a.report).toHaveBeenCalledWith('a', 'end'));
+    expect(a.sources).toHaveLength(0); expect(a.speaker.speaking).toBe(false);
+  });
+  it('starts a fresh reply immediately while a cancelled fetch is still pending', async () => {
+    const a = setup(); a.speaker.enqueue('a', 'Old.', 'curious'); a.speaker.stopAll(); a.speaker.enqueue('b', 'Fresh.', 'content');
+    expect(a.fetch).toHaveBeenCalledTimes(2);
+    a.resolves[0](new Uint8Array([1])); a.resolves[1](new Uint8Array([1]));
+    await vi.waitFor(() => expect(a.sources[0]?.start).toHaveBeenCalled());
+    expect(a.sources).toHaveLength(1); a.speaker.stopAll();
+  });
+
+});

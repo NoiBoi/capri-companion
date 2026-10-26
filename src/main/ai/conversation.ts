@@ -13,6 +13,7 @@ export interface ConversationDeps {
   provider(): LLMProvider;
   history: { append(m: ChatMessage): void; recent(n: number): ChatMessage[] };
   memories(): MemoryItem[];
+  companionContext?(): string;
   actionCtx: ActionContext;
   emit(channel: 'chat:delta' | 'chat:done' | 'chat:message' | 'chat:phase' | 'action:result', payload: unknown): void;
   cue(c: CharacterCue): void;
@@ -70,7 +71,7 @@ export class Conversation {
       .map<LLMMessage>((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
     // providers like Anthropic require alternating roles beginning with user
     while (past.length && past[0].role !== 'user') past.shift();
-    return [{ role: 'system', content: buildSystemPrompt(s, this.d.memories()) }, ...past, { role: 'user', content: userText }];
+    return [{ role: 'system', content: buildSystemPrompt(s, this.d.memories()) + (this.d.companionContext?.() ?? '') }, ...past, { role: 'user', content: userText }];
   }
 
   private async run(userText: string, replyId: string, viaVoice: boolean) {

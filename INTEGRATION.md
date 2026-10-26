@@ -1,5 +1,25 @@
 # Capri Buddy: private artwork integration
 
+## 0.2.6 connected personality
+
+One local personality clock connects cursor attention, touch reactions and idle
+sequences. Cursor approach has a short dwell before notice/watch/play/settle;
+repeated pokes build mild annoyance, pats build contentment, and emotions fade
+naturally. Explicit animation selections, hanging, dragging, sleeping and
+teleport sequences retain priority. The Character panel has an Expressive
+behavior switch. Original PNGs are unchanged.
+
+The renderer shares mood with conversation context and captures it per spoken
+utterance. Remote TTS appends mood delivery to the editable voice prompt while
+preserving Nova and speed. Fetch/playback is serialized, and stopped requests
+cannot begin playing after their response arrives. Contextual bubbles greet a
+return from at least three minutes away or react to window movement. They obey
+Idle remarks and quiet settings, have cooldowns, and do not replace an open
+composer or active conversation. Touch responses remain silent. Recent session
+interactions provide small callbacks; approved memory and saved position remain
+the existing persistent sources. No new screen monitoring or model polling is
+introduced.
+
 ## 0.2.5 Nova voice delivery
 
 Remote speech sends editable delivery instructions and the Rate slider to the

@@ -1,5 +1,6 @@
 import { CapriModel as VectorModel, type ModelInputs, type PoseName } from './model';
 import { SEAT_RATIO } from '../../shared/framing';
+import type { LifeFrame } from '../../shared/personality';
 import type { Params } from './params';
 import { SPRITE_CLIPS, spriteBase, spriteFrame, spriteFacing, type SpriteClip } from './spriteClips';
 
@@ -49,7 +50,7 @@ export class CapriSpriteModel extends VectorModel {
   override pat() { this.reactionUntil = this.t + 3; this.patUntil = this.t + 1.2; }
   override glitchNow(_kind: 'slice' | 'shatter' | 'ghost' | 'tear' = 'slice', len = 0.3) { this.burstUntil = this.t + len; }
 
-  override draw(ctx: CanvasRenderingContext2D, p: Params, dt: number, inp: ModelInputs & { attachment?: 'perch' | 'hang' | 'moving' | null; taskbar?: boolean; intensity?: number; animation?: 'auto' | SpriteClip; sleeping?: boolean; facing?: 'cursor' | 'original' | 'left' | 'right' }, W: number, H: number) {
+  override draw(ctx: CanvasRenderingContext2D, p: Params, dt: number, inp: ModelInputs & { personality?: LifeFrame; attachment?: 'perch' | 'hang' | 'moving' | null; taskbar?: boolean; intensity?: number; animation?: 'auto' | SpriteClip; sleeping?: boolean; facing?: 'cursor' | 'original' | 'left' | 'right' }, W: number, H: number) {
     this.t += dt;
     const intensity = Math.max(0, inp.intensity ?? 1);
     const motionDt = dt * intensity;
@@ -59,7 +60,7 @@ export class CapriSpriteModel extends VectorModel {
     const sleeping = inp.sleeping ?? p.sleep > 0.7;
     if (this.wasSleeping && !sleeping) this.awakeUntil = this.t + 13 / 15;
     this.wasSleeping = sleeping;
-    if (intensity > 0 && inp.glitchEnabled && this.t > this.nextBurst && !sleeping && p.mouthOpen < 0.08) {
+    if (!inp.personality && intensity > 0 && inp.glitchEnabled && this.t > this.nextBurst && !sleeping && p.mouthOpen < 0.08) {
       this.burstUntil = this.t + 10 / 15;
       this.nextBurst = this.t + 15 + Math.random() * 20;
     }
@@ -73,7 +74,7 @@ export class CapriSpriteModel extends VectorModel {
     const blinkRequested = p.blinkL > 0.2 || p.blinkR > 0.2;
     if (blinkRequested && !this.wasBlinking && !sleeping && intensity > 0) this.blinkUntil = this.motionTime + 4 / 8;
     this.wasBlinking = blinkRequested;
-    if (intensity > 0 && !sleeping && !inp.dragging && this.t > this.nextFidget) {
+    if (!inp.personality && intensity > 0 && !sleeping && !inp.dragging && this.t > this.nextFidget) {
       this.reactionUntil = this.t + 1.6;
       this.nextFidget = this.t + 9 + Math.random() * 12;
     }
@@ -84,6 +85,10 @@ export class CapriSpriteModel extends VectorModel {
       else if (!perched && (this.t < this.reactionUntil || p.happyEyes > 0.3 || p.mouthSmile > 0.75)) clip = 'grin';
     }
     if (selected && selected !== 'idle' && selected !== 'perch' && !inp.dragging) clip = selected;
+    if (inp.personality?.clip && !selected && !sleeping && !inp.dragging && intensity > 0) {
+      const requested = inp.personality.clip;
+      clip = perched ? (requested === 'glitch' && inp.glitchEnabled ? 'perch_blink_glitch' : 'perch_blink') : requested === 'glitch' && !inp.glitchEnabled ? 'blink' : requested;
+    }
     if (inp.attachment === 'moving' && !inp.dragging) clip = this.motionTime < this.blinkUntil ? 'blink' : 'idle';
     if (inp.attachment === 'hang' && !inp.dragging) clip = 'dangle';
     if (this.t < this.teleportUntil && !inp.dragging) clip = 'perch_glitch';
@@ -111,7 +116,7 @@ export class CapriSpriteModel extends VectorModel {
     const y = anchor - sourceAnchor * scale + bob;
     ctx.save();
     ctx.translate(W / 2, anchor);
-    ctx.rotate(intensity * Math.max(-0.035, Math.min(0.035, p.headRoll * 0.20 + p.bodyRot * 0.15 + (isPerch ? Math.sin(this.motionTime * 0.9) * 0.008 : 0))));
+    ctx.rotate(intensity * Math.max(-0.035, Math.min(0.035, p.headRoll * 0.20 + p.bodyRot * 0.15 + (inp.personality?.lean ?? 0) + (isPerch ? Math.sin(this.motionTime * 0.9) * 0.008 : 0))));
     ctx.scale(this.direction * (1 + this.squish), 1 - this.squish);
     ctx.translate(-W / 2, -anchor);
     const draw = (image: HTMLImageElement, frame: number, width: number) => ctx.drawImage(image, frame * width, 0, width, 384, x, y, dw, dh);

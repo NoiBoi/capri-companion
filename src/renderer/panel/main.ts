@@ -428,6 +428,7 @@ async function renderCharacter() {
       field('Facing', select('character.facing', 'Facing', [['cursor', 'Follow cursor'], ['original', 'Original artwork'], ['left', 'Left'], ['right', 'Right']])),
       sw('Speech bubbles', 'character.speechBubbles'),
       field('Frame rate', select('character.fpsCap', 'Frame rate', [['15', '15 fps'], ['30', '30 fps'], ['60', '60 fps'], ['120', '120 fps']], undefined, Number)),
+      sw('Expressive behavior', 'character.personality'),
       sw('Glitch effects', 'character.glitchEffects')),
     group('On the desktop',
       sw('Always on top', 'character.alwaysOnTop'),

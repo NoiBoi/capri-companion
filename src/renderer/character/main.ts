@@ -1,3 +1,4 @@
+import { Personality, type Mood, type LifeEvent, type LifeFrame } from '../../shared/personality';
 import type { AssistantPhase, CharacterCue } from '../../shared/ipc';
 import type { Settings } from '../../shared/settings';
 import type { CapriApi } from '../../preload/preload';
@@ -51,6 +52,14 @@ let textTalkUntil = 0;
 
 const fx = new TeleportFx(() => document.createElement('canvas'));
 const model = new CapriSpriteModel();
+const personality = new Personality();
+let life: LifeFrame | undefined;
+let reportedMood: Mood = 'neutral';
+function lifeEvent(event: LifeEvent) {
+  if (!settings?.character.personality) return;
+  const mood = personality.event(event); reportedMood = mood;
+  void api.invoke('char:personality', { mood, event });
+}
 let variantFor = '', variant = 0, lastP: Params | null = null, shownPose: PoseName | null = null;
 let workPose: 'back' | 'crouch' | 'sit' | null = null; // set while she uses the PC
 function modelPose(): PoseName {
@@ -65,7 +74,7 @@ const anim = new Animator();
 const behavior = new Behavior();
 const blinker = new Blinker();
 const mic = new MicRecorder();
-const speaker = new Speaker(() => settings, (id, state) => void api.invoke('char:speechState', { utteranceId: id, state }), (t) => api.invoke('tts:fetch', t));
+const speaker = new Speaker(() => settings, (id, state) => void api.invoke('char:speechState', { utteranceId: id, state }), (text, mood) => api.invoke('tts:fetch', mood ? { text, mood } : text));
 
 // ---------------------------------------------------------------- sizing (DPI aware)
 let dpr = 1, W = FRAME_SIZE.width, H = FRAME_SIZE.height;
@@ -113,6 +122,9 @@ function tick(dt: number) {
   if (!settings) return;
   const intensity = settings.character.animationIntensity;
   if (pointer && performance.now() - lastPointerAt > 4000) pointer = null; // stop staring when the mouse rests
+  life = settings.character.personality ? personality.update(dt, { pointer, phase, sleeping: behavior.state === 'sleeping', held: dragging }) : undefined;
+  const mood = life?.mood ?? 'neutral';
+  if (mood !== reportedMood) { reportedMood = mood; void api.invoke('char:personality', { mood }); }
   const level = speaker.lips.update(dt);
   const target: Params = behavior.update(dt, {
     phase, speechLevel: level, speaking: speaker.speaking, pointer, idleSec, quiet, intensity,
@@ -131,7 +143,7 @@ function tick(dt: number) {
   p.mouthOpen = Math.max(0, speaker.speaking ? level : p.mouthOpen); // lip-sync wins over gesture clips
 
   const teleporting = fx.active || fx.hidden;
-  model.faceToward(pointer ? pointer.x : 0);
+  model.faceToward(life && settings.character.animation === 'auto' ? life.look ?? 0 : pointer ? pointer.x : 0);
   if (!settings.voice.ttsEnabled && !speaker.speaking && performance.now() < textTalkUntil) p.mouthOpen = 0.12 + 0.30 * Math.abs(Math.sin(performance.now() / 95));
   if (model.stutter > 0 && !teleporting) { model.stutter--; return; } // glitch stutter: hold the last image a few frames
   const glitch = !teleporting && settings.character.glitchEffects && (p.glitch > 0.05 || model.burst > 0);
@@ -140,7 +152,7 @@ function tick(dt: number) {
   g.clearRect(0, 0, canvas.width, canvas.height);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   lastP = p;
-  model.draw(g, p, dt, { attachment, pose: modelPose(), ledge: surface === 'taskbar' || surface === 'window', taskbar: surface === 'taskbar', dragging, glitchEnabled: settings.character.glitchEffects, intensity, animation: settings.character.animation, facing: settings.character.facing }, W, H);
+  model.draw(g, p, dt, { personality: life, attachment, pose: modelPose(), ledge: surface === 'taskbar' || surface === 'window', taskbar: surface === 'taskbar', dragging, glitchEnabled: settings.character.glitchEffects, intensity, animation: settings.character.animation, facing: settings.character.facing }, W, H);
   if (glitch) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -236,9 +248,10 @@ let wakeAuto = false;
 api.on('cue', (raw) => {
   const c = raw as CharacterCue;
   switch (c.type) {
-    case 'phase': phase = c.phase; if (c.phase !== 'idle') behavior.wake(); break;
+    case 'life': lifeEvent(c.event); break;
+    case 'phase': if (c.phase === 'speaking' && phase !== 'speaking') lifeEvent('reply'); phase = c.phase; if (c.phase !== 'idle') behavior.wake(); break;
     case 'react': behavior.react(c.reaction); if (c.reaction === 'happy' || c.reaction === 'surprised') model.poke(); break;
-    case 'speak': behavior.wake(); speaker.enqueue(c.utteranceId, c.text); break;
+    case 'speak': behavior.wake(); speaker.enqueue(c.utteranceId, c.text, settings.character.personality ? personality.mood : undefined); break;
     case 'stopSpeech': speaker.stopAll(); break;
     case 'wake': wakeAuto = true; behavior.react('surprised'); break;
     case 'mic':
@@ -286,7 +299,7 @@ api.on('settings:changed', (s) => { settings = s as Settings; });
   await api.invoke('char:ready');
   raf = requestAnimationFrame(loop);
   window.__capriDebug = {
-    behavior, anim, speaker, model, mic, fx, postures: POSTURES,
+    behavior, anim, speaker, model, mic, fx, personality, lifeEvent, get life() { return life; }, postures: POSTURES,
     get pose() { return modelPose(); },
     get surface() { return surface; },
     get hit() { return hit; },

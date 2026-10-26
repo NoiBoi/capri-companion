@@ -926,6 +926,61 @@ describe('remote speech delivery settings', () => {
       const bytes = await char.evaluate(async () => Array.from(await window.capri.invoke('tts:fetch', 'Hey, choom.')));
       expect(bytes).toEqual([1, 2, 3, 4]);
       expect(requests).toEqual([{ path: '/v1/audio/speech', body: { model: 'gpt-4o-mini-tts', voice: 'nova', input: 'Hey, choom.', response_format: 'mp3', speed: 1.1, instructions: 'Playful, dry teasing; natural pauses.' } }]);
+      await char.evaluate(() => window.capri.invoke('tts:fetch', { text: 'Again?', mood: 'annoyed' }));
+      expect(requests[1].body.instructions).toContain('mildly exasperated');
     } finally { await new Promise<void>((resolve, reject) => server.close(e => e ? reject(e) : resolve())); }
+  });
+});
+
+
+describe('connected companion personality', () => {
+  it('connects repeated touch, animation, mood decay and disabling expressive behavior', async () => {
+    const { app, char } = await launch(profile({ character: { animation: 'auto', personality: true } }));
+    await char.evaluate(() => { const d = window.__capriDebug as any; d.manual(true); d.lifeEvent('poke'); d.lifeEvent('poke'); d.lifeEvent('poke'); d.step(0.1); });
+    expect(await char.evaluate(() => (window.__capriDebug as any).life.mood)).toBe('annoyed');
+    await char.waitForTimeout(150);
+    expect(await app.evaluate(() => (globalThis as any).__capri.bubble.state.text)).toMatch(/Again\?|Keep poking/);
+    await char.evaluate(() => { const d = window.__capriDebug as any; d.lifeEvent('pat'); d.lifeEvent('pat'); d.step(0.1); });
+    expect(await char.evaluate(() => (window.__capriDebug as any).life.mood)).toBe('content');
+    await char.evaluate(() => { const d = window.__capriDebug as any; d.setSurface('air'); d.step(0.1, 9); });
+    expect(await char.evaluate(() => (window.__capriDebug as any).model.activeClip)).toBe('grin');
+    await char.evaluate(() => { const d = window.__capriDebug as any; d.step(0.1, 240); });
+    expect(await char.evaluate(() => (window.__capriDebug as any).life.mood)).toBe('neutral');
+    await app.evaluate(() => (globalThis as any).__capri.settings.update({ character: { personality: false } }));
+    await char.waitForTimeout(100);
+    await char.evaluate(() => (window.__capriDebug as any).step(0.1));
+    expect(await char.evaluate(() => (window.__capriDebug as any).life)).toBeUndefined();
+  });
+  it('greets a return once, respects do-not-disturb, and leaves an open composer alone', async () => {
+    const { app, char } = await launch(profile({ behavior: { idleRemarks: true, doNotDisturb: true, quietHours: { enabled: false } } }));
+    await app.evaluate(() => { const a = (globalThis as any).__capri; (globalThis as any).__capriIdleOverride = 240; a.presenceTick(); (globalThis as any).__capriIdleOverride = 0; a.presenceTick(); });
+    await char.waitForTimeout(200);
+    expect(await app.evaluate(() => (globalThis as any).__capri.bubble.state.text)).toBe('');
+    await app.evaluate(() => { const a = (globalThis as any).__capri; a.settings.update({ behavior: { doNotDisturb: false } }); (globalThis as any).__capriIdleOverride = 240; a.presenceTick(); (globalThis as any).__capriIdleOverride = 0; a.presenceTick(); });
+    await char.waitForTimeout(200);
+    expect(await app.evaluate(() => (globalThis as any).__capri.bubble.state.text)).toMatch(/spot warm|Welcome back/);
+    await char.evaluate(() => window.capri.invoke('bubble:open'));
+    const before = await app.evaluate(() => (globalThis as any).__capri.bubble.state.text);
+    await char.evaluate(() => { const d = window.__capriDebug as any; d.lifeEvent('window'); });
+    await char.waitForTimeout(100);
+    expect(await app.evaluate(() => (globalThis as any).__capri.bubble.state.text)).toBe(before);
+    expect(await app.evaluate(() => (globalThis as any).__capri.bubble.state.composer)).toBe(true);
+    void app;
+  });
+});
+
+describe('personality conversation context', () => {
+  it('gives the model recent touch context and mood without requiring an extra model call', async () => {
+    let prompt = '';
+    const server = await mockModel(body => { prompt = body.messages[0].content; return 'Behave, choom.'; });
+    try {
+      const { app, char } = await launch(openaiProfile(server.url));
+      await char.evaluate(() => { const d = window.__capriDebug as any; d.lifeEvent('poke'); d.lifeEvent('poke'); d.lifeEvent('poke'); });
+      await char.waitForTimeout(150);
+      const panel = await openPanel(app, char);
+      await panel.fill('textarea', 'How are you?'); await panel.press('textarea', 'Enter');
+      await panel.waitForFunction(() => document.body.innerText.includes('Behave, choom.'));
+      expect(prompt).toContain('current companion mood is annoyed'); expect(prompt).toContain('Recent interaction: poke');
+    } finally { await server.close(); }
   });
 });
