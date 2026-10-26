@@ -18,6 +18,14 @@ try {
       const m = [...a.history.recent(4)].reverse().find(m => m.role === 'assistant');
       return { input, reply: m?.content, error: !!m?.meta?.error, memories: a.memory.approved().map(m => ({ id: m.id, text: m.text, revisions: m.revisions?.length })) };
     }, input);
+    console.log(JSON.stringify({ replyBeforeLearning: result }));
+    const expected = /changed/.test(input) ? /oolong/i : /jasmine/i;
+    const until = Date.now() + 90000;
+    while (Date.now() < until) {
+      result.memories = await app.evaluate(() => globalThis.__capri.memory.approved().map(m => ({ id: m.id, text: m.text, revisions: m.revisions?.length })));
+      if (result.memories.some(m => expected.test(m.text))) break;
+      await new Promise(r => setTimeout(r, 250));
+    }
     reports.push(result); console.log(JSON.stringify(result)); fs.writeFileSync(path.join(folder, 'live-results.json'), JSON.stringify(reports, null, 2));
     if (result.error) throw new Error('Live conversation failed.');
   }

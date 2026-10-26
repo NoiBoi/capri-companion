@@ -75,6 +75,7 @@ let startupMs = 0;
 let characterReady: (() => void) | null = null;
 let monitor: ConnectionMonitor;
 let teleporter: TeleportController;
+let memoryLearner: MemoryLearning;
 let perchRect: DRect | null = null;
 let perchHandle: bigint | null = null;
 let perchFraction = 0.5;
@@ -240,10 +241,11 @@ async function init() {
     emote: (name) => { cue({ type: 'clip', name }); return true; },
     useComputer: (task) => useComputer(task),
   };
-  const learner = new MemoryLearning({ settings: () => settings.get(), provider: makeProvider, memory, log });
+  const learner = memoryLearner = new MemoryLearning({ settings: () => settings.get(), provider: makeProvider, memory, log });
   convo = new Conversation({
-    memoryContext: () => learner.context,
-    learn: (text, messageId, signal) => learner.learn(text, messageId, signal),
+    pauseLearning: () => learner.pause(),
+    queueLearning: (text, messageId) => learner.enqueue(text, messageId),
+    resumeLearning: () => learner.schedule(),
     settings: () => settings.get(),
     provider: makeProvider,
     companionContext: () => settings.get().character.personality ? `\nYour current companion mood is ${companionMood}. ${lastCompanionEvent && Date.now() - lastCompanionEventAt < 120000 ? `Recent interaction: ${lastCompanionEvent}.` : ''} Let this subtly color your delivery while staying helpful. Do not announce mood labels or invent events. Approved memories and conversation history provide familiarity; mention them only when relevant.\n` : '',
@@ -254,7 +256,7 @@ async function init() {
     cue: (c) => { if (c.type === 'speak') speak('reply', c.utteranceId, c.text); else cue(c); },
     confirm: requestConfirmation,
     log,
-    onProviderResult: (ok, _name, err) => { if (!ok) monitor.reportFailure(err); },
+    onProviderResult: (ok, name, err) => { if (ok) monitor.reportSuccess(name); else monitor.reportFailure(err); },
   });
   monitor = new ConnectionMonitor(makeProvider, geminiKeySource, log);
   monitor.on('changed', (st) => { toPanel('connection:status', st); cue({ type: 'connection', state: st.state }); updateTrayMenu(); });
@@ -1016,6 +1018,7 @@ function registerIpc() {
   handle('settings:get', 'any', none, () => settings.get());
   handle('settings:set', 'panel', z.record(z.string(), z.unknown()), (patch) => {
     const r = settings.update(patch);
+    if (!r.settings.memory.enabled || !r.settings.memory.autoLearn) memoryLearner.discard();
     return r;
   });
   handle('settings:reset', 'panel', none, () => settings.reset());
@@ -1038,11 +1041,11 @@ function registerIpc() {
 
   handle('memory:list', 'panel', none, () => memory.list());
   handle('memory:add', 'panel', str(300), (t) => memory.add(t, 'user'));
-  handle('memory:undo', 'panel', str(64), (id) => memory.undo(id));
-  handle('memory:update', 'panel', z.object({ id: str(64), text: str(300) }), ({ id, text }) => memory.update(id, text));
+  handle('memory:undo', 'panel', str(64), (id) => { memoryLearner.discard(); memory.undo(id); });
+  handle('memory:update', 'panel', z.object({ id: str(64), text: str(300) }), ({ id, text }) => { memoryLearner.discard(); return memory.update(id, text); });
   handle('memory:approve', 'panel', str(64), (id) => memory.approve(id));
-  handle('memory:delete', 'panel', str(64), (id) => memory.delete(id));
-  handle('memory:clear', 'panel', none, () => memory.clear());
+  handle('memory:delete', 'panel', str(64), (id) => { memoryLearner.discard(); memory.delete(id); });
+  handle('memory:clear', 'panel', none, () => { memoryLearner.discard(); memory.clear(); });
   handle('notes:list', 'panel', none, () => notes.list());
   handle('notes:delete', 'panel', str(64), (id) => notes.delete(id));
   handle('reminders:list', 'panel', none, () => reminders.list());
@@ -1172,6 +1175,7 @@ function cleanup() {
   monitor?.stop();
   teleporter?.stopAuto();
   wake?.stop();
+  memoryLearner?.discard();
   convo?.stop();
   bubble?.close();
   drag?.end();

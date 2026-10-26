@@ -25,6 +25,39 @@ export function parseLearning(raw: string, userText: string) {
 /** One bounded extraction; only the user's message provides evidence. No desktop actions. */
 export class MemoryLearning {
   context = '';
+  private queue: { text: string; messageId: string }[] = [];
+  private active: AbortController | null = null;
+  private timer: NodeJS.Timeout | null = null;
+  pause() {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null; this.active?.abort();
+  }
+  discard() { this.pause(); this.queue = []; }
+  enqueue(text: string, messageId: string) {
+    this.pause();
+    if (!this.d.settings().memory.enabled || !this.d.settings().memory.autoLearn) return;
+    if (!this.queue.some(j => j.messageId === messageId)) this.queue.push({ text, messageId });
+    if (this.queue.length > 50) this.queue.shift();
+  }
+  schedule(delay = 2000) {
+    if (this.timer) clearTimeout(this.timer);
+    if (!this.queue.length) return;
+    this.timer = setTimeout(() => { this.timer = null; void this.drain(); }, delay);
+  }
+  private async drain() {
+    if (this.active) { this.schedule(250); return; }
+    if (!this.d.settings().memory.enabled || !this.d.settings().memory.autoLearn) { this.queue = []; return; }
+    const job = this.queue[0]; if (!job) return;
+    const ctrl = new AbortController(); this.active = ctrl;
+    try {
+      await this.learn(job.text, job.messageId, ctrl.signal);
+      if (!ctrl.signal.aborted && this.queue[0] === job) this.queue.shift();
+    } finally {
+      this.active = null;
+      // A new message pauses work until its reply has finished.
+      if (!ctrl.signal.aborted) this.schedule();
+    }
+  }
   constructor(private d: { settings(): Settings; provider(): LLMProvider; memory: MemoryStore; log: Logger }) {}
   async learn(text: string, messageId: string, signal: AbortSignal): Promise<void> {
     this.context = '';

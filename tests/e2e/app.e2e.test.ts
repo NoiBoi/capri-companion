@@ -1008,7 +1008,7 @@ describe('editable persistent personal profile', () => {
 
 
 describe('automatic personal learning', () => {
-  it('learns before replying, replaces a corrected fact, supports Undo and honors the switch', async () => {
+  it('replies before learning, corrects facts in the background, supports Undo and honors the switch', async () => {
     let extractorCalls = 0;
     const model = await mockModel(body => {
       if (body.messages[0].content.includes('Extract durable personal memory')) {
@@ -1017,7 +1017,7 @@ describe('automatic personal learning', () => {
         if (data.current_user_message.includes('moved')) return JSON.stringify({ changes: [{ op: 'update', id: data.existing_memories[0].id, text: 'Lives in Boston', kind: 'fact', evidence: 'I moved to Boston' }] });
         return JSON.stringify({ changes: [{ op: 'add', text: 'Lives in Austin', kind: 'fact', evidence: 'I live in Austin' }] });
       }
-      return body.messages[0].content.includes('Lives in Boston') ? 'Boston it is.' : 'Got it, Austin.';
+      return body.messages.at(-1)!.content.includes('moved') ? 'Boston it is.' : 'Got it, Austin.';
     });
     try {
       const ud = openaiProfile(model.url);
@@ -1026,9 +1026,12 @@ describe('automatic personal learning', () => {
       const panel = await openPanel(app, char);
       await panel.fill('textarea', 'I live in Austin'); await panel.press('textarea', 'Enter');
       await panel.waitForFunction(() => document.body.innerText.includes('Got it, Austin.'));
+      expect(extractorCalls).toBe(0);
+      await expect.poll(() => app.evaluate(() => (globalThis as any).__capri.memory.approved().map((m: any) => m.text)), { timeout: 10000 }).toContain('Lives in Austin');
       expect(await app.evaluate(() => (globalThis as any).__capri.memory.approved().map((m: any) => m.text))).toEqual(['Lives in Austin']);
       await panel.fill('textarea', 'I moved to Boston'); await panel.press('textarea', 'Enter');
       await panel.waitForFunction(() => document.body.innerText.includes('Boston it is.'));
+      await expect.poll(() => app.evaluate(() => (globalThis as any).__capri.memory.approved().map((m: any) => m.text)), { timeout: 10000 }).toContain('Lives in Boston');
       expect(await app.evaluate(() => (globalThis as any).__capri.memory.approved().map((m: any) => m.text))).toEqual(['Lives in Boston']);
       await panel.getByRole('tab', { name: 'Memory', exact: true }).click();
       await panel.waitForSelector('.item');
@@ -1040,6 +1043,29 @@ describe('automatic personal learning', () => {
       await app.evaluate(async () => { const a = (globalThis as any).__capri; await a.convo.send('I moved to Boston'); await a.convo.settle(); });
       expect(extractorCalls).toBe(2);
       expect(await app.evaluate(() => (globalThis as any).__capri.memory.approved()[0].text)).toBe('Lives in Austin');
+    } finally { await model.close(); }
+  });
+});
+
+
+describe('reply priority over background learning', () => {
+  it('answers a new message while a slow memory request is pending', async () => {
+    let learningStarted = false;
+    const model = await mockModel(body => {
+      if (body.messages[0].content.includes('Extract durable personal memory')) { learningStarted = true; return { delayMs: 5000, text: '{"changes":[]}' }; }
+      return body.messages.at(-1)!.content.includes('second') ? 'Second reply arrived.' : 'First reply arrived.';
+    });
+    try {
+      const ud = openaiProfile(model.url), saved = JSON.parse(fs.readFileSync(path.join(ud, 'settings.json'), 'utf8'));
+      saved.memory = { enabled: true, autoLearn: true }; fs.writeFileSync(path.join(ud, 'settings.json'), JSON.stringify(saved));
+      const { app, char } = await launch(ud), panel = await openPanel(app, char);
+      await panel.fill('textarea', 'My favorite drink is tea'); await panel.press('textarea', 'Enter');
+      await panel.waitForFunction(() => document.body.innerText.includes('First reply arrived.'));
+      expect(learningStarted).toBe(false);
+      await expect.poll(() => learningStarted, { timeout: 8000 }).toBe(true);
+      await panel.fill('textarea', 'Here is my second message'); await panel.press('textarea', 'Enter');
+      await panel.waitForFunction(() => document.body.innerText.includes('Second reply arrived.'), undefined, { timeout: 2000 });
+      await app.evaluate(() => (globalThis as any).__capri.settings.update({ memory: { autoLearn: false } }));
     } finally { await model.close(); }
   });
 });

@@ -14,7 +14,9 @@ export interface ConversationDeps {
   history: { append(m: ChatMessage): void; recent(n: number): ChatMessage[] };
   memories(): MemoryItem[];
   companionContext?(): string;
-  memoryContext?(): string;
+  pauseLearning?(): void;
+  queueLearning?(text: string, messageId: string): void;
+  resumeLearning?(): void;
   learn?(text: string, messageId: string, signal: AbortSignal): Promise<void>;
   actionCtx: ActionContext;
   emit(channel: 'chat:delta' | 'chat:done' | 'chat:message' | 'chat:phase' | 'action:result', payload: unknown): void;
@@ -44,6 +46,7 @@ export class Conversation {
 
   /** Stop generation and speech. Safe to call any time. */
   stop() {
+    this.d.pauseLearning?.();
     this.ctrl?.abort();
     this.d.cue({ type: 'stopSpeech' });
     this.onSpeechCleared();
@@ -52,12 +55,14 @@ export class Conversation {
   async send(text: string, opts: { viaVoice?: boolean } = {}): Promise<string> {
     const clean = text.replace(/\u0000/g, '').trim().slice(0, 20_000);
     if (!clean) throw new Error('Empty message');
+    this.d.pauseLearning?.();
     if (this.ctrl) { this.stop(); await this.turn?.catch(() => {}); }
     const userMsg: ChatMessage = { id: newId('u'), role: 'user', content: clean, ts: Date.now() };
     this.d.history.append(userMsg);
     this.d.emit('chat:message', { message: userMsg });
+    this.d.queueLearning?.(clean, userMsg.id);
     const replyId = newId('a');
-    this.turn = this.run(clean, replyId, !!opts.viaVoice, userMsg.id);
+    this.turn = this.run(clean, replyId, !!opts.viaVoice);
     return replyId;
   }
 
@@ -73,10 +78,10 @@ export class Conversation {
       .map<LLMMessage>((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
     // providers like Anthropic require alternating roles beginning with user
     while (past.length && past[0].role !== 'user') past.shift();
-    return [{ role: 'system', content: buildSystemPrompt(s, this.d.memories()) + (this.d.companionContext?.() ?? '') + (this.d.memoryContext?.() ?? '') }, ...past, { role: 'user', content: userText }];
+    return [{ role: 'system', content: buildSystemPrompt(s, this.d.memories()) + (this.d.companionContext?.() ?? '') }, ...past, { role: 'user', content: userText }];
   }
 
-  private async run(userText: string, replyId: string, viaVoice: boolean, userMessageId: string) {
+  private async run(userText: string, replyId: string, viaVoice: boolean) {
     const ctrl = new AbortController();
     this.ctrl = ctrl;
     const s = this.d.settings();
@@ -89,7 +94,6 @@ export class Conversation {
     this.setPhase('thinking');
     this.d.cue({ type: 'react', reaction: viaVoice ? 'nod' : 'curious' });
     try {
-      await this.d.learn?.(userText, userMessageId, ctrl.signal);
       if (ctrl.signal.aborted) throw new ProviderError('Stopped.', 'aborted');
       messages = this.buildMessages(userText);
       for (let round = 0; round <= MAX_ACTION_ROUNDS; round++) {
@@ -154,7 +158,7 @@ export class Conversation {
       this.setPhase(aborted ? 'idle' : 'error', err);
       if (!aborted) this.d.cue({ type: 'react', reaction: 'annoyed' });
     } finally {
-      if (this.ctrl === ctrl) this.ctrl = null;
+      if (this.ctrl === ctrl) { this.ctrl = null; this.d.resumeLearning?.(); }
     }
   }
 

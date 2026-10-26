@@ -1,5 +1,19 @@
 # Capri Buddy: private artwork integration
 
+## 0.2.10 reply priority and background learning
+
+The foreground reply no longer awaits memory extraction. A bounded in-memory
+queue starts after the reply completes and a short quiet delay. A new user
+message cancels pending extraction and defers the unfinished job until chat is
+idle again; one learning request runs at a time. Old/new user facts are processed
+in order, so corrections still replace their prior entries. Current corrections
+are understood from conversation immediately, before long-term storage catches
+up. Manual edits/deletion/Undo, disabled memory and shutdown discard pending
+jobs so they cannot resurrect intentionally removed entries. Completed memories
+remain persistent; unfinished jobs are session-local. Failed learning remains
+independent of reply success. The UI and prompt no longer claim extraction has
+already finished. Successful chat replies now restore connection status.
+
 ## 0.2.9 automatic conversational learning
 
 Opt-in automatic learning runs a bounded structured extraction before the main

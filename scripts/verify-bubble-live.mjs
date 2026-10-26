@@ -6,8 +6,8 @@ import { _electron as electron } from 'playwright-core';
 const root = path.resolve(import.meta.dirname, '..');
 const out = path.resolve(root, '../../work/bubble-check'); fs.mkdirSync(out, { recursive: true });
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'capri-bubble-live-'));
-fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ firstRunComplete: true, character: { scale: 0.55, glitchEffects: false }, ai: { provider: 'codex', requestTimeoutSec: 120 }, voice: { ttsEnabled: false }, teleport: { auto: false } }));
-const app = await electron.launch({ args: [root], env: { ...process.env, CAPRI_TEST: '1', CAPRI_OFFSCREEN: '1', CAPRI_USER_DATA: profile } });
+fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ firstRunComplete: true, character: { scale: 0.55, glitchEffects: false }, ai: { provider: 'codex', requestTimeoutSec: 120 }, voice: { ttsEnabled: false }, memory: { enabled: true, autoLearn: true }, teleport: { auto: false } }));
+const app = await electron.launch({ ...(process.env.CAPRI_EXE ? { executablePath: process.env.CAPRI_EXE, args: [] } : { args: [root] }), env: { ...process.env, CAPRI_TEST: '1', CAPRI_OFFSCREEN: '1', CAPRI_USER_DATA: profile } });
 try {
   const char = await app.firstWindow(); await char.waitForFunction(() => window.__capriDebug);
   const next = app.waitForEvent('window'); await char.evaluate(() => window.capri.invoke('bubble:open'));

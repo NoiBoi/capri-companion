@@ -483,7 +483,7 @@ async function renderMemory() {
     group('Long-term',
       sw('Use in conversations', 'memory.enabled'),
       sw('Learn automatically', 'memory.autoLearn'),
-      h('p', { class: 'hint' }, 'Learns facts and preferences you state, and replaces outdated details when you correct them. Uses an extra model request before each reply. Review changes here or Undo them. Forgotten entries remain here until permanently deleted.'),
+      h('p', { class: 'hint' }, 'Learns facts and preferences you state, and replaces outdated details when you correct them. Runs after replies, with chat taking priority. Uses extra model requests. Review changes here or Undo them. Forgotten entries remain here until permanently deleted.'),
       h('div', { class: 'list' }, ...mem.map(memItem), mem.length ? null : emptyLine('Nothing yet.')),
       h('div', { class: 'row', style: 'margin:8px 0' }, add,
         btn('Add', async () => { if (add.value.trim()) { try { await api.invoke('memory:add', add.value.trim()); go('memory'); } catch (e) { toast((e as Error).message, true); } } }, '', 'plus'),
