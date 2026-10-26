@@ -6,7 +6,15 @@ const form = document.getElementById('composer') as HTMLFormElement, input = doc
 const stop = document.getElementById('stop') as HTMLButtonElement;
 let state: BubbleState;
 let composing = false;
-const measure = () => void api.invoke('bubble:resize', Math.ceil(card.getBoundingClientRect().height + 12));
+let measuredHeight = 0, measureFrame = 0;
+function measure() {
+  cancelAnimationFrame(measureFrame);
+  measureFrame = requestAnimationFrame(() => {
+    const height = Math.ceil((card.getBoundingClientRect().height + 12) / 2) * 2;
+    if (height === measuredHeight) return;
+    measuredHeight = height; void api.invoke('bubble:resize', height);
+  });
+}
 new ResizeObserver(measure).observe(card);
 function render(next: BubbleState) {
   const justOpened = next.composer && !state?.composer;
@@ -36,4 +44,5 @@ document.getElementById('close')!.addEventListener('click', () => { void api.inv
 stop.addEventListener('click', () => { void api.invoke('chat:stop'); });
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') void api.invoke('bubble:close'); });
 api.on('bubble:state', (s) => render(s as BubbleState));
+api.on('bubble:focus', () => input.focus());
 void api.invoke('bubble:get').then(render);

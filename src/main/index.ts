@@ -288,7 +288,7 @@ async function init() {
 
   if (!s0.firstRunComplete) setTimeout(() => openPanel('welcome'), 800);
   else if (!TEST && process.argv.includes('--panel')) setTimeout(() => bubble.open(), 800);
-  if (TEST) (globalThis as Record<string, unknown>).__capri = { get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, get startupMs() { return startupMs; }, get speakCount() { return speakCount; }, presenceTick, settleAfterDrop, throwCharacter, useComputer, exploreTick, get throwing() { return !!throwTimer; }, pendingConfirms, log };
+  if (TEST) (globalThis as Record<string, unknown>).__capri = { get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, bubble, get startupMs() { return startupMs; }, get speakCount() { return speakCount; }, presenceTick, settleAfterDrop, throwCharacter, useComputer, exploreTick, get throwing() { return !!throwTimer; }, pendingConfirms, log };
 }
 
 // ---------------------------------------------------------------- desktop-pet handling: drop onto a ledge, throw

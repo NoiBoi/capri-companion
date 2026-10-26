@@ -801,6 +801,26 @@ describe('sprite interaction regressions', () => {
 });
 
 describe('attached bubble chat', () => {
+  it('keeps bubble dimensions stable during repeated layout updates at 125% display scaling', async () => {
+    const { app, char } = await launch(profile(), { env: { CAPRI_DPR: '1.25' } });
+    const next = app.waitForEvent('window');
+    await char.evaluate(() => (window as unknown as { capri: { invoke(c: string): Promise<unknown> } }).capri.invoke('bubble:open'));
+    const b = await next; await b.waitForSelector('#input'); await b.waitForTimeout(400);
+    const result = await app.evaluate(({ BrowserWindow }) => {
+      const bubble = (globalThis as unknown as { __capri: { bubble: { reposition(): void; resize(h: number): void } } }).__capri.bubble;
+      const w = BrowserWindow.getAllWindows().find((w) => w.getTitle() === 'Capri bubble')!;
+      const before = w.getBounds();
+      for (let i = 0; i < 2000; i++) bubble.reposition();
+      return { before, after: w.getBounds() };
+    });
+    expect(result.after.width).toBe(result.before.width);
+    expect(result.after.height).toBe(result.before.height);
+    await b.waitForTimeout(1200);
+    const after = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.getTitle() === 'Capri bubble')!.getBounds());
+    expect(Math.abs(after.width - result.before.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(after.height - result.before.height)).toBeLessThanOrEqual(2);
+  });
+
   it('chats directly from the attached input without creating the large panel', async () => {
     const server = await mockModel(() => 'There you are. I was getting bored in here.');
     const { app, char } = await launch(openaiProfile(server.url));
@@ -816,6 +836,9 @@ describe('attached bubble chat', () => {
     expect(windows.find((w) => w.title === 'Capri bubble')?.size[1]).toBeLessThanOrEqual(360);
     const secretAttempt = await bubble.evaluate(async () => { try { await (window as unknown as { capri: { invoke(c: string): Promise<unknown> } }).capri.invoke('secrets:status'); return 'allowed'; } catch { return 'blocked'; } });
     expect(secretAttempt).toBe('blocked');
+    await bubble.evaluate(() => document.getElementById('reply')!.focus());
+    await char.evaluate(() => (window as unknown as { capri: { invoke(c: string): Promise<unknown> } }).capri.invoke('bubble:open'));
+    await bubble.waitForFunction(() => document.activeElement?.id === 'input');
     await bubble.press('#input', 'Escape');
     expect(await app.evaluate(({ BrowserWindow }) => (BrowserWindow.getAllWindows().find((w) => w.getTitle() === 'Capri bubble') as unknown as { capriShown?: boolean }).capriShown)).toBe(false);
     await server.close();

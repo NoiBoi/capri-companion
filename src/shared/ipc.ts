@@ -182,6 +182,7 @@ export const EVENT_CHANNELS = [
   'chat:delta', 'chat:done', 'chat:message', 'chat:phase', 'action:confirm', 'action:result', 'memory:changed',
   'settings:changed', 'reminder:fired', 'transcript', 'panel:tab', 'cue', 'connection:status',
   'bubble:state',
+  'bubble:focus',
 ] as const;
 
 export const SECRET_KEYS = ['gemini', 'openai', 'anthropic', 'openaiVoice'] as const;

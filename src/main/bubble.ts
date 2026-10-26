@@ -18,15 +18,19 @@ export class BuddyBubble {
   private visible = false;
   private dismissed = false;
   private disposed = false;
+  private height = 170;
+  private lastBounds: Rectangle | null = null;
   constructor(private d: { anchor(): Rectangle | null; enabled(): boolean; preload: string; log: Logger }) {}
   private ensure() {
     if (this.window && !this.window.isDestroyed()) return this.window;
     const win = (this.window = createBubbleWindow(this.d.preload, this.d.log));
-    win.webContents.once('did-finish-load', () => { this.send(); if (this.visible) { reveal(win, this.state.composer); if (this.state.composer && !OFFSCREEN) win.focus(); } });
+    this.lastBounds = null;
+    win.webContents.once('did-finish-load', () => { this.send(); if (this.visible) { reveal(win, this.state.composer); if (this.state.composer) this.focusInput(); } });
     win.on('closed', () => { if (this.window === win) this.window = null; });
     return win;
   }
   private send() { if (this.window && !this.window.isDestroyed() && !this.window.webContents.isLoading()) this.window.webContents.send('bubble:state', this.state); }
+  private focusInput() { const w = this.window; if (!w || w.isDestroyed() || w.webContents.isLoading()) return; if (!OFFSCREEN) { w.focus(); w.webContents.focus(); } w.webContents.send('bubble:focus', null); }
   private show(focus = false) {
     if (this.disposed || this.dismissed || (!this.d.enabled() && !this.state.composer)) return;
     this.visible = true;
@@ -41,7 +45,7 @@ export class BuddyBubble {
     this.timer = setTimeout(() => this.hide(), Math.min(90000, Math.max(16000, this.state.text.length * 65)));
     this.timer.unref?.();
   }
-  open() { this.dismissed = false; this.state.composer = true; if (this.timer) clearTimeout(this.timer); this.show(true); }
+  open() { this.dismissed = false; this.state.composer = true; if (this.timer) clearTimeout(this.timer); this.show(true); this.focusInput(); }
   hide() { this.visible = false; if (this.window && !this.window.isDestroyed()) conceal(this.window); }
   dismiss() { this.dismissed = true; this.state.composer = false; this.hide(); }
   begin() { this.id = ''; this.state.text = ''; this.dismissed = false; if (this.timer) clearTimeout(this.timer); }
@@ -49,12 +53,23 @@ export class BuddyBubble {
   delta(id: string, text: string) { if (this.id !== id) { this.id = id; this.state.text = ''; } this.state.text = (this.state.text + text).slice(-20000); this.show(); }
   done(message: ChatMessage) { this.id = message.id; this.state.text = message.content; this.state.phase = message.meta?.error ? 'error' : 'idle'; if (message.content) this.show(); this.expire(); }
   remark(text: string) { if (this.state.composer) return; this.dismissed = false; this.state.text = text; this.state.phase = 'idle'; this.show(); this.expire(); }
-  resize(height: number) { const w = this.window; if (!w || w.isDestroyed()) return; const h = Math.round(Math.max(75, Math.min(360, height))); if (w.getBounds().height !== h) w.setSize(340, h); this.reposition(); }
+  resize(height: number) {
+    if (!this.window || this.window.isDestroyed()) return;
+    const h = Math.min(360, Math.max(76, Math.ceil(height / 2) * 2));
+    if (Math.abs(h - this.height) > 2) this.height = h;
+    this.reposition();
+  }
   reposition() {
     const pet = this.d.anchor(), win = this.window;
     if (!pet || !win || win.isDestroyed()) return;
-    const b = win.getBounds(), pos = bubblePosition(pet, b, screen.getDisplayMatching(pet).workArea);
-    if (b.x !== pos.x || b.y !== pos.y) win.setPosition(pos.x, pos.y);
+    // Never feed Windows' rounded native dimensions back into a positioning write.
+    // At fractional DPI, setPosition/readBounds loops can add a pixel on each pass.
+    const size = { width: 340, height: this.height }, pos = bubblePosition(pet, size, screen.getDisplayMatching(pet).workArea);
+    const bounds = { x: pos.x, y: pos.y, ...size }, old = this.lastBounds;
+    if (!old || Math.abs(old.x - bounds.x) > 1 || Math.abs(old.y - bounds.y) > 1 || old.height !== bounds.height) {
+      this.lastBounds = bounds;
+      win.setBounds(bounds);
+    }
     if (this.state.side !== pos.side) { this.state.side = pos.side; this.send(); }
   }
   close() { this.disposed = true; if (this.timer) clearTimeout(this.timer); this.window?.destroy(); this.window = null; }

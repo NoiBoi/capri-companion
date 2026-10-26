@@ -1,5 +1,15 @@
 # Capri Buddy: private artwork integration
 
+## 0.2.3 stable bubble sizing
+
+Bubble movement now writes a fixed requested width and a cached content height.
+It never reuses Windows' rounded native size for the next position update.
+Duplicate layout measurements and two-pixel rounding jitter are ignored, and the
+card has a fixed CSS width so viewport rounding cannot repeatedly rewrap it.
+The chat shortcut also explicitly focuses the input on every opening.
+A regression check exercises 2,000 repeated placements at 125% display scaling
+and verifies that the bubble dimensions remain unchanged while idle.
+
 ## 0.2.2 bubbles and character presence
 
 - Double-click, the chat shortcut, the tray, and the launcher open a compact
