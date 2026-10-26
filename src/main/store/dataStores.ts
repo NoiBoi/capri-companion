@@ -76,6 +76,32 @@ export class MemoryStore extends EventEmitter {
     this.save();
     return item;
   }
+  /** Validate the full batch before changing anything, and preserve existing entries. */
+  importProfile(entries: { text: string; kind: 'fact' | 'preference' | 'interpretation' }[], label: string, asOf: string) {
+    if (!label.trim() || label.length > 160 || !/^\d{4}-\d{2}-\d{2}$/.test(asOf)) throw new Error('Invalid profile source.');
+    const seen = new Set(this.items.map(m => m.text.toLowerCase()));
+    const fresh: MemoryItem[] = [];
+    for (const entry of entries) {
+      const clean = entry.text.replace(/\s+/g, ' ').trim();
+      if (!clean || clean.length > 300 || !['fact', 'preference', 'interpretation'].includes(entry.kind)) throw new Error('Invalid profile entry.');
+      if (seen.has(clean.toLowerCase())) continue;
+      seen.add(clean.toLowerCase());
+      fresh.push({ id: newId('m'), text: clean, createdAt: Date.now(), status: 'approved', source: 'user', context: { label: label.trim(), kind: entry.kind, asOf } });
+    }
+    if (this.items.length + fresh.length > MemoryStore.MAX) throw new Error('Not enough room for the whole profile.');
+    this.items.push(...fresh);
+    if (fresh.length) this.save();
+    return { added: fresh.length, duplicates: entries.length - fresh.length };
+  }
+  update(id: string, text: string): MemoryItem {
+    const item = this.items.find(m => m.id === id);
+    if (!item) throw new Error('Memory not found.');
+    const clean = text.replace(/\s+/g, ' ').trim();
+    if (!clean || clean.length > 300) throw new Error('Memory must contain 1 to 300 characters.');
+    if (this.items.some(m => m.id !== id && m.text.toLowerCase() === clean.toLowerCase())) throw new Error('That memory already exists.');
+    item.text = clean; item.updatedAt = Date.now();
+    this.save(); return structuredClone(item);
+  }
   approve(id: string) { const m = this.items.find((x) => x.id === id); if (m) { m.status = 'approved'; this.save(); } }
   delete(id: string) { this.items = this.items.filter((m) => m.id !== id); this.save(); }
   clear() { this.items = []; this.save(); }

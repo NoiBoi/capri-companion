@@ -234,3 +234,26 @@ describe('Logger', () => {
     expect(log.tail(10).join('\n')).toContain('shown');
   });
 });
+
+
+describe('profile import and correction', () => {
+  it('imports a whole attributed profile once, preserves existing memories, and survives reload', () => {
+    const dir = tmpDir(), store = new MemoryStore(dir);
+    store.add('Prefers concise answers', 'user');
+    const entries = [{ text: 'Name is Sam', kind: 'fact' as const }, { text: 'Profile describes Sam as reserved', kind: 'interpretation' as const }];
+    expect(store.importProfile(entries, 'User profile', '2026-10-26')).toEqual({ added: 2, duplicates: 0 });
+    expect(store.importProfile(entries, 'User profile', '2026-10-26')).toEqual({ added: 0, duplicates: 2 });
+    const loaded = new MemoryStore(dir); expect(loaded.approved()).toHaveLength(3);
+    expect(loaded.list()[2].context).toEqual({ label: 'User profile', kind: 'interpretation', asOf: '2026-10-26' });
+  });
+  it('rejects an invalid batch atomically and persists a correction with its original source', () => {
+    const dir = tmpDir(), store = new MemoryStore(dir);
+    expect(() => store.importProfile([{ text: 'Name is Sam', kind: 'fact' }, { text: '', kind: 'fact' }], 'User profile', '2026-10-26')).toThrow();
+    expect(store.list()).toEqual([]);
+    store.importProfile([{ text: 'Studies physics', kind: 'fact' }], 'User profile', '2026-10-26');
+    const id = store.list()[0].id; store.update(id, 'Studies mechanical engineering');
+    const loaded = new MemoryStore(dir).list()[0];
+    expect(loaded.text).toBe('Studies mechanical engineering'); expect(loaded.updatedAt).toBeTypeOf('number'); expect(loaded.context?.label).toBe('User profile');
+    expect(() => store.update(id, '')).toThrow(); expect(() => store.update('missing', 'Anything')).toThrow();
+  });
+});

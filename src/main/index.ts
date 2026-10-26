@@ -1034,6 +1034,7 @@ function registerIpc() {
 
   handle('memory:list', 'panel', none, () => memory.list());
   handle('memory:add', 'panel', str(300), (t) => memory.add(t, 'user'));
+  handle('memory:update', 'panel', z.object({ id: str(64), text: str(300) }), ({ id, text }) => memory.update(id, text));
   handle('memory:approve', 'panel', str(64), (id) => memory.approve(id));
   handle('memory:delete', 'panel', str(64), (id) => memory.delete(id));
   handle('memory:clear', 'panel', none, () => memory.clear());

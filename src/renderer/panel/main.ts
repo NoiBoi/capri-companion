@@ -460,10 +460,20 @@ async function renderMemory() {
   const [mem, notes, rems] = await Promise.all([api.invoke('memory:list'), api.invoke('notes:list'), api.invoke('reminders:list')]);
   const sc = h('div', { class: 'scroll' });
   const add = h('input', { type: 'text', placeholder: 'Something to remember', maxLength: 300, 'aria-label': 'New memory', style: 'flex:1;width:auto' });
-  const memItem = (m: MemoryItem) => h('div', { class: 'item' },
-    h('div', { class: 'txt' }, m.text, h('div', { class: 'sub' }, `${m.source === 'model' ? 'Suggested by Capri' : 'Added by you'} · ${new Date(m.createdAt).toLocaleDateString()}`)),
-    m.status === 'pending' ? btn('Approve', () => api.invoke('memory:approve', m.id).then(() => go('memory')), 'primary') : null,
-    btn('Delete', () => api.invoke('memory:delete', m.id).then(() => go('memory')), 'quiet'));
+  const memItem = (m: MemoryItem) => {
+    const source = m.context ? m.context.label + ' · ' + m.context.kind + ' · supplied ' + m.context.asOf : m.source === 'model' ? 'Suggested by Capri' : 'Added by you';
+    const card = h('div', { class: 'item' },
+      h('div', { class: 'txt' }, m.text, h('div', { class: 'sub' }, source + (m.updatedAt ? ' · edited ' + new Date(m.updatedAt).toLocaleDateString() : ' · ' + new Date(m.createdAt).toLocaleDateString()))),
+      m.status === 'pending' ? btn('Approve', () => api.invoke('memory:approve', m.id).then(() => go('memory')), 'primary') : null,
+      btn('Edit', () => {
+        const editor = h('textarea', { value: m.text, maxLength: 300, rows: 4, 'aria-label': 'Edit memory', style: 'width:100%;height:100px;resize:vertical;padding:8px' });
+        card.replaceChildren(h('div', { class: 'txt' }, editor,
+          h('div', { class: 'row' }, btn('Save', async () => { try { await api.invoke('memory:update', { id: m.id, text: editor.value }); go('memory'); } catch (e) { toast((e as Error).message, true); } }, 'primary'), btn('Cancel', () => go('memory'), 'quiet'))));
+        editor.focus();
+      }, 'quiet'),
+      btn('Delete', () => api.invoke('memory:delete', m.id).then(() => go('memory')), 'quiet'));
+    return card;
+  };
   sc.append(
     group('Long-term',
       sw('Use in conversations', 'memory.enabled'),

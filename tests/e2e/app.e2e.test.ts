@@ -985,3 +985,23 @@ describe('personality conversation context', () => {
     } finally { await server.close(); }
   });
 });
+
+
+describe('editable persistent personal profile', () => {
+  it('shows provenance and saves a correction across an app restart', async () => {
+    const ud = profile(); const { app, char } = await launch(ud);
+    await app.evaluate(() => (globalThis as any).__capri.memory.importProfile([{ text: 'Name is Sam', kind: 'fact' }], 'User profile', '2026-10-26'));
+    const panel = await openPanel(app, char, 'memory');
+    expect(await panel.locator('.item').filter({ hasText: 'Name is Sam' }).innerText()).toContain('User profile');
+    await panel.locator('.item').filter({ hasText: 'Name is Sam' }).getByRole('button', { name: 'Edit', exact: true }).click();
+    await panel.getByLabel('Edit memory', { exact: true }).fill('Name is Samuel');
+    await panel.getByRole('button', { name: 'Save', exact: true }).click();
+    await panel.waitForFunction(() => document.body.innerText.includes('Name is Samuel'));
+    await quit(app);
+    const second = await launch(ud);
+    const memory = await second.app.evaluate(() => (globalThis as any).__capri.memory.approved());
+    expect(memory[0]).toMatchObject({ text: 'Name is Samuel', context: { label: 'User profile', kind: 'fact', asOf: '2026-10-26' } });
+    const secondPanel = await openPanel(second.app, second.char, 'memory');
+    expect(await secondPanel.locator('.item').filter({ hasText: 'Name is Samuel' }).innerText()).toContain('edited');
+  });
+});

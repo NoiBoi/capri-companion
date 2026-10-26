@@ -245,3 +245,17 @@ describe('Conversation orchestrator', () => {
     expect(h.history.recent(5).at(-1)!.content).toMatch(/Saved note/);
   });
 });
+
+
+describe('attributed personal context', () => {
+  it('keeps tentative descriptions attributed, omits pending entries, and honors memory being off', () => {
+    const items = [
+      { id: 'a', text: 'Profile describes Sam as reserved', createdAt: 0, status: 'approved' as const, source: 'user' as const, context: { label: 'User profile', kind: 'interpretation' as const, asOf: '2026-10-26' } },
+      { id: 'b', text: 'PRIVATE PENDING CLAIM', createdAt: 0, status: 'pending' as const, source: 'model' as const },
+    ];
+    const prompt = buildSystemPrompt(DEFAULT_SETTINGS, items);
+    expect(prompt).toContain('interpretation; User profile; profile supplied 2026-10-26'); expect(prompt).not.toContain('PRIVATE PENDING CLAIM');
+    const settings = structuredClone(DEFAULT_SETTINGS); settings.memory.enabled = false;
+    expect(buildSystemPrompt(settings, items)).not.toContain('Profile describes Sam as reserved');
+  });
+});

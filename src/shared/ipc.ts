@@ -17,6 +17,8 @@ export interface MemoryItem {
   createdAt: number;
   status: 'pending' | 'approved';
   source: 'user' | 'model';
+  updatedAt?: number;
+  context?: { label: string; kind: 'fact' | 'preference' | 'interpretation'; asOf: string };
 }
 export interface Note { id: string; title: string; body: string; createdAt: number }
 export interface Reminder { id: string; text: string; dueAt: number; kind: 'reminder' | 'timer'; fired: boolean }
@@ -124,6 +126,7 @@ export interface InvokeMap {
   'chat:clear': [void, void];
   'memory:list': [void, MemoryItem[]];
   'memory:add': [string, MemoryItem];
+  'memory:update': [{ id: string; text: string }, MemoryItem];
   'memory:approve': [string, void];
   'memory:delete': [string, void];
   'memory:clear': [void, void];
@@ -175,7 +178,7 @@ export type InvokeChannel = keyof InvokeMap;
 export const INVOKE_CHANNELS: InvokeChannel[] = [
   'settings:get', 'settings:set', 'settings:reset', 'secrets:status', 'secrets:set', 'secrets:delete',
   'chat:send', 'chat:stop', 'chat:history', 'chat:clear', 'memory:list', 'memory:add', 'memory:approve',
-  'memory:delete', 'memory:clear', 'notes:list', 'notes:delete', 'reminders:list', 'reminders:cancel',
+  'memory:update', 'memory:delete', 'memory:clear', 'notes:list', 'notes:delete', 'reminders:list', 'reminders:cancel',
   'action:respond', 'provider:test', 'provider:models', 'claude:status', 'claude:signin', 'claude:code', 'claude:signout', 'diagnostics:get', 'logs:tail', 'app:openDataFolder',
   'app:resetAll', 'app:quit', 'app:restart', 'apps:pick', 'folders:pick', 'panel:open', 'panel:close',
   'voice:ptt', 'char:hit', 'char:drag', 'char:click', 'char:menu', 'char:speechState', 'char:audio',

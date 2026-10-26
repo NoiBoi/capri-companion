@@ -1,5 +1,17 @@
 # Capri Buddy: private artwork integration
 
+## 0.2.8 attributed persistent profile
+
+User-supplied profile entries can be imported atomically with source label,
+supply date and fact/preference/interpretation classification. Reimporting the
+same entries does not duplicate them or discard existing memories. The Memory
+panel shows provenance and supports inline correction while retaining the source
+and recording the correction time. Approved context is omitted when memory is
+off; pending entries never enter the prompt. The prompt distinguishes tentative
+interpretations and dated reports from enduring facts, prioritizes current
+corrections, and leaves unknown personal facts unknown. Private import data is
+kept outside the source checkout and persists in the user's local memory store.
+
 ## 0.2.7 character performance
 
 The dialogue brief now gives Capri conversational motives, tastes, vanity,
