@@ -322,6 +322,9 @@ function createCharacter() {
     charWin.setBounds(clampToDisplays({ ...target, ...size }, displaysNow()));
     setTimeout(() => { settled = true; }, 500);
     if (!userHidden && charWin) reveal(charWin);
+    // Creating/resizing a frameless window can reset its native topmost style on Windows.
+    // Apply the preference after the first size/show operation, not only at construction.
+    charWin.setAlwaysOnTop(settings.get().character.alwaysOnTop, 'floating');
     setTimeout(() => sendSurface(true), 600);
     startupMs = Math.round(Date.now() - T0);
     log.info('character ready', { startupMs });
