@@ -152,6 +152,7 @@ export interface InvokeMap {
   'char:audio': [{ wav: Uint8Array; durationMs: number }, void];
   'char:micError': [string, void];
   'char:fps': [number, void];
+  'char:ready': [void, void];
   'tts:fetch': [string, Uint8Array];
   'connection:get': [void, ConnectionStatus];
   'teleport:now': [string | void, { ok: boolean; detail: string }];
@@ -166,7 +167,7 @@ export const INVOKE_CHANNELS: InvokeChannel[] = [
   'action:respond', 'provider:test', 'provider:models', 'claude:status', 'claude:signin', 'claude:code', 'claude:signout', 'diagnostics:get', 'logs:tail', 'app:openDataFolder',
   'app:resetAll', 'app:quit', 'app:restart', 'apps:pick', 'folders:pick', 'panel:open', 'panel:close',
   'voice:ptt', 'char:hit', 'char:drag', 'char:click', 'char:menu', 'char:speechState', 'char:audio',
-  'char:micError', 'char:fps', 'tts:fetch', 'connection:get', 'connection:check', 'teleport:now', 'char:teleport',
+  'char:micError', 'char:fps', 'char:ready', 'tts:fetch', 'connection:get', 'connection:check', 'teleport:now', 'char:teleport',
 ];
 export const EVENT_CHANNELS = [
   'chat:delta', 'chat:done', 'chat:message', 'chat:phase', 'action:confirm', 'action:result', 'memory:changed',

@@ -66,7 +66,7 @@ export const SettingsSchema = z.object({
     exploreAfterMinutes: z.number().min(2).max(120),
   }),
   ai: z.object({
-    provider: z.enum(['gemini', 'claude', 'offline', 'ollama', 'openai', 'anthropic']),
+    provider: z.enum(['codex', 'gemini', 'claude', 'offline', 'ollama', 'openai', 'anthropic']),
     gemini: z.object({ model: z.string().min(3).max(100), fallbackModel: z.string().max(100), thinkingLevel: z.enum(['minimal', 'low', 'medium', 'high']) }),
     ollama: z.object({ baseUrl: httpUrl, model: z.string().max(200) }),
     openai: z.object({ baseUrl: httpUrl, model: z.string().max(200) }),

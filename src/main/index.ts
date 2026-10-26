@@ -6,6 +6,7 @@ import {
 } from 'electron';
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import { runTask, type Screen } from './agent/computer';
+import { findCodex, runCodex } from './ai/codexAccount';
 import { claudeSignIn, claudeSignOut, claudeStatus, claudeSubmitCode } from './ai/claudeAccount';
 import { newId } from './store/jsonFile';
 import * as hands from './desktop/input';
@@ -36,12 +37,12 @@ const TEST = process.env.CAPRI_TEST === '1';
 if (process.env.CAPRI_USER_DATA) app.setPath('userData', path.resolve(process.env.CAPRI_USER_DATA));
 // test/capture only: render at a fixed device scale (crisp high-res frames for the trailer harness)
 if (process.env.CAPRI_TEST === '1' && process.env.CAPRI_DPR) app.commandLine.appendSwitch('force-device-scale-factor', process.env.CAPRI_DPR);
-app.setAppUserModelId('dev.capri.companion');
+app.setAppUserModelId('dev.capri.buddy');
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => openPanel('chat'));
+  app.on('second-instance', (_event, argv) => { if (argv.includes('--quit')) app.quit(); else openPanel('chat'); });
   app.whenReady().then(init).catch((e) => {
     dialog.showErrorBox('Capri failed to start', String(e?.stack || e));
     app.exit(1);
@@ -64,6 +65,7 @@ let tray: Tray | null = null;
 let drag: DragController;
 let wake: WakeWordListener;
 let startupMs = 0;
+let characterReady: (() => void) | null = null;
 let monitor: ConnectionMonitor;
 let teleporter: TeleportController;
 let perchRect: DRect | null = null;
@@ -131,7 +133,9 @@ function makeProvider(): LLMProvider {
 async function init() {
   const dir = app.getPath('userData');
   fs.mkdirSync(dir, { recursive: true });
+  const freshProfile = !fs.existsSync(path.join(dir, 'settings.json'));
   settings = new SettingsStore(dir);
+  if (freshProfile && !TEST && findCodex()) settings.update({ firstRunComplete: true, ai: { provider: 'codex', requestTimeoutSec: 120 }, character: { scale: 0.65, hideOnFullscreen: false }, voice: { ttsEnabled: false } });
   log = new Logger(path.join(dir, 'logs'), settings.get().privacy.logLevel, undefined, undefined, TEST);
   log.info('starting', { version: app.getVersion(), electron: process.versions.electron, test: TEST });
   if (settings.repairedOnLoad.length) log.warn('settings repaired', { fields: settings.repairedOnLoad });
@@ -234,6 +238,7 @@ async function init() {
   powerMonitor.on('resume', () => { reminders.tick(); reclampCharacter(); void monitor.check('resume'); });
 
   if (!s0.firstRunComplete) setTimeout(() => openPanel('welcome'), 800);
+  else if (!TEST && process.argv.includes('--panel')) setTimeout(() => openPanel('chat'), 800);
   if (TEST) (globalThis as Record<string, unknown>).__capri = { get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, get startupMs() { return startupMs; }, get speakCount() { return speakCount; }, presenceTick, settleAfterDrop, throwCharacter, useComputer, exploreTick, get throwing() { return !!throwTimer; }, pendingConfirms, log };
 }
 
@@ -308,7 +313,10 @@ function createCharacter() {
   const s0 = settings.get();
   if (s0.character.position) { target.x = s0.character.position.x; target.y = s0.character.position.y; }
   let settled = false;
-  charWin.once('ready-to-show', () => {
+  let ready = false;
+  characterReady = () => {
+    if (ready) return;
+    ready = true;
     if (!charWin) return;
     const size = characterSize(s0.character.scale);
     charWin.setBounds(clampToDisplays({ ...target, ...size }, displaysNow()));
@@ -317,7 +325,8 @@ function createCharacter() {
     setTimeout(() => sendSurface(true), 600);
     startupMs = Math.round(Date.now() - T0);
     log.info('character ready', { startupMs });
-  });
+  };
+  charWin.once('ready-to-show', characterReady);
   // 'moved' only fires for user moves on Windows; also persist programmatic/snap moves (debounced)
   let moveTimer: NodeJS.Timeout | null = null;
   charWin.on('move', () => {
@@ -567,11 +576,12 @@ async function captureScreen(): Promise<Screen> {
  * exploring, any mouse movement or keypress of the user's own ends it too. */
 async function useComputer(task: string, opts: { explore?: boolean; maxSteps?: number } = {}): Promise<{ ok: boolean; summary: string; steps: number }> {
   const key = secretFor('gemini');
-  if (!key) return { ok: false, summary: 'Using the computer needs a Gemini API key (Model → Gemini API key).', steps: 0 };
+  const viaCodex = settings.get().ai.provider === 'codex';
+  if (!key && !viaCodex) return { ok: false, summary: 'Using the computer needs Codex (your account) or a Gemini API key in Model settings.', steps: 0 };
   if (!hands.inputAvailable()) return { ok: false, summary: 'Mouse and keyboard control is unavailable on this system.', steps: 0 };
   if (agentCtrl) return { ok: false, summary: "I'm already in the middle of a task.", steps: 0 };
   const ctrl = (agentCtrl = new AbortController());
-  const ai = new GoogleGenAI({ apiKey: key });
+  const ai = key ? new GoogleGenAI({ apiKey: key }) : null;
   // the user taking the mouse back: the cursor is somewhere she didn't put it, or (exploring) a key went down
   let expected = hands.cursor(), moving = false, lastOwn = Date.now();
   hands.escapeDown(); // forget an Esc tap from before the task
@@ -593,6 +603,7 @@ async function useComputer(task: string, opts: { explore?: boolean; maxSteps?: n
     const r = await runTask(task, {
       capture: captureScreen,
       decide: async (prompt, s, signal) => {
+        if (viaCodex) return runCodex(prompt + '\nReturn only the requested JSON. Do not use CLI tools. The desktop app executes the actions.', { signal, timeoutMs: settings.get().ai.requestTimeoutSec * 1000, jpegBase64: s.jpegBase64 });
         // free-tier keys allow only a few requests a minute per model: on "too many requests" or "busy"
         // move to the next vision model, and if all of them are cooling down, wait it out
         for (let tries = 0; tries < 8; tries++) {
@@ -606,7 +617,7 @@ async function useComputer(task: string, opts: { explore?: boolean; maxSteps?: n
             continue;
           }
           try {
-            const res = await ai.models.generateContent({
+            const res = await ai!.models.generateContent({
               model,
               contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: s.jpegBase64 } }] }],
               config: {
@@ -881,7 +892,7 @@ function registerIpc() {
     lastInteraction = Date.now();
     return { messageId: await convo.send(text) };
   });
-  handle('chat:stop', 'any', none, () => { convo.stop(); }); // a computer task stops only on Esc
+  handle('chat:stop', 'any', none, () => { agentCtrl?.abort(); convo.stop(); });
   handle('chat:history', 'panel', z.object({ limit: z.number().int().min(1).max(2000).optional() }).optional(), (a) => history.recent(a?.limit ?? 200));
   handle('chat:clear', 'panel', none, () => history.clear());
 
@@ -950,6 +961,7 @@ function registerIpc() {
     toPanel('chat:phase', { phase: 'error', detail: `Microphone error: ${msg}` });
   });
   handle('char:fps', 'char', z.number().min(0).max(1000), (fps) => { lastFps = fps; });
+  handle('char:ready', 'char', none, () => characterReady?.());
   handle('tts:fetch', 'char', str(4000), async (text) => {
     const v = settings.get().voice;
     const key = secrets.get('openaiVoice') ?? secrets.get('openai');

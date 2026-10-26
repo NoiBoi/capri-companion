@@ -19,7 +19,18 @@ There is no telemetry. Gemini requests are sent with `store: false`, so Google d
 
 - **Microphone:** off by default. Electron's permission handler grants audio only to the character window, and only while *Allow microphone* is on. The stream opens only while recording (push-to-talk or after the wake word) and is released immediately. A green ring and mic badge show on Capri while it's live. The temporary WAV is deleted right after transcription.
 - **Wake word:** opt-in. It's a single on-device recognizer child process; audio never leaves the PC. It exits when Capri exits, even after a crash, because it watches the parent PID.
-- **Screen:** Capri never captures the screen. The fullscreen check reads only the foreground window's rectangle and class name.
+- **Screen:** requested computer-control tasks capture the primary display and send reduced-size screenshots to the selected computer-use backend (Codex account or Gemini). The permission policy asks before a task starts. Ordinary idle animation does not capture screenshots. The fullscreen check reads the foreground window's rectangle and class name.
+
+## Private Codex integration
+
+The Codex provider launches the installed CLI using its own existing sign-in;
+Capri does not read or copy Codex credentials. Its empty temporary working folder
+contains only the current request's screenshot, if any, and is removed after the
+process exits. User configuration is ignored, the shell tool is disabled, and
+Codex sessions are ephemeral. The desktop app receives text/action data and
+applies its normal action validation and permission policies. Conversation
+history still follows Capri's history settings. Chat and screenshot requests
+use the user's Codex account allowance and require network access.
 
 ## Tool safety
 

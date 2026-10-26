@@ -10,7 +10,8 @@ import { TeleportFx } from './teleportFx';
 import { POSTURES, type PostureName, type Surface } from './postures';
 import { clipByName } from './clips';
 import type { Reaction } from './behavior';
-import { CapriModel, type PoseName } from './model';
+import type { PoseName } from './model';
+import { CapriSpriteModel } from './spriteModel';
 import { modelPoseFor } from './poseMap';
 
 /** Model-requested emotes → validated reactions/clips (the model never touches the renderer directly). */
@@ -47,7 +48,7 @@ let surface: Surface = 'taskbar';
 let dashing = 0; // pose override for previews/tests only
 
 const fx = new TeleportFx(() => document.createElement('canvas'));
-const model = new CapriModel();
+const model = new CapriSpriteModel();
 let variantFor = '', variant = 0, lastP: Params | null = null, shownPose: PoseName | null = null;
 let workPose: 'back' | 'crouch' | 'sit' | null = null; // set while she uses the PC
 function modelPose(): PoseName {
@@ -135,7 +136,7 @@ function tick(dt: number) {
   g.clearRect(0, 0, canvas.width, canvas.height);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   lastP = p;
-  model.draw(g, p, dt, { pose: modelPose(), ledge: surface === 'taskbar' || surface === 'window', dragging, glitchEnabled: settings.character.glitchEffects }, W, H);
+  model.draw(g, p, dt, { pose: modelPose(), ledge: surface === 'taskbar' || surface === 'window', taskbar: surface === 'taskbar', dragging, glitchEnabled: settings.character.glitchEffects }, W, H);
   if (glitch) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -269,9 +270,12 @@ api.on('settings:changed', (s) => { settings = s as Settings; });
 // ---------------------------------------------------------------- boot
 (async () => {
   settings = await api.invoke('settings:get');
+  await model.ready;
   resize();
   watchDpr();
   anim.snap({ ...NEUTRAL });
+  tick(1 / 60);
+  await api.invoke('char:ready');
   raf = requestAnimationFrame(loop);
   window.__capriDebug = {
     behavior, anim, speaker, model, mic, fx, postures: POSTURES,

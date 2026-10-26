@@ -1,5 +1,5 @@
 {
-  "name": "capri-companion",
+  "name": "capri-buddy",
   "version": "0.2.0",
   "main": "dist/main/index.js",
   "scripts": {
@@ -15,7 +15,7 @@
   },
   "author": "Capri Companion contributors",
   "license": "MIT",
-  "description": "Capri \u2014 a desktop AI companion (fan-made, unofficial)",
+  "description": "Private Capri companion with lachydotmcg artwork",
   "dependencies": {
     "@google/genai": "^2.31.0",
     "koffi": "^3.3.4"
@@ -30,11 +30,11 @@
     "vitest": "^5.0.5",
     "zod": "^4.6.7"
   },
-  "productName": "Capri",
+  "productName": "Capri Buddy",
   "private": true,
   "build": {
-    "appId": "dev.capri.companion",
-    "productName": "Capri",
+    "appId": "dev.capri.buddy",
+    "productName": "Capri Buddy",
     "copyright": "Unofficial fan project. Not affiliated with CD PROJEKT, Studio Trigger or Netflix.",
     "directories": {
       "output": "release",
@@ -70,7 +70,8 @@
         }
       ],
       "icon": "build/icon.ico",
-      "legalTrademarks": "Unofficial fan project"
+      "legalTrademarks": "Unofficial fan project",
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
@@ -79,7 +80,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Capri",
+      "shortcutName": "Capri Buddy",
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false,
       "installerIcon": "build/icon.ico",

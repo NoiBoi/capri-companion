@@ -1,6 +1,7 @@
 import type { Settings } from '../../shared/settings';
 import { GeminiProvider } from './gemini';
 import { ClaudeAccountProvider } from './claudeAccount';
+import { CodexAccountProvider } from './codexAccount';
 
 export interface LLMMessage { role: 'system' | 'user' | 'assistant'; content: string }
 export interface GenOptions { temperature: number; maxTokens: number; timeoutMs: number; signal: AbortSignal }
@@ -230,6 +231,7 @@ export class AnthropicProvider implements LLMProvider {
 
 export function createProvider(s: Settings['ai'], secret: (k: 'openai' | 'anthropic' | 'gemini') => string | undefined, offline: LLMProvider, extra: { onModelUsed?: (m: string, fallback: boolean) => void; geminiServerUrl?: string } = {}): LLMProvider {
   switch (s.provider) {
+    case 'codex': return new CodexAccountProvider();
     case 'gemini': return new GeminiProvider({ apiKey: secret('gemini'), model: s.gemini.model, fallbackModel: s.gemini.fallbackModel, thinkingLevel: s.gemini.thinkingLevel, onModelUsed: extra.onModelUsed, serverUrl: extra.geminiServerUrl });
     case 'claude': return new ClaudeAccountProvider(s.claude.model);
     case 'ollama': return new OllamaProvider(s.ollama.baseUrl, s.ollama.model);

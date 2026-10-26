@@ -348,7 +348,8 @@ async function renderModel() {
       btn('Test', async () => { result.textContent = 'Testing…'; const r = await api.invoke('provider:test'); result.textContent = `${r.ok ? 'OK' : 'Failed'}: ${r.detail}${r.latencyMs !== undefined ? ` · ${r.latencyMs} ms` : ''}`; const list = await api.invoke('provider:models'); datalist.replaceChildren(...list.map((m) => h('option', { value: m }))); })),
     result, datalist),
     group('Provider',
-      field('Provider', select('ai.provider', 'Provider', [['claude', 'Claude (your account)'], ['gemini', 'Google Gemini'], ['ollama', 'Ollama'], ['openai', 'OpenAI-compatible'], ['anthropic', 'Anthropic'], ['offline', 'None (offline commands)']], () => go('model'))),
+      field('Provider', select('ai.provider', 'Provider', [['codex', 'Codex (your account)'], ['claude', 'Claude (your account)'], ['gemini', 'Google Gemini'], ['ollama', 'Ollama'], ['openai', 'OpenAI-compatible'], ['anthropic', 'Anthropic'], ['offline', 'None (offline commands)']], () => go('model'))),
+      prov === 'codex' ? h('p', { class: 'sub' }, 'Uses your installed Codex CLI and existing sign-in. Chat and computer tasks count toward Codex usage. Click Test to check sign-in.') : null,
       prov === 'gemini' ? h('div', {},
         field('Model', text('ai.gemini.model', 'Model', 'gemini-3.5-flash-lite', 'models')),
         field('Fallback', text('ai.gemini.fallbackModel', 'Fallback model', 'none', 'models')),
@@ -570,6 +571,7 @@ function renderWelcome() {
     h('b', {}, title), h('span', { class: 'sub' }, sub), h('span', { class: 'go' }, '→'));
   view.append(h('div', { class: 'scroll' }, h('div', { class: 'welcome' },
     h('h2', {}, 'Choose her brain'),
+    choice('Codex', 'Use your existing Codex sign-in', 'codex'),
     choice('Claude', 'Sign in with your Claude account', 'claude'),
     choice('Google Gemini', 'Needs an API key', 'gemini'),
     choice('Ollama', 'Local, on this PC', 'ollama'),
