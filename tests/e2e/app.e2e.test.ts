@@ -1005,3 +1005,41 @@ describe('editable persistent personal profile', () => {
     expect(await secondPanel.locator('.item').filter({ hasText: 'Name is Samuel' }).innerText()).toContain('edited');
   });
 });
+
+
+describe('automatic personal learning', () => {
+  it('learns before replying, replaces a corrected fact, supports Undo and honors the switch', async () => {
+    let extractorCalls = 0;
+    const model = await mockModel(body => {
+      if (body.messages[0].content.includes('Extract durable personal memory')) {
+        extractorCalls++;
+        const data = JSON.parse(body.messages.at(-1)!.content);
+        if (data.current_user_message.includes('moved')) return JSON.stringify({ changes: [{ op: 'update', id: data.existing_memories[0].id, text: 'Lives in Boston', kind: 'fact', evidence: 'I moved to Boston' }] });
+        return JSON.stringify({ changes: [{ op: 'add', text: 'Lives in Austin', kind: 'fact', evidence: 'I live in Austin' }] });
+      }
+      return body.messages[0].content.includes('Lives in Boston') ? 'Boston it is.' : 'Got it, Austin.';
+    });
+    try {
+      const ud = openaiProfile(model.url);
+      const saved = JSON.parse(fs.readFileSync(path.join(ud, 'settings.json'), 'utf8')); saved.memory = { enabled: true, autoLearn: true }; fs.writeFileSync(path.join(ud, 'settings.json'), JSON.stringify(saved));
+      const { app, char } = await launch(ud);
+      const panel = await openPanel(app, char);
+      await panel.fill('textarea', 'I live in Austin'); await panel.press('textarea', 'Enter');
+      await panel.waitForFunction(() => document.body.innerText.includes('Got it, Austin.'));
+      expect(await app.evaluate(() => (globalThis as any).__capri.memory.approved().map((m: any) => m.text))).toEqual(['Lives in Austin']);
+      await panel.fill('textarea', 'I moved to Boston'); await panel.press('textarea', 'Enter');
+      await panel.waitForFunction(() => document.body.innerText.includes('Boston it is.'));
+      expect(await app.evaluate(() => (globalThis as any).__capri.memory.approved().map((m: any) => m.text))).toEqual(['Lives in Boston']);
+      await panel.getByRole('tab', { name: 'Memory', exact: true }).click();
+      await panel.waitForSelector('.item');
+      expect(await panel.locator('.item').first().innerText()).toContain('I moved to Boston');
+      await panel.getByRole('button', { name: 'Undo', exact: true }).click();
+      await panel.waitForFunction(() => document.body.innerText.includes('Lives in Austin'));
+      await panel.getByRole('switch', { name: 'Learn automatically', exact: true }).uncheck();
+      await panel.waitForTimeout(150);
+      await app.evaluate(async () => { const a = (globalThis as any).__capri; await a.convo.send('I moved to Boston'); await a.convo.settle(); });
+      expect(extractorCalls).toBe(2);
+      expect(await app.evaluate(() => (globalThis as any).__capri.memory.approved()[0].text)).toBe('Lives in Austin');
+    } finally { await model.close(); }
+  });
+});

@@ -14,6 +14,8 @@ export interface ConversationDeps {
   history: { append(m: ChatMessage): void; recent(n: number): ChatMessage[] };
   memories(): MemoryItem[];
   companionContext?(): string;
+  memoryContext?(): string;
+  learn?(text: string, messageId: string, signal: AbortSignal): Promise<void>;
   actionCtx: ActionContext;
   emit(channel: 'chat:delta' | 'chat:done' | 'chat:message' | 'chat:phase' | 'action:result', payload: unknown): void;
   cue(c: CharacterCue): void;
@@ -55,7 +57,7 @@ export class Conversation {
     this.d.history.append(userMsg);
     this.d.emit('chat:message', { message: userMsg });
     const replyId = newId('a');
-    this.turn = this.run(clean, replyId, !!opts.viaVoice);
+    this.turn = this.run(clean, replyId, !!opts.viaVoice, userMsg.id);
     return replyId;
   }
 
@@ -71,15 +73,15 @@ export class Conversation {
       .map<LLMMessage>((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
     // providers like Anthropic require alternating roles beginning with user
     while (past.length && past[0].role !== 'user') past.shift();
-    return [{ role: 'system', content: buildSystemPrompt(s, this.d.memories()) + (this.d.companionContext?.() ?? '') }, ...past, { role: 'user', content: userText }];
+    return [{ role: 'system', content: buildSystemPrompt(s, this.d.memories()) + (this.d.companionContext?.() ?? '') + (this.d.memoryContext?.() ?? '') }, ...past, { role: 'user', content: userText }];
   }
 
-  private async run(userText: string, replyId: string, viaVoice: boolean) {
+  private async run(userText: string, replyId: string, viaVoice: boolean, userMessageId: string) {
     const ctrl = new AbortController();
     this.ctrl = ctrl;
     const s = this.d.settings();
     const speak = s.voice.ttsEnabled;
-    const messages = this.buildMessages(userText);
+    let messages: LLMMessage[];
     let visible = '';
     let tainted = false;
     let utterance = 0;
@@ -87,6 +89,9 @@ export class Conversation {
     this.setPhase('thinking');
     this.d.cue({ type: 'react', reaction: viaVoice ? 'nod' : 'curious' });
     try {
+      await this.d.learn?.(userText, userMessageId, ctrl.signal);
+      if (ctrl.signal.aborted) throw new ProviderError('Stopped.', 'aborted');
+      messages = this.buildMessages(userText);
       for (let round = 0; round <= MAX_ACTION_ROUNDS; round++) {
         const parser = new ActionStreamParser();
         const chunker = new SentenceChunker();

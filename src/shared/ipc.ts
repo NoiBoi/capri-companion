@@ -11,12 +11,19 @@ export interface ChatMessage {
   meta?: { provider?: string; error?: string; interrupted?: boolean; actionStatus?: string };
 }
 
+export interface MemoryRevision {
+  at: number; messageId: string; evidence: string;
+  before: { text: string; status: 'pending' | 'approved'; source: 'user' | 'model'; context?: MemoryItem['context']; learnedFrom?: MemoryItem['learnedFrom']; updatedAt?: number; archived?: boolean } | null;
+}
 export interface MemoryItem {
   id: string;
   text: string;
   createdAt: number;
   status: 'pending' | 'approved';
   source: 'user' | 'model';
+  archived?: boolean;
+  learnedFrom?: { messageId: string; evidence: string };
+  revisions?: MemoryRevision[];
   updatedAt?: number;
   context?: { label: string; kind: 'fact' | 'preference' | 'interpretation'; asOf: string };
 }
@@ -126,6 +133,7 @@ export interface InvokeMap {
   'chat:clear': [void, void];
   'memory:list': [void, MemoryItem[]];
   'memory:add': [string, MemoryItem];
+  'memory:undo': [string, void];
   'memory:update': [{ id: string; text: string }, MemoryItem];
   'memory:approve': [string, void];
   'memory:delete': [string, void];
@@ -178,7 +186,7 @@ export type InvokeChannel = keyof InvokeMap;
 export const INVOKE_CHANNELS: InvokeChannel[] = [
   'settings:get', 'settings:set', 'settings:reset', 'secrets:status', 'secrets:set', 'secrets:delete',
   'chat:send', 'chat:stop', 'chat:history', 'chat:clear', 'memory:list', 'memory:add', 'memory:approve',
-  'memory:update', 'memory:delete', 'memory:clear', 'notes:list', 'notes:delete', 'reminders:list', 'reminders:cancel',
+  'memory:undo', 'memory:update', 'memory:delete', 'memory:clear', 'notes:list', 'notes:delete', 'reminders:list', 'reminders:cancel',
   'action:respond', 'provider:test', 'provider:models', 'claude:status', 'claude:signin', 'claude:code', 'claude:signout', 'diagnostics:get', 'logs:tail', 'app:openDataFolder',
   'app:resetAll', 'app:quit', 'app:restart', 'apps:pick', 'folders:pick', 'panel:open', 'panel:close',
   'voice:ptt', 'char:hit', 'char:drag', 'char:click', 'char:menu', 'char:speechState', 'char:audio',

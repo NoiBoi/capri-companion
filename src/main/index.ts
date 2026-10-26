@@ -27,6 +27,7 @@ import { ConnectionMonitor } from './ai/connection';
 import { TeleportController } from './desktop/teleportController';
 import { SEAT_RATIO, TELEPORT_TARGETS, type TeleportTarget } from './desktop/teleport';
 import { displayFor, type Rect as DRect } from './desktop/displays';
+import { MemoryLearning } from './ai/memoryLearning';
 import { Conversation } from './ai/conversation';
 import type { ActionContext } from './actions/registry';
 import { createCharacterWindow, createPanelWindow, characterSize, displaysNow, DragController, OFFSCREEN, reveal, conceal, shown } from './windows';
@@ -239,7 +240,10 @@ async function init() {
     emote: (name) => { cue({ type: 'clip', name }); return true; },
     useComputer: (task) => useComputer(task),
   };
+  const learner = new MemoryLearning({ settings: () => settings.get(), provider: makeProvider, memory, log });
   convo = new Conversation({
+    memoryContext: () => learner.context,
+    learn: (text, messageId, signal) => learner.learn(text, messageId, signal),
     settings: () => settings.get(),
     provider: makeProvider,
     companionContext: () => settings.get().character.personality ? `\nYour current companion mood is ${companionMood}. ${lastCompanionEvent && Date.now() - lastCompanionEventAt < 120000 ? `Recent interaction: ${lastCompanionEvent}.` : ''} Let this subtly color your delivery while staying helpful. Do not announce mood labels or invent events. Approved memories and conversation history provide familiarity; mention them only when relevant.\n` : '',
@@ -1034,6 +1038,7 @@ function registerIpc() {
 
   handle('memory:list', 'panel', none, () => memory.list());
   handle('memory:add', 'panel', str(300), (t) => memory.add(t, 'user'));
+  handle('memory:undo', 'panel', str(64), (id) => memory.undo(id));
   handle('memory:update', 'panel', z.object({ id: str(64), text: str(300) }), ({ id, text }) => memory.update(id, text));
   handle('memory:approve', 'panel', str(64), (id) => memory.approve(id));
   handle('memory:delete', 'panel', str(64), (id) => memory.delete(id));

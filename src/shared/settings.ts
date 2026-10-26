@@ -96,7 +96,7 @@ export const SettingsSchema = z.object({
     wakeWord: z.boolean(),
     interactionLines: z.boolean(), // a short spoken line when you poke, pat or call her
   }),
-  memory: z.object({ enabled: z.boolean(), historyRetentionDays: z.number().int().min(0).max(3650) }),
+  memory: z.object({ enabled: z.boolean(), autoLearn: z.boolean(), historyRetentionDays: z.number().int().min(0).max(3650) }),
   privacy: z.object({ saveHistory: z.boolean(), logLevel: z.enum(['debug', 'info', 'warn', 'error']) }),
   actions: z.object({
     policies: z.record(z.enum(TOOL_NAMES), Policy),
@@ -198,7 +198,7 @@ export const DEFAULT_SETTINGS: Settings = {
     wakeWord: false,
     interactionLines: true,
   },
-  memory: { enabled: true, historyRetentionDays: 90 },
+  memory: { enabled: true, autoLearn: false, historyRetentionDays: 90 },
   privacy: { saveHistory: true, logLevel: 'info' },
   actions: { policies: { ...DEFAULT_POLICIES }, approvedApps: [], searchRoots: [] },
   startup: { launchOnLogin: false },

@@ -1,5 +1,25 @@
 # Capri Buddy: private artwork integration
 
+## 0.2.9 automatic conversational learning
+
+Opt-in automatic learning runs a bounded structured extraction before the main
+reply, using the configured model and only the current user's message as new
+evidence. Explicit durable facts/preferences are saved; corrections update the
+matching entry rather than append contradictory versions. Uncertain or quoted
+claims and temporary moods are excluded by the extraction contract. Each change
+requires an exact supporting quote, validated schema and an unchanged store
+snapshot. Manual edits, deletion, disabled memory and cancellation take priority.
+Failures leave memory unchanged and do not prevent the main reply.
+
+Automatic changes retain up to eight reversible revisions per entry with source
+message ID and evidence, visible in Memory. Forget requests exclude entries
+from future memory context while retaining a reversible local record until the
+user permanently deletes it. Undo never rewrites a later manual correction.
+An extra model request can add latency and usage. No background polling or
+retroactive mining of saved conversations is added. Existing model-suggested
+remember actions remain governed by their original policy when learning is off.
+The Memory panel ignores superseded asynchronous refreshes after mutations.
+
 ## 0.2.8 attributed persistent profile
 
 User-supplied profile entries can be imported atomically with source label,

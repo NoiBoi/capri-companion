@@ -64,17 +64,53 @@ export class MemoryStore extends EventEmitter {
   }
   private save() { writeJsonAtomic(this.file, this.items); this.emit('changed'); }
   list() { return [...this.items]; }
-  approved() { return this.items.filter((m) => m.status === 'approved'); }
+  approved() { return this.items.filter((m) => m.status === 'approved' && !m.archived); }
   add(text: string, source: 'user' | 'model'): MemoryItem {
     const clean = text.replace(/\s+/g, ' ').trim().slice(0, 300);
     if (!clean) throw new Error('Memory text is empty');
-    const dupe = this.items.find((m) => m.text.toLowerCase() === clean.toLowerCase());
+    const dupe = this.items.find((m) => !m.archived && m.text.toLowerCase() === clean.toLowerCase());
     if (dupe) return dupe;
     if (this.items.length >= MemoryStore.MAX) throw new Error(`Memory is full (${MemoryStore.MAX} items). Delete some first.`);
     const item: MemoryItem = { id: newId('m'), text: clean, createdAt: Date.now(), status: source === 'user' ? 'approved' : 'pending', source };
     this.items.push(item);
     this.save();
     return item;
+  }
+  /** Commit only against the exact snapshot the learner read; user edits always win. */
+  learn(change: { op: 'add' | 'update' | 'forget'; id?: string; text: string; kind: 'fact' | 'preference'; evidence: string }, messageId: string, snapshot: MemoryItem[]) {
+    const now = Date.now();
+    const clean = change.text.replace(/\s+/g, ' ').trim();
+    if (change.op !== 'forget' && (!clean || clean.length > 300)) return false;
+    if (change.op === 'add' && change.id) return false;
+    const item = change.id ? this.items.find(m => m.id === change.id) : undefined;
+    if (change.op !== 'add') {
+      const original = snapshot.find(m => m.id === change.id);
+      if (!item || item.archived || !original || JSON.stringify(item) !== JSON.stringify(original)) return false;
+    }
+    if (change.op !== 'forget' && this.items.some(m => !m.archived && m.id !== item?.id && m.text.toLowerCase() === clean.toLowerCase())) return false;
+    if (change.op === 'add' && this.items.length >= MemoryStore.MAX) return false;
+    const before = item ? { text: item.text, status: item.status, source: item.source, context: item.context, updatedAt: item.updatedAt, archived: item.archived, learnedFrom: item.learnedFrom } : null;
+    const target: MemoryItem = item ?? { id: newId('m'), text: clean, createdAt: now, status: 'approved', source: 'user' };
+    target.revisions = [...(target.revisions ?? []), { at: now, messageId, evidence: change.evidence.slice(0, 500), before }].slice(-8);
+    target.updatedAt = now;
+    target.learnedFrom = { messageId, evidence: change.evidence.slice(0, 500) };
+    if (change.op === 'forget') target.archived = true;
+    else {
+      target.text = clean; target.status = 'approved'; target.archived = false;
+      target.context = { label: 'Learned from your conversation', kind: change.kind, asOf: new Date(now).toISOString().slice(0, 10) };
+    }
+    if (!item) this.items.push(target);
+    this.save(); return true;
+  }
+  undo(id: string) {
+    const item = this.items.find(m => m.id === id), revision = item?.revisions?.at(-1);
+    if (!item || !revision || revision.at !== item.updatedAt) throw new Error('No automatic change to undo.');
+    if (!revision.before) this.items = this.items.filter(m => m.id !== id);
+    else {
+      item.revisions!.pop();
+      Object.assign(item, { context: undefined, updatedAt: undefined, archived: false, learnedFrom: undefined }, revision.before);
+    }
+    this.save();
   }
   /** Validate the full batch before changing anything, and preserve existing entries. */
   importProfile(entries: { text: string; kind: 'fact' | 'preference' | 'interpretation' }[], label: string, asOf: string) {
@@ -99,7 +135,7 @@ export class MemoryStore extends EventEmitter {
     const clean = text.replace(/\s+/g, ' ').trim();
     if (!clean || clean.length > 300) throw new Error('Memory must contain 1 to 300 characters.');
     if (this.items.some(m => m.id !== id && m.text.toLowerCase() === clean.toLowerCase())) throw new Error('That memory already exists.');
-    item.text = clean; item.updatedAt = Date.now();
+    item.text = clean; item.updatedAt = Date.now(); item.revisions = []; item.learnedFrom = undefined;
     this.save(); return structuredClone(item);
   }
   approve(id: string) { const m = this.items.find((x) => x.id === id); if (m) { m.status = 'approved'; this.save(); } }

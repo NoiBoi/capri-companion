@@ -25,7 +25,7 @@ export function codexEventText(line: string): { text?: string; error?: string } 
   return {};
 }
 
-export async function runCodex(prompt: string, opts: { signal: AbortSignal; timeoutMs: number; jpegBase64?: string }): Promise<string> {
+export async function runCodex(prompt: string, opts: { signal: AbortSignal; timeoutMs: number; jpegBase64?: string; outputSchema?: object }): Promise<string> {
   const exe = findCodex();
   if (!exe) throw new ProviderError('Codex CLI was not found. Install/sign in to Codex, or choose another provider.', 'config');
   if (opts.signal.aborted) throw new ProviderError('Stopped.', 'aborted');
@@ -38,6 +38,7 @@ export async function runCodex(prompt: string, opts: { signal: AbortSignal; time
     fs.writeFileSync(file, Buffer.from(opts.jpegBase64, 'base64'));
     args.push('--image', file);
   }
+  if (opts.outputSchema) { const schemaFile = path.join(dir, 'output-schema.json'); fs.writeFileSync(schemaFile, JSON.stringify(opts.outputSchema)); args.push('--output-schema', schemaFile); }
   args.push('-');
   try {
     return await new Promise<string>((resolve, reject) => {
@@ -74,6 +75,11 @@ export class CodexAccountProvider implements LLMProvider {
   async *stream(messages: LLMMessage[], o: GenOptions): AsyncGenerator<string> {
     const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
     const turns = messages.filter((m) => m.role !== 'system').map((m) => `${m.role === 'user' ? 'User' : 'Capri'}: ${m.content}`).join('\n\n');
+    if (o.purpose === 'memory') {
+      const outputSchema = { type: 'object', additionalProperties: false, properties: { changes: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { op: { type: 'string', enum: ['add', 'update', 'forget'] }, id: { type: 'string' }, text: { type: 'string' }, kind: { type: 'string', enum: ['fact', 'preference'] }, evidence: { type: 'string' } }, required: ['op', 'id', 'text', 'kind', 'evidence'] } } }, required: ['changes'] };
+      yield await runCodex(`${system}\nUse an empty id for additions. Return only the required JSON.\n\nINPUT DATA:\n${messages.filter(m => m.role === 'user').map(m => m.content).join('\n')}`, { ...o, outputSchema });
+      return;
+    }
     yield await runCodex(`You are the conversation engine for a desktop character. Follow the character instructions below. Do not use any CLI tools, inspect files, or perform tasks yourself. Desktop actions must be emitted only using the character's action protocol. Reply only with Capri's reply to the final turn, with no analysis or preface.\n\nCHARACTER INSTRUCTIONS:\n${system}\n\nCONVERSATION:\n${turns}`, o);
   }
   async test(): Promise<{ ok: boolean; detail: string; latencyMs?: number }> {

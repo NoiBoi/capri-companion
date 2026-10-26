@@ -127,7 +127,9 @@ function renderRail() {
   const rail = document.getElementById('rail')!;
   rail.replaceChildren(...TABS.map((t) => h('button', { role: 'tab', 'aria-selected': String(t.id === tab), 'aria-label': t.label, onclick: () => go(t.id) }, icon(t.icon), h('span', { class: 'tip' }, t.label))));
 }
+let navigationRevision = 0;
 function go(t: string) {
+  navigationRevision++;
   t = ALIASES[t] ?? t;
   if (t !== 'welcome' && !TABS.some((x) => x.id === t)) t = 'chat';
   tab = t;
@@ -457,14 +459,17 @@ async function renderCharacter() {
 
 // ---------------------------------------------------------------- memory
 async function renderMemory() {
+  const revision = navigationRevision;
   const [mem, notes, rems] = await Promise.all([api.invoke('memory:list'), api.invoke('notes:list'), api.invoke('reminders:list')]);
+  if (revision !== navigationRevision) return;
   const sc = h('div', { class: 'scroll' });
   const add = h('input', { type: 'text', placeholder: 'Something to remember', maxLength: 300, 'aria-label': 'New memory', style: 'flex:1;width:auto' });
   const memItem = (m: MemoryItem) => {
-    const source = m.context ? m.context.label + ' · ' + m.context.kind + ' · supplied ' + m.context.asOf : m.source === 'model' ? 'Suggested by Capri' : 'Added by you';
+    const source = m.archived ? 'Forgotten automatically · excluded from conversations' : m.context ? m.context.label + ' · ' + m.context.kind + ' · supplied ' + m.context.asOf : m.source === 'model' ? 'Suggested by Capri' : 'Added by you';
     const card = h('div', { class: 'item' },
-      h('div', { class: 'txt' }, m.text, h('div', { class: 'sub' }, source + (m.updatedAt ? ' · edited ' + new Date(m.updatedAt).toLocaleDateString() : ' · ' + new Date(m.createdAt).toLocaleDateString()))),
+      h('div', { class: 'txt' }, m.text, m.learnedFrom ? h('div', { class: 'sub' }, 'From you: “' + m.learnedFrom.evidence + '”') : null, h('div', { class: 'sub' }, source + (m.updatedAt ? ' · edited ' + new Date(m.updatedAt).toLocaleDateString() : ' · ' + new Date(m.createdAt).toLocaleDateString()))),
       m.status === 'pending' ? btn('Approve', () => api.invoke('memory:approve', m.id).then(() => go('memory')), 'primary') : null,
+      m.revisions?.length && m.revisions.at(-1)?.at === m.updatedAt ? btn('Undo', () => api.invoke('memory:undo', m.id).then(() => go('memory')).catch(e => toast((e as Error).message, true)), 'quiet') : null,
       btn('Edit', () => {
         const editor = h('textarea', { value: m.text, maxLength: 300, rows: 4, 'aria-label': 'Edit memory', style: 'width:100%;height:100px;resize:vertical;padding:8px' });
         card.replaceChildren(h('div', { class: 'txt' }, editor,
@@ -477,6 +482,8 @@ async function renderMemory() {
   sc.append(
     group('Long-term',
       sw('Use in conversations', 'memory.enabled'),
+      sw('Learn automatically', 'memory.autoLearn'),
+      h('p', { class: 'hint' }, 'Learns facts and preferences you state, and replaces outdated details when you correct them. Uses an extra model request before each reply. Review changes here or Undo them. Forgotten entries remain here until permanently deleted.'),
       h('div', { class: 'list' }, ...mem.map(memItem), mem.length ? null : emptyLine('Nothing yet.')),
       h('div', { class: 'row', style: 'margin:8px 0' }, add,
         btn('Add', async () => { if (add.value.trim()) { try { await api.invoke('memory:add', add.value.trim()); go('memory'); } catch (e) { toast((e as Error).message, true); } } }, '', 'plus'),
