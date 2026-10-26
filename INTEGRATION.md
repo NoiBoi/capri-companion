@@ -1,5 +1,14 @@
 # Capri Buddy: private artwork integration
 
+## 0.2.5 Nova voice delivery
+
+Remote speech sends editable delivery instructions and the Rate slider to the
+speech endpoint. The preset uses gpt-4o-mini-tts with nova and playful, lightly
+raspy, conversational delivery. Pitch is shown only for Windows voices because
+the remote endpoint has no pitch parameter. Older tts-1 models omit instructions
+for compatibility. Existing provider, microphone, volume and credentials remain
+as configured; the live voice preset uses rate 1.05.
+
 ## 0.2.4 window movement and hanging
 
 An attached window changing position or size puts Capri in idle/blink at her

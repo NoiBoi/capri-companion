@@ -88,7 +88,7 @@ export const SettingsSchema = z.object({
     rate: z.number().min(0.5).max(2),
     pitch: z.number().min(0).max(2),
     volume: z.number().min(0).max(1),
-    openaiTts: z.object({ baseUrl: httpUrl, model: z.string().max(100), voice: z.string().max(100) }),
+    openaiTts: z.object({ baseUrl: httpUrl, model: z.string().max(100), voice: z.string().max(100), instructions: z.string().max(4000) }),
     sttEngine: z.enum(['windows', 'openai']),
     openaiStt: z.object({ baseUrl: httpUrl, model: z.string().max(100) }),
     micPermission: z.boolean(),
@@ -135,6 +135,8 @@ export const DEFAULT_POLICIES: Record<ToolName, Policy> = {
   mischief: 'allow',
   use_computer: 'confirm', // she takes over the mouse and keyboard for a task: ask every time
 };
+
+export const CAPRI_VOICE_DELIVERY = 'Speak in a playful, mischievous, confident feminine voice with a light raspy edge. Keep the delivery intimate and conversational, with dry teasing, a smile in the voice, and brief expressive bursts of excitement. Use crisp consonants, natural pauses, and varied intonation at an easy conversational pace. Let sincere moments sound softer and warmer. Avoid a polished announcer delivery, exaggerated squeakiness, or constant shouting. Read only the supplied dialogue; do not add words, stage directions, or sound effects.';
 
 export const DEFAULT_SETTINGS: Settings = {
   version: 1,
@@ -187,7 +189,7 @@ export const DEFAULT_SETTINGS: Settings = {
     rate: 1.05,
     pitch: 1.2,
     volume: 0.9,
-    openaiTts: { baseUrl: 'https://api.openai.com/v1', model: 'tts-1', voice: 'nova' },
+    openaiTts: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini-tts', voice: 'nova', instructions: CAPRI_VOICE_DELIVERY },
     sttEngine: 'windows',
     openaiStt: { baseUrl: 'https://api.openai.com/v1', model: 'whisper-1' },
     micPermission: false,

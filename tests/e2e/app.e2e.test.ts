@@ -905,3 +905,27 @@ describe('attached bubble chat', () => {
     expect(result.clip).toBe('perch_blink'); expect(result.frame).toBeGreaterThanOrEqual(2);
   });
 });
+
+
+describe('remote speech delivery settings', () => {
+  it('saves the delivery prompt and sends it with Nova and rate to the speech endpoint', async () => {
+    const requests: any[] = [];
+    const server = http.createServer((req, res) => {
+      let raw = ''; req.on('data', c => raw += c);
+      req.on('end', () => { requests.push({ path: req.url, body: JSON.parse(raw) }); res.writeHead(200, { 'content-type': 'audio/mpeg' }); res.end(Buffer.from([1, 2, 3, 4])); });
+    });
+    await new Promise<void>(r => server.listen(0, '127.0.0.1', r));
+    try {
+      const baseUrl = 'http://127.0.0.1:' + (server.address() as AddressInfo).port + '/v1';
+      const { app, char } = await launch(profile({ voice: { ttsEnabled: false, ttsEngine: 'openai', rate: 1.1, openaiTts: { baseUrl, model: 'gpt-4o-mini-tts', voice: 'nova' } } }));
+      const panel = await openPanel(app, char, 'voice');
+      await panel.getByLabel('Delivery instructions', { exact: true }).fill('Playful, dry teasing; natural pauses.');
+      await panel.getByLabel('Delivery instructions', { exact: true }).press('Tab');
+      await panel.waitForFunction(async () => (await window.capri.invoke('settings:get')).voice.openaiTts.instructions === 'Playful, dry teasing; natural pauses.');
+      expect(await panel.getByLabel('Pitch', { exact: true }).count()).toBe(0);
+      const bytes = await char.evaluate(async () => Array.from(await window.capri.invoke('tts:fetch', 'Hey, choom.')));
+      expect(bytes).toEqual([1, 2, 3, 4]);
+      expect(requests).toEqual([{ path: '/v1/audio/speech', body: { model: 'gpt-4o-mini-tts', voice: 'nova', input: 'Hey, choom.', response_format: 'mp3', speed: 1.1, instructions: 'Playful, dry teasing; natural pauses.' } }]);
+    } finally { await new Promise<void>((resolve, reject) => server.close(e => e ? reject(e) : resolve())); }
+  });
+});

@@ -104,6 +104,7 @@ input[type="number"] { width: 84px; font-family: var(--mono); }
 select { width: 180px; padding-right: 4px; }
 input:hover, select:hover, textarea:hover { border-color: var(--muted); }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+.field.wide textarea { width: 100%; min-height: 140px; height: auto; padding: 9px; resize: vertical; line-height: 1.45; }
 .field.wide input[type="text"], .field.wide input[type="password"] { width: 100%; flex: 1; }
 input[type="range"] { -webkit-appearance: none; appearance: none; width: 120px; height: 18px; background: none; }
 input[type="range"]::-webkit-slider-runnable-track { height: 2px; background: var(--line-strong); }

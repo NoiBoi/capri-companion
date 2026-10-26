@@ -32,6 +32,7 @@ import { createCharacterWindow, createPanelWindow, characterSize, displaysNow, D
 import { clampToDisplays } from './desktop/displays';
 import { foregroundHandle, foregroundRect, handleToBigint, isOtherAppFullscreen, loadWin32, win32Status, externalWindows, windowRect, leftButtonDown } from './desktop/win32';
 import { snapWindow, windowAttachment, HANG_RATIO, type PerchWindow } from './desktop/perch';
+import { speechRequest } from './voice/tts';
 import { probeWindowsRecognizer, transcribeOpenAI, transcribeWindows, WakeWordListener } from './voice/speech';
 
 const T0 = performance.timeOrigin;
@@ -1087,7 +1088,7 @@ function registerIpc() {
     const res = await httpFetch(`${v.openaiTts.baseUrl.replace(/\/+$/, '')}/audio/speech`, {
       method: 'POST', timeoutMs: 30_000,
       headers: { 'content-type': 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}) },
-      body: JSON.stringify({ model: v.openaiTts.model, voice: v.openaiTts.voice, input: text, response_format: 'mp3' }),
+      body: JSON.stringify(speechRequest(text, v)),
     });
     return new Uint8Array(await res.arrayBuffer());
   });
