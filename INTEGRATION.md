@@ -1,5 +1,15 @@
 # Capri Buddy: private artwork integration
 
+## 0.2.7 character performance
+
+The dialogue brief now gives Capri conversational motives, tastes, vanity,
+curiosity, disagreements and quiet sincerity. Original tone examples teach
+contrast instead of relying on franchise slang. Contextual and offline banter
+uses the same brief, and ambient lines avoid immediate repetition. Expressions
+return after a short clip while deliberate pose choices retain their duration.
+Biography beyond existing source notes remains excluded; added characterization
+is explicitly interpretation. The separate user profile import is deferred.
+
 ## 0.2.6 connected personality
 
 One local personality clock connects cursor attention, touch reactions and idle

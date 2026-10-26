@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { CAPRI_BANTER } from '../../src/shared/banter';
 import { FRAME_SIZE, SEAT_RATIO } from '../../src/shared/framing';
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright-core';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
@@ -939,7 +940,7 @@ describe('connected companion personality', () => {
     await char.evaluate(() => { const d = window.__capriDebug as any; d.manual(true); d.lifeEvent('poke'); d.lifeEvent('poke'); d.lifeEvent('poke'); d.step(0.1); });
     expect(await char.evaluate(() => (window.__capriDebug as any).life.mood)).toBe('annoyed');
     await char.waitForTimeout(150);
-    expect(await app.evaluate(() => (globalThis as any).__capri.bubble.state.text)).toMatch(/Again\?|Keep poking/);
+    expect(CAPRI_BANTER.annoyed).toContain(await app.evaluate(() => (globalThis as any).__capri.bubble.state.text));
     await char.evaluate(() => { const d = window.__capriDebug as any; d.lifeEvent('pat'); d.lifeEvent('pat'); d.step(0.1); });
     expect(await char.evaluate(() => (window.__capriDebug as any).life.mood)).toBe('content');
     await char.evaluate(() => { const d = window.__capriDebug as any; d.setSurface('air'); d.step(0.1, 9); });
@@ -958,7 +959,7 @@ describe('connected companion personality', () => {
     expect(await app.evaluate(() => (globalThis as any).__capri.bubble.state.text)).toBe('');
     await app.evaluate(() => { const a = (globalThis as any).__capri; a.settings.update({ behavior: { doNotDisturb: false } }); (globalThis as any).__capriIdleOverride = 240; a.presenceTick(); (globalThis as any).__capriIdleOverride = 0; a.presenceTick(); });
     await char.waitForTimeout(200);
-    expect(await app.evaluate(() => (globalThis as any).__capri.bubble.state.text)).toMatch(/spot warm|Welcome back/);
+    expect(CAPRI_BANTER.return).toContain(await app.evaluate(() => (globalThis as any).__capri.bubble.state.text));
     await char.evaluate(() => window.capri.invoke('bubble:open'));
     const before = await app.evaluate(() => (globalThis as any).__capri.bubble.state.text);
     await char.evaluate(() => { const d = window.__capriDebug as any; d.lifeEvent('window'); });

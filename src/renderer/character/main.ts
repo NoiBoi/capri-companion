@@ -269,7 +269,7 @@ api.on('cue', (raw) => {
     case 'attachment': attachment = c.mode; break;
     case 'clip': {
       const spriteEmotes: Record<string, 'idle' | 'perch' | 'grin' | 'sleep' | 'glitch' | 'dangle'> = { sit: 'perch', curl_up: 'perch', stand: 'idle', grin: 'grin', laugh: 'grin', happy: 'grin', smug: 'grin', power_stance: 'glitch', menace: 'glitch', recline: 'sleep', yawn: 'sleep' };
-      if (spriteEmotes[c.name]) model.requestAnimation(spriteEmotes[c.name]);
+      if (spriteEmotes[c.name]) model.requestAnimation(spriteEmotes[c.name], ['sit', 'stand', 'recline', 'curl_up'].includes(c.name) ? 20 : spriteEmotes[c.name] === 'glitch' ? 10 / 15 : 2);
       const e = EMOTE_MAP[c.name];
       if (e?.posture) behavior.setPosture(surface === 'air' && e.posture === 'sit_edge' ? 'air_sit' : e.posture);
       else if (e?.react) behavior.react(e.react);

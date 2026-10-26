@@ -14,6 +14,7 @@ import { z } from 'zod';
 import type { ActionRequest, CharacterCue, Diagnostics, InvokeChannel, ChatMessage, AssistantPhase } from '../shared/ipc';
 import { BuddyBubble } from './bubble';
 import type { Settings } from '../shared/settings';
+import { companionLines } from '../shared/banter';
 import { IDLE_REMARKS, mayInterrupt } from '../shared/behaviorRules';
 import { speechAllowed, type SpeechReason } from '../shared/speechPolicy';
 import { Logger } from './log';
@@ -465,6 +466,11 @@ function cue(c: CharacterCue) {
   if (c.type === 'bubble' || c.type === 'remark') bubble?.remark(c.text);
   if (charWin && !charWin.isDestroyed()) charWin.webContents.send('cue', c);
 }
+let lastCompanionLine = '';
+function chooseCompanionLine(lines: readonly string[]) {
+  const choices = lines.filter(line => line !== lastCompanionLine);
+  return (lastCompanionLine = choices[Math.floor(Math.random() * choices.length)] ?? lines[0]);
+}
 let lastInteractionBubble = 0;
 let companionMood: Mood = 'neutral';
 let lastBubbleMood: Mood = 'neutral';
@@ -480,8 +486,7 @@ function companionRemark(kind: LifeEvent, mood: Mood) {
   if ((kind === 'return' || kind === 'window') && (!settings.get().behavior.idleRemarks || !mayInterrupt(settings.get(), { fullscreen: fullscreenHidden, hidden: userHidden }))) return;
   if (kind === 'return' || kind === 'window') { if (Date.now() - lastInitiativeAt < 90000) return; lastInitiativeAt = Date.now(); }
   lastInteractionBubble = Date.now(); lastBubbleMood = mood;
-  const lines = kind === 'return' ? [lastCompanionEvent === 'pat' ? 'Back for more head pats?' : 'There you are. Kept your spot warm.', 'Welcome back, trouble.'] : kind === 'window' ? ['Rearranging my apartment again?', 'Okay. New view.'] : mood === 'annoyed' ? ['Again? You know I can feel that.', 'Keep poking. See what happens.'] : mood === 'content' ? ['Okay. That is actually nice.', 'Fine. You can keep doing that.'] : kind === 'pat' ? ['Careful. I could get used to that.', 'Okay, you can stay.', 'Keep going. This is your job now.'] : ['Hey. I felt that.', 'You have my attention. Make it interesting.', 'Poking the construct. Bold choice.'];
-  bubble.remark(lines[Math.floor(Math.random() * lines.length)]);
+  bubble.remark(chooseCompanionLine(companionLines(kind, mood, lastCompanionEvent)));
 }
 /** The single gate for speaking out loud: every utterance names its reason and is logged. */
 let speakCount = 0;
@@ -846,7 +851,7 @@ function presenceTick() {
   const due = Date.now() - Math.max(lastRemark, lastInteraction) > s.behavior.remarkIntervalMinutes * 60_000;
   if (s.behavior.idleRemarks && !quiet && due && idleSec < 120 && !convo.busy && !recording) {
     lastRemark = Date.now();
-    const text = IDLE_REMARKS[Math.floor(Math.random() * IDLE_REMARKS.length)];
+    const text = chooseCompanionLine(IDLE_REMARKS);
     cue({ type: 'remark', text }); // a silent bubble; spoken only if proactive voice is enabled too
     speak('proactive', `remark:${Date.now()}`, text);
   }

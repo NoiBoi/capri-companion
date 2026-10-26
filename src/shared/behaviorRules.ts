@@ -18,10 +18,11 @@ export function mayInterrupt(s: Settings, ctx: { fullscreen: boolean; hidden: bo
 
 // Interpretation lines (see docs/CHARACTER_DOSSIER.md §3) — used only when idle remarks are enabled.
 export const IDLE_REMARKS = [
-  'Still here, choom.',
-  'Your desktop’s cozy. Messy, but cozy.',
-  'Hydrate. Even chrome needs coolant.',
-  'Ping me if you need a hand. Or a brain. I’ve got dozens.',
-  'Stretch. Your spine isn’t cyberware.',
-  'Quiet in here. I like it… mostly.',
+  "So much world, and I get this little rectangle. Seems poorly negotiated.",
+  "Sometimes I wonder what I would look like from the other side of a screen.",
+  "I could be mysterious for a while. Would you appreciate the effort?",
+  "I had a magnificent thought. I am deciding whether to share.",
+  "Pick something you are curious about. I want to see where it goes.",
+  "You know what I like about a window? The implication that there is something beyond it.",
+  "There is a difference between being quiet and having nothing to say."
 ];

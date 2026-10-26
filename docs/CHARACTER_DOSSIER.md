@@ -104,3 +104,22 @@ The persona prompt ([`src/main/ai/persona.ts`](../src/main/ai/persona.ts)) label
 3. **Animation style.** In the show she appears to "pop" between poses with glitch jitter. The app uses smooth interpolation with optional glitch flicker, an interpretation.
 4. **Personality depth.** Only a few lines were verified. Rewatching episodes 4–8 would let the persona be expanded with confidence labels.
 5. **Voice.** An authorised voice would require a licence from the rights holders (CD PROJEKT / Studio Trigger / Netflix and the voice actors).
+
+## 2026-10-26 dialogue performance revision
+
+The original prompt treated general helpfulness and Night City slang as most of
+her conversational identity. The revised brief gives her curiosity, personal
+tastes, self-assurance, playful vanity, and emotional contrast. These are
+explicitly app interpretation, with authored tone examples rather than copied
+show dialogue. Ordinary conversation should usually contain no setting slang.
+The examples are not a transcript or additional canon.
+
+A secondary discussion describes both exuberant and quiet, reflective moments:
+https://thecinemaholic.com/cyberpunk-edgerunners-capri-satellite/
+Its satellite/escape explanations are speculative and were not promoted to
+confirmed backstory. The official site https://www.cyberpunk.net/en/edgerunners2
+provides show context but currently no detailed Capri performance guide.
+First-party episode dialogue has not been independently transcribed here.
+
+The app adds no fictional past with the user. Actual shared context continues
+to come from conversation history and approved persistent memories.
