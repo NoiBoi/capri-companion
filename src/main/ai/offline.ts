@@ -1,4 +1,5 @@
 import type { GenOptions, LLMMessage, LLMProvider } from './providers';
+import { companionDialogue } from '../../shared/dialogue';
 import { ProviderError } from './providers';
 import { parseDuration, parseWhen } from '../actions/timeParse';
 
@@ -19,7 +20,7 @@ export function offlineReply(input: string, now = new Date()): string {
     const summary = lines.map((l) => l.replace(/^- \S+ (ok|failed): /i, '')).join(' ');
     return ok.length === lines.length ? `${pick(['Done.', 'Handled.', 'Nicely handled, if I say so myself.'])} ${summary}` : `Hit a snag: ${summary}`;
   }
-  if (/^(hi|hey|hello|yo|sup)\b|^hey capri/.test(t)) return pick(["There you are. I was getting bored being magnificent on my own.", "Oh, good. An audience. What has caught your interest?", "I am here. Entirely too interesting to leave unattended."]);
+  if (/^(hi|hey|hello|yo|sup)\b|^hey capri/.test(t)) return companionDialogue.choose({ event: 'greeting' }, { required: true }) || 'Hey, you.';
   if (/\b(help|what can you do)\b/.test(t)) {
     return 'Without a model hooked up I can still: set timers ("timer 5 minutes"), reminders ("remind me to stretch in 20 minutes"), take notes ("note: buy coffee"), open sites ("open github.com"), launch approved apps ("launch notepad"), search your authorized folders ("find files named budget"), and tell the time. Connect a model in Settings → Model to really talk.';
   }
@@ -64,8 +65,8 @@ export function offlineReply(input: string, now = new Date()): string {
   if (launch) return `Launching. ${act('launch_app', { name: launch[1].trim() })}`;
   if (/\b(what time|the time|what's the date|what day)\b/.test(t)) return `It's ${now.toLocaleString([], { weekday: 'long', hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' })}.`;
   if (/\b(who are you|what are you)\b/.test(t)) return 'Capri. A personality construct — lots of minds rolled into one beautiful me. Right now I\'m running without a language model, so I\'m mostly hands, not mouth.';
-  if (/\b(thanks|thank you|ty)\b/.test(t)) return pick(["You are welcome. I do enjoy being impressive.", "Of course. We make a decent team."]);
-  return 'My language model isn\'t connected, so I can only handle direct commands right now — say "help" for the list, or hook up a model in Settings → Model.';
+  if (/\b(thanks|thank you|ty)\b/.test(t)) return companionDialogue.choose({ event: 'thanks' }, { required: true }) || 'Yeah. Anytime.';
+  return companionDialogue.choose({ event: 'offline' }, { required: true }) || "My model's disconnected. Try 'help' for commands.";
 }
 
 export class OfflineProvider implements LLMProvider {

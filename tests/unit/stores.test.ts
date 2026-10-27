@@ -257,3 +257,16 @@ describe('profile import and correction', () => {
     expect(() => store.update(id, '')).toThrow(); expect(() => store.update('missing', 'Anything')).toThrow();
   });
 });
+
+
+describe('memory refresh after external import', () => {
+  it('uses a restored profile in both the panel and conversation without a restart', () => {
+    const dir = tmpDir(), store = new MemoryStore(dir);
+    store.add('Original memory', 'user');
+    const restored = [...store.list(), { id: 'restored', text: 'Name is Sam, attending Purdue', createdAt: 1, status: 'approved', source: 'user', context: { label: 'Profile import', kind: 'fact', asOf: '2026-10-26' } }];
+    fs.writeFileSync(path.join(dir, 'memory.json'), JSON.stringify(restored));
+    expect(store.list()).toHaveLength(2); expect(store.approved().at(-1)?.text).toContain('Purdue');
+    fs.writeFileSync(path.join(dir, 'memory.json'), '{partial');
+    expect(store.approved()).toHaveLength(2);
+  });
+});

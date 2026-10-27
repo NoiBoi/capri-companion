@@ -13,6 +13,11 @@ import { PALETTE as C } from './palette';
 export type FxPhase = 'out' | 'in';
 interface Shard { x: number; y: number; dx: number; dy: number; rot: number; vr: number; size: number; color: string }
 type Box = { x: number; y: number; w: number; h: number };
+/** Device-pixel geometry follows the visible silhouette, including flipped poses and display scale. */
+export function beamBounds(box: Box, dpr: number): Box {
+  const w = Math.max(2 * dpr, Math.min(7 * dpr, box.w * 0.055));
+  return { x: box.x + (box.w - w) / 2, y: box.y - 8 * dpr, w, h: box.h + 16 * dpr };
+}
 
 export const FX_DURATION: Record<FxPhase, number> = { out: 0.42, in: 0.4 };
 
@@ -91,10 +96,25 @@ export class TeleportFx {
     const r = prng(Math.floor(this.t * 60) + this.id * 31);
     const flick = r() < 0.18; // the show's hard-cut stutter: a frame here and there drops out
 
+    // A short, narrow transport filament inside her own window. No display-sized overlay.
+    // Adapted from capri-desktop's MIT beam concept; the artwork remains separately credited.
+    const beam = beamBounds(box, dpr);
+    const fade = Math.sin(Math.PI * u) * 0.55;
+    dst.globalAlpha = fade;
+    dst.fillStyle = C.violet; dst.fillRect(beam.x - 2 * dpr, beam.y, beam.w + 4 * dpr, beam.h);
+    dst.fillStyle = '#ff4871'; dst.fillRect(beam.x, beam.y, beam.w, beam.h);
+    dst.globalAlpha = fade * 0.7;
+    dst.fillStyle = '#fff4f6'; dst.fillRect(beam.x + beam.w / 2 - dpr / 2, beam.y, dpr, beam.h);
+    dst.globalAlpha = 1;
+
     // body: horizontal bands across her own height, offset sideways more the more broken she is;
     // bands drop out as she breaks, and fill back in on arrival
     const present = out ? 1 - Math.max(0, (u - 0.55) / 0.45) : Math.min(1, u / 0.35);
     if (present > 0 && !(flick && broken > 0.5)) {
+      // Collapse/re-form the silhouette into the transport slit, as in capri-desktop (MIT).
+      dst.save();
+      const cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+      dst.translate(cx, cy); dst.scale(Math.max(0.06, 1 - broken * 0.94), 1 - broken * 0.12); dst.translate(-cx, -cy);
       const bands = 18, bh = Math.ceil(box.h / bands) + 1;
       const chroma = broken * 14 * dpr;
       for (let i = 0; i < bands; i++) {
@@ -111,6 +131,7 @@ export class TeleportFx {
         dst.drawImage(src, 0, y, W, bh, shift, y, W, bh);
       }
       dst.globalAlpha = 1;
+      dst.restore();
     }
     // glitch blocks: solid slabs of her colours over her body while she is breaking
     const blocks = Math.round(broken * (1 - broken) * 4 * 9);
@@ -133,6 +154,12 @@ export class TeleportFx {
         dst.beginPath(); dst.moveTo(-z, -z * 0.4); dst.lineTo(z, 0); dst.lineTo(-z * 0.3, z * 0.6); dst.closePath(); dst.fill();
       }
       dst.setTransform(1, 0, 0, 1, 0, 0);
+      dst.globalAlpha = 1;
+    }
+    // Brief green/ink impact cut on arrival; the final frame is always clean.
+    if (!out && u > 0.35 && u < 0.52) {
+      dst.globalAlpha = 0.85;
+      dst.drawImage(this.tinted(src, u < 0.44 ? C.mask : C.ink), 0, 0);
       dst.globalAlpha = 1;
     }
     if (u >= 1) {

@@ -123,3 +123,19 @@ First-party episode dialogue has not been independently transcribed here.
 
 The app adds no fictional past with the user. Actual shared context continues
 to come from conversation history and approved persistent memories.
+
+## 2026-10-26 dialogue-source audit
+
+The live performance brief now uses concise paraphrased scene analysis in `src/shared/capriVoice.ts`, with source URLs and evidence labels. The dataset stores no episode transcript and no borrowed dialogue collection. The English scene register is inferred from community transcripts, not represented as an official script or independently verified audio transcription.
+
+- Episode 4, https://transcripts.foreverdreaming.org/viewtopic.php?t=266325: her introduction uses playful corrections, mock innocence, familiarity and exuberant self-regard; technical exposition follows the social exchange.
+- Episode 7, https://transcripts.foreverdreaming.org/viewtopic.php?t=266328: exchanges with Talia show expectations of appreciation, teasing impatience and expansive confidence.
+- Episode 9, https://transcripts.foreverdreaming.org/viewtopic.php?t=266330: fictional menace uses buoyant game-like language. The adaptation uses that audacity in banter rather than treating plot violence as desktop instructions.
+- Episode 10, https://transcripts.foreverdreaming.org/viewtopic.php?t=266331: later conversation also contains short, ordinary replies and joking about practical help. Host-specific family grief is excluded from the general persona.
+
+The official clip https://www.youtube.com/watch?v=5wGdjjwoDbY is titled 'The Moment D Meets Capri | Cyberpunk: Edgerunners 2 | Netflix'. Its publisher metadata was verified through YouTube oEmbed as Still Watching Netflix. A secondary caption reference is https://www.voicetube.com/videos/222871. The clip audio/captions were not independently transcribed during this audit. The transcript forum has a generic 2022 series air-date header despite its 2026 episode posts, and speaker labels can be incomplete, so isolated lines are not promoted to certain canon. Earlier blanket claims in this dossier about verified personality depth should be read with these limits.
+
+Original acting examples in `persona.ts` are authored app dialogue kept for documentation, clearly distinguished from show quotations. Live requests receive two scene-level speech-act notes without example reply text, after a live check caught near-verbatim imitation of an authored example. The rewrite changes conversational performance, not the selected text/voice model or desktop action permissions.
+
+### Grounded Night City outlook (0.2.25)
+Runtime world context is defined in src/shared/worldContext.ts. D's Snake Nation/netrunner/revenge description, Talia's corporate upbringing and Maelstrom chrome culture, Weak's former King identity and loss of chrome, and Roman Carax's cinema/braindance interest are paraphrased from the official cast bios, verified 2026-10-26: https://www.cyberpunk.net/en/edgerunners2 . The corporate control/ownership/freedom lens is an interpretation for this private companion, not new canonical memories or invented relationships. Only topic-relevant cast facts are appended; ordinary tasks receive the compact world outlook without cast exposition. Existing Capri scene evidence and its limitations remain in force.

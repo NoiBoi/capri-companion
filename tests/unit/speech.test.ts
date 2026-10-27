@@ -7,6 +7,14 @@ const ctx = { fullscreen: false, hidden: false, now: noon };
 const with_ = (patch: (s: Settings) => void) => { const s = structuredClone(DEFAULT_SETTINGS); patch(s); return s; };
 
 describe('speech policy: she only talks for a reason', () => {
+  it('voices arrival reactions independently of idle chatter while honoring mute and quiet settings', () => {
+    const on = with_(s => { s.voice.interactionLines = true; s.behavior.idleRemarks = false; s.behavior.proactiveVoice = false; });
+    expect(speechAllowed('arrival', on, ctx)).toBe(true);
+    expect(speechAllowed('arrival', on, { ...ctx, fullscreen: true })).toBe(false);
+    on.voice.ttsEnabled = false; expect(speechAllowed('arrival', on, ctx)).toBe(false);
+    on.voice.ttsEnabled = true; on.voice.interactionLines = false; expect(speechAllowed('arrival', on, ctx)).toBe(false);
+    on.voice.interactionLines = true; on.behavior.doNotDisturb = true; expect(speechAllowed('arrival', on, ctx)).toBe(false);
+  });
   it('answers the user out loud when voice is on, never when it is off', () => {
     expect(speechAllowed('reply', DEFAULT_SETTINGS, ctx)).toBe(true);
     expect(speechAllowed('reply', with_((s) => { s.voice.ttsEnabled = false; }), ctx)).toBe(false);

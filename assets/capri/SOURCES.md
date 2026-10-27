@@ -22,3 +22,7 @@ The face references are the official close-ups `Capri_Infobox` and `Capri_03`.
 6. **Normalize:** every pose is scaled to one unit, where 26 units is the distance between her eyes. That keeps her the same size in every pose. Coordinates are relative to the pose's anchor: the seat, contact point, or centre.
 
 `src/shared/framing.ts` sizes her window from these bounds: every pose, mirrored too, plus room for sway, bob and effects. `tests/unit/model.test.ts` checks that nothing can be cropped.
+
+## Additional transmission artwork
+
+Expression portraits and cut-ins in `mochiiwuff/` come from mochiiwuff/capri-desktop. See `mochiiwuff/SOURCES.md` for the source commit and separate artwork rights. These assets are excluded from the source-code MIT licenses.

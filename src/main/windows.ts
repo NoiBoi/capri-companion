@@ -1,6 +1,6 @@
 import { FRAME_SIZE } from '../shared/framing';
 import path from 'node:path';
-import { BrowserWindow, screen, shell, type Rectangle } from 'electron';
+import { app, BrowserWindow, screen, shell, type Rectangle } from 'electron';
 import type { Settings } from '../shared/settings';
 import { clampToDisplays, restorePosition, type DisplayLike } from './desktop/displays';
 import { leftButtonDown } from './desktop/win32';
@@ -63,6 +63,7 @@ export function createCharacterWindow(s: Settings, preload: string, log: Logger)
     focusable: false, // never steals keyboard focus
     show: false,
     title: 'Capri',
+    icon: capriIconPath(),
     alwaysOnTop: s.character.alwaysOnTop,
     webPreferences: {
       offscreen: OFFSCREEN,
@@ -94,20 +95,25 @@ export function createPanelWindow(near: Rectangle, preload: string, log: Logger,
     ...r,
     minWidth: 340,
     minHeight: 420,
-    frame: false,
+    frame: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#0c0b0f', symbolColor: '#ece9f1', height: 40 },
+    minimizable: false,
+    maximizable: false,
     backgroundColor: '#0b0912',
     show: false,
     title: 'Capri',
+    icon: capriIconPath(),
     alwaysOnTop: true,
     webPreferences: { offscreen: OFFSCREEN, preload, contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: true },
   });
   harden(win, log);
-  void win.loadFile(path.join(RENDERER_DIR, 'panel.html'), tab ? { hash: tab } : undefined);
+  void win.loadFile(path.join(RENDERER_DIR, 'panel.html'), tab ? { hash: tab } : undefined).catch(error => log.warn('panel load failed', { error }));
   win.once('ready-to-show', () => reveal(win, true));
   return win;
 }
 
-/** Small attached speech bubble; becomes focusable only when the user opens its composer. */
+/** Interactive attached bubble; showInactive avoids stealing focus until a real user click. */
 export function createBubbleWindow(preload: string, log: Logger): BrowserWindow {
   const win = new BrowserWindow({ width: 340, height: 170, frame: false, transparent: true, backgroundColor: '#00000000',
     resizable: false, minimizable: false, maximizable: false, fullscreenable: false, hasShadow: false,
@@ -117,6 +123,38 @@ export function createBubbleWindow(preload: string, log: Logger): BrowserWindow 
   harden(win, log);
   void win.loadFile(path.join(RENDERER_DIR, 'bubble.html'));
   return win;
+}
+
+export const capriIconPath = () => app.isPackaged ? path.join(process.resourcesPath, 'icon.ico') : path.join(RENDERER_DIR, 'capri', 'mochiiwuff', 'icon.ico');
+export function createTaskbarWindow(preload: string, log: Logger): BrowserWindow {
+  const win = new BrowserWindow({ width: 400, height: 590, resizable: false, maximizable: false,
+    show: false, title: 'Capri', icon: capriIconPath(), backgroundColor: '#14101c', autoHideMenuBar: true,
+    webPreferences: { offscreen: OFFSCREEN, preload, contextIsolation: true, sandbox: true, nodeIntegration: false } });
+  if (process.platform === 'win32') win.setAppDetails({ appId: 'dev.capri.buddy', appIconPath: capriIconPath(), appIconIndex: 0, relaunchDisplayName: 'Capri', ...(app.isPackaged ? { relaunchCommand: `"${process.execPath}" --open-capri` } : {}) });
+  harden(win, log);
+  void win.loadFile(path.join(RENDERER_DIR, 'taskbar.html')).catch(error => log.warn('taskbar controls failed to load', { error }));
+  return win;
+}
+
+export function createIntroWindow(bounds: Rectangle, preload: string, log: Logger): BrowserWindow {
+  const win = new BrowserWindow({ ...bounds, frame: false, transparent: true, backgroundColor: '#00000000',
+    resizable: false, movable: false, minimizable: false, maximizable: false, fullscreenable: false,
+    hasShadow: false, skipTaskbar: true, focusable: false, show: false, alwaysOnTop: true, title: 'Capri opening',
+    webPreferences: { offscreen: OFFSCREEN, preload, contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false } });
+  win.setAlwaysOnTop(true, 'floating'); win.setIgnoreMouseEvents(true);
+  harden(win, log);
+  void win.loadFile(path.join(RENDERER_DIR, 'intro.html')).catch(error => log.warn('opening failed to load', { error }));
+  return win;
+}
+export function createTheatreWindow(bounds: Rectangle, preload: string, log: Logger): BrowserWindow {
+  const win = new BrowserWindow({ ...bounds, frame: false, transparent: true, backgroundColor: '#00000000', show: false, focusable: false, skipTaskbar: true, hasShadow: false, resizable: false, movable: false, minimizable: false, maximizable: false, fullscreenable: false, title: 'Capri scene', webPreferences: { offscreen: OFFSCREEN, preload, contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false } });
+  win.setAlwaysOnTop(true, 'floating'); win.setIgnoreMouseEvents(true); harden(win, log);
+  void win.loadFile(path.join(RENDERER_DIR, 'theatre.html')).catch(error => log.debug('scene unavailable', { error })); return win;
+}
+export function createTrailWindow(bounds: Rectangle, preload: string, log: Logger): BrowserWindow {
+  const win = new BrowserWindow({ ...bounds, frame: false, transparent: true, backgroundColor: '#00000000', show: false, focusable: false, skipTaskbar: true, hasShadow: false, resizable: false, movable: false, minimizable: false, fullscreenable: false, webPreferences: { offscreen: OFFSCREEN, preload, contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false } });
+  win.setAlwaysOnTop(true, 'floating'); win.setIgnoreMouseEvents(true); harden(win, log);
+  void win.loadFile(path.join(RENDERER_DIR, 'trail.html')).catch(error => log.debug('teleport trail unavailable', { error })); return win;
 }
 
 /**
@@ -132,7 +170,7 @@ export class DragController {
   /** Release velocity in DIP/s (from the last ~100 ms of the drag), for throwing her. */
   velocity = { x: 0, y: 0 };
   private samples: { t: number; x: number; y: number }[] = [];
-  constructor(private win: () => BrowserWindow | null, private size: () => { width: number; height: number }, private onEnd: (moved: boolean) => void) {}
+  constructor(private win: () => BrowserWindow | null, private size: () => { width: number; height: number }, private onEnd: (moved: boolean) => void, private onLift?: () => void) {}
   begin() {
     const w = this.win();
     if (!w || this.timer) return;
@@ -154,6 +192,7 @@ export class DragController {
     this.samples.push({ t: now, x: c.x, y: c.y });
     while (this.samples.length > 2 && now - this.samples[0].t > 110) this.samples.shift();
     if (!this.moved && Math.hypot(c.x - this.start.x, c.y - this.start.y) < 4) return;
+    if (!this.moved) this.onLift?.();
     this.moved = true;
     w.setBounds({ x: c.x - this.offset.x, y: c.y - this.offset.y, ...this.size() }); // fixed size: never read back
   }

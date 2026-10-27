@@ -4,7 +4,7 @@ import { ClaudeAccountProvider } from './claudeAccount';
 import { CodexAccountProvider } from './codexAccount';
 
 export interface LLMMessage { role: 'system' | 'user' | 'assistant'; content: string }
-export interface GenOptions { purpose?: 'memory'; temperature: number; maxTokens: number; timeoutMs: number; signal: AbortSignal }
+export interface GenOptions { purpose?: 'memory' | 'ambient'; agentic?: boolean; jpegBase64?: string; temperature: number; maxTokens: number; timeoutMs: number; signal: AbortSignal }
 
 export interface LLMProvider {
   readonly name: string;
@@ -14,12 +14,8 @@ export interface LLMProvider {
   listModels(): Promise<string[]>;
 }
 
-export class ProviderError extends Error {
-  constructor(message: string, readonly kind: 'auth' | 'rate_limit' | 'network' | 'timeout' | 'server' | 'bad_request' | 'aborted' | 'config' | 'model', readonly status?: number, readonly retryAfterMs?: number) {
-    super(message);
-  }
-  get retryable() { return this.kind === 'rate_limit' || this.kind === 'server' || this.kind === 'network'; }
-}
+import { ProviderError } from './providerError';
+export { ProviderError } from './providerError';
 
 export function friendlyError(e: unknown): string {
   if (e instanceof ProviderError) {
@@ -163,9 +159,11 @@ export class OpenAIProvider implements LLMProvider {
   }
   async *stream(messages: LLMMessage[], o: GenOptions) {
     if (!this.key && !this.local) throw new ProviderError('No API key set for the OpenAI-compatible provider (Settings → Model).', 'config');
+    const lastUser = messages.findLastIndex(m => m.role === 'user');
+    const wireMessages = o.jpegBase64 ? messages.map((m, i) => i === lastUser ? { ...m, content: [{ type: 'text', text: m.content }, { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${o.jpegBase64}`, detail: 'low' } }] } : m) : messages;
     const res = await withRetry(() => httpFetch(`${trimSlash(this.baseUrl)}/chat/completions`, {
       method: 'POST', timeoutMs: o.timeoutMs, signal: o.signal, headers: this.headers(),
-      body: JSON.stringify({ model: this.model, messages, stream: true, temperature: o.temperature, max_tokens: o.maxTokens }),
+      body: JSON.stringify({ model: this.model, messages: wireMessages, stream: true, temperature: o.temperature, max_tokens: o.maxTokens }),
     }), o.signal);
     for await (const line of readLines(res, o.signal, o.timeoutMs)) {
       if (!line.startsWith('data:')) continue;
@@ -231,7 +229,7 @@ export class AnthropicProvider implements LLMProvider {
 
 export function createProvider(s: Settings['ai'], secret: (k: 'openai' | 'anthropic' | 'gemini') => string | undefined, offline: LLMProvider, extra: { onModelUsed?: (m: string, fallback: boolean) => void; geminiServerUrl?: string } = {}): LLMProvider {
   switch (s.provider) {
-    case 'codex': return new CodexAccountProvider();
+    case 'codex': return new CodexAccountProvider(s.codex);
     case 'gemini': return new GeminiProvider({ apiKey: secret('gemini'), model: s.gemini.model, fallbackModel: s.gemini.fallbackModel, thinkingLevel: s.gemini.thinkingLevel, onModelUsed: extra.onModelUsed, serverUrl: extra.geminiServerUrl });
     case 'claude': return new ClaudeAccountProvider(s.claude.model);
     case 'ollama': return new OllamaProvider(s.ollama.baseUrl, s.ollama.model);

@@ -1,16 +1,19 @@
 // Minimal Win32 bindings via koffi (prebuilt FFI, no compiler needed). Every call degrades
 // to a safe default if the library can't load, and diagnostics report the status.
 import type { Logger } from '../log';
+import { helperWindow } from './exposure';
 
 type Fn = (...a: unknown[]) => unknown;
 interface Api {
   GetForegroundWindow: Fn; GetWindowRect: Fn; MonitorFromWindow: Fn; GetMonitorInfoW: Fn;
   GetClassNameW: Fn; SHQueryUserNotificationState: Fn; GetAsyncKeyState: Fn; address: (p: unknown) => bigint;
+  GetWindowLongPtrW: Fn; GetLayeredWindowAttributes: Fn;
   EnumWindows: Fn; IsWindowVisible: Fn; IsIconic: Fn; IsWindow: Fn; GetWindow: Fn;
-  DwmGetWindowAttribute: Fn;
+  DwmGetWindowAttribute: Fn; GetWindowTextW: Fn; GetWindowThreadProcessId: Fn; OpenProcess: Fn; QueryFullProcessImageNameW: Fn; CloseHandle: Fn;
 }
 let api: Api | null = null;
 let loadError: string | null = null;
+const processNames = new Map<number, { name: string; at: number }>();
 
 export function loadWin32(log?: Logger): boolean {
   if (api || loadError) return !!api;
@@ -21,16 +24,24 @@ export function loadWin32(log?: Logger): boolean {
     const user32 = koffi.load('user32.dll');
     const shell32 = koffi.load('shell32.dll');
     const dwm = koffi.load('dwmapi.dll');
+    const kernel = koffi.load('kernel32.dll');
     koffi.proto('bool __stdcall CAPRI_ENUM_WINDOW(void* hwnd, intptr_t param)');
     const RECT = koffi.struct('CAPRI_RECT', { left: 'long', top: 'long', right: 'long', bottom: 'long' });
     koffi.struct('CAPRI_MONITORINFO', { cbSize: 'uint32', rcMonitor: RECT, rcWork: RECT, dwFlags: 'uint32' });
     api = {
+      GetWindowTextW: user32.func('int __stdcall GetWindowTextW(void* hwnd, _Out_ uint16_t* text, int size)'),
+      GetWindowThreadProcessId: user32.func('uint32 __stdcall GetWindowThreadProcessId(void* hwnd, _Out_ uint32* pid)'),
+      OpenProcess: kernel.func('void* __stdcall OpenProcess(uint32 access, bool inherit, uint32 pid)'),
+      QueryFullProcessImageNameW: kernel.func('bool __stdcall QueryFullProcessImageNameW(void* process, uint32 flags, _Out_ uint16_t* text, _Inout_ uint32* size)'),
+      CloseHandle: kernel.func('bool __stdcall CloseHandle(void* handle)'),
       GetForegroundWindow: user32.func('void* __stdcall GetForegroundWindow()'),
       GetWindowRect: user32.func('bool __stdcall GetWindowRect(void* hWnd, _Out_ CAPRI_RECT* rect)'),
       MonitorFromWindow: user32.func('void* __stdcall MonitorFromWindow(void* hwnd, uint32 flags)'),
       GetMonitorInfoW: user32.func('bool __stdcall GetMonitorInfoW(void* hMonitor, _Inout_ CAPRI_MONITORINFO* info)'),
       GetClassNameW: user32.func('int __stdcall GetClassNameW(void* hWnd, _Out_ uint16_t* buf, int max)'),
       GetAsyncKeyState: user32.func('int16 __stdcall GetAsyncKeyState(int vKey)'),
+      GetWindowLongPtrW: user32.func('intptr_t __stdcall GetWindowLongPtrW(void* hwnd, int index)'),
+      GetLayeredWindowAttributes: user32.func('bool __stdcall GetLayeredWindowAttributes(void* hwnd, _Out_ uint32* key, _Out_ uint8* alpha, _Out_ uint32* flags)'),
       SHQueryUserNotificationState: shell32.func('long __stdcall SHQueryUserNotificationState(_Out_ int* state)'),
       address: (p: unknown) => (p ? BigInt(koffi.address(p)) : 0n),
       EnumWindows: user32.func('bool __stdcall EnumWindows(CAPRI_ENUM_WINDOW* callback, intptr_t param)'),
@@ -50,7 +61,7 @@ export function loadWin32(log?: Logger): boolean {
 export const win32Status = () => (api ? 'active' : 'unavailable') as 'active' | 'unavailable';
 
 const SHELL_CLASSES = new Set(['Progman', 'WorkerW', 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd']);
-export interface ExternalWindow { handle: bigint; rect: { x: number; y: number; width: number; height: number } }
+export interface ExternalWindow { handle: bigint; rect: { x: number; y: number; width: number; height: number }; eligible?: boolean }
 
 /** Follow a specific window regardless of which app has keyboard focus. Physical pixels. */
 export function windowRect(handle: bigint): ExternalWindow['rect'] | null {
@@ -67,22 +78,32 @@ export function windowRect(handle: bigint): ExternalWindow['rect'] | null {
   } catch { return null; }
 }
 
-/** Visible application windows in front-to-back order; no titles or contents are read. */
+/** Visible surfaces in front-to-back order, with real app targets marked separately from occluders. */
 export function externalWindows(ownHandles: bigint[]): ExternalWindow[] {
   if (!api) return [];
   const result: ExternalWindow[] = [];
   try {
     api.EnumWindows((hwnd: unknown) => {
       const handle = api!.address(hwnd);
-      if (!handle || ownHandles.includes(handle) || api!.GetWindow(hwnd, 4 /* owner */)) return true;
+      if (!handle || ownHandles.includes(handle)) return true;
       const buf = new Uint16Array(128);
       const n = api!.GetClassNameW(hwnd, buf, buf.length) as number;
       const cls = String.fromCharCode(...buf.slice(0, Math.max(0, n)));
       if (SHELL_CLASSES.has(cls) || cls === '#32768' || cls === 'tooltips_class32') return true;
+      const style = Number(api!.GetWindowLongPtrW(hwnd, -20));
+      if (style & 0x20) return true; // transparent helper surfaces do not occlude applications
+      if (style & 0x80000) {
+        const key = new Uint32Array(1), alpha = new Uint8Array(1), flags = new Uint32Array(1);
+        if (api!.GetLayeredWindowAttributes(hwnd, key, alpha, flags) && (flags[0] & 2) && !alpha[0]) return true;
+      }
       const cloaked = new Int32Array(1);
       if (api!.DwmGetWindowAttribute(hwnd, 14, cloaked, 4) === 0 && cloaked[0]) return true;
       const rect = windowRect(handle);
-      if (rect) result.push({ handle, rect });
+      if (rect) {
+        const info = windowInfo(handle);
+        if (helperWindow({ ...info, className: cls })) return true;
+        result.push({ handle, rect, eligible: !!info.title.trim() && !(style & (0x80 | 0x08000000)) && !api!.GetWindow(hwnd, 4) });
+      }
       return true;
     }, 0);
   } catch { /* return the windows collected before an unavailable window */ }
@@ -146,4 +167,26 @@ export function leftButtonDown(): boolean | null {
 /** Read a BrowserWindow native handle Buffer as a bigint. */
 export function handleToBigint(buf: Buffer): bigint {
   return buf.length >= 8 ? buf.readBigUInt64LE(0) : BigInt(buf.readUInt32LE(0));
+}
+
+/** Read window metadata without activating it or inspecting document contents. */
+export function windowInfo(handle: bigint): { title: string; process: string } {
+  if (!api || !handle) return { title: '', process: '' };
+  let processHandle: unknown;
+  try {
+    const text = new Uint16Array(1024);
+    const n = api.GetWindowTextW(handle, text, text.length) as number;
+    const title = String.fromCharCode(...text.slice(0, Math.max(0, n)));
+    const pid = new Uint32Array(1); api.GetWindowThreadProcessId(handle, pid);
+    const cached = processNames.get(pid[0]);
+    if (cached && Date.now() - cached.at < 2000) return { title, process: cached.name };
+    processHandle = api.OpenProcess(0x1000, false, pid[0]);
+    const filename = new Uint16Array(2048), size = new Uint32Array([filename.length]);
+    const process = processHandle && api.QueryFullProcessImageNameW(processHandle, 0, filename, size)
+      ? String.fromCharCode(...filename.slice(0, size[0])).split(/[\\/]/).pop()! : '';
+    processNames.set(pid[0], { name: process, at: Date.now() });
+    if (processNames.size > 128) processNames.delete(processNames.keys().next().value!);
+    return { title, process };
+  } catch { return { title: '', process: '' }; }
+  finally { if (processHandle) api.CloseHandle(processHandle); }
 }

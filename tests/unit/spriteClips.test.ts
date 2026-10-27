@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SPRITE_CLIPS, spriteBase, spriteFrame, spriteFacing, type SpriteClip } from '../../src/renderer/character/spriteClips';
-import { snapWindow, attachToWindow, windowAttachment, HANG_RATIO } from '../../src/main/desktop/perch';
+import { snapWindow, attachToWindow, windowAttachment, INVERTED_SEAT_RATIO } from '../../src/main/desktop/perch';
 import { codexEventText } from '../../src/main/ai/codexAccount';
 
 describe('lachydotmcg artwork integration', () => {
@@ -47,19 +47,29 @@ describe('desktop buddy regressions', () => {
     expect(snapWindow([{ handle: 8n, rect: { x: 0, y: 0, width: 100, height: 100 } }, target], pet, 0.8)?.handle).toBe(5n);
     expect(snapWindow([target], { ...pet, y: 50 }, 0.8)).toBeNull();
   });
-  it('hangs below high windows and restores the seat with room above, on either monitor', () => {
+  it('can be dropped onto a high title bar using the inverted contact point', () => {
+    const pet = { x: 300, y: -40, width: 200, height: 300 };
+    const target = { handle: 9n, rect: { x: 200, y: 18, width: 600, height: 500 } };
+    expect(snapWindow([target], pet, 0.712, 56, () => 0)?.handle).toBe(9n);
+  });
+  it('sits upside down below high windows and restores the seat with room above, on either monitor', () => {
     const pet = { x: 300, y: 200, width: 200, height: 300 };
     const high = { x: 100, y: -880, width: 800, height: 600 };
     const hung = windowAttachment(pet, high, 0.712, -900, 0.3);
-    expect(hung.mode).toBe('hang');
-    expect(hung.bounds.y + pet.height * HANG_RATIO).toBe(high.y);
+    expect(hung.mode).toBe('inverted');
+    expect(Math.abs(hung.bounds.y + pet.height * INVERTED_SEAT_RATIO - high.y)).toBeLessThan(1);
     const seated = windowAttachment(hung.bounds, { ...high, y: -500 }, 0.712, -900, hung.fraction, hung.mode);
     expect(seated.mode).toBe('perch');
     expect(Math.abs(seated.bounds.y + pet.height * 0.712 + 500)).toBeLessThan(1);
     expect(seated.bounds.x).toBe(hung.bounds.x);
-    const boundary = { ...high, y: -705 };
-    expect(windowAttachment(pet, boundary, 0.712, -900, 0.3, 'hang').mode).toBe('hang');
+    const boundary = { ...high, y: -814 };
+    expect(windowAttachment(pet, boundary, 0.712, -900, 0.3, 'inverted').mode).toBe('inverted');
     expect(windowAttachment(pet, boundary, 0.712, -900, 0.3, 'perch').mode).toBe('perch');
+    // A title bar at the former early-flip height now keeps her upright.
+    expect(windowAttachment(pet, { ...high, y: -715 }, 0.712, -900).mode).toBe('perch');
+    expect(windowAttachment(pet, { ...high, y: -735 }, 0.712, -900)).toMatchObject({ mode: 'perch', reclining: true });
+    expect(windowAttachment(pet, { ...high, y: -825 }, 0.712, -900)).toMatchObject({ mode: 'inverted', reclining: false });
+    expect(windowAttachment(pet, { ...high, y: -650 }, 0.712, -900)).toMatchObject({ mode: 'perch', reclining: false });
   });
   it('keeps the same relative seat when the attached window moves or resizes', () => {
     const pet = { x: 300, y: 200, width: 200, height: 300 };

@@ -20,6 +20,7 @@ export interface BehaviorInputs {
   surface?: Surface; // where she is on the desktop (taskbar ledge, a window's top edge, mid-air, screen edge)
   dashing?: number; // -1/1 while gliding sideways across the desktop, 0 otherwise
   held?: boolean; // being dragged by the user
+  forceSleep?: boolean;
 }
 
 const DUR: Record<BehaviorState, [number, number]> = {
@@ -133,6 +134,7 @@ export class Behavior {
 
   private lastDt = 1 / 60;
   update(dt: number, inp: BehaviorInputs): Params {
+    if (inp.forceSleep && !inp.held) { this.clip = null; this.enter('sleeping'); }
     this.lastDt = dt;
     this.intensity = inp.intensity;
     this.t += dt;
@@ -149,6 +151,7 @@ export class Behavior {
   }
 
   private transition(inp: BehaviorInputs) {
+    if (inp.forceSleep && !inp.held) return;
     const s = this.state;
     // conversation phases take priority over ambient behavior
     if (inp.phase === 'listening' || inp.phase === 'transcribing') { if (s !== 'listening') { this.clip = null; this.enter('listening'); } return; }

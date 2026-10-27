@@ -1,6 +1,6 @@
 {
   "name": "capri-buddy",
-  "version": "0.2.10",
+  "version": "0.2.45",
   "main": "dist/main/index.js",
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -17,6 +17,8 @@
   "license": "MIT",
   "description": "Private Capri companion with lachydotmcg artwork",
   "dependencies": {
+    "@fontsource/chakra-petch": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
     "@google/genai": "^2.31.0",
     "koffi": "^3.3.4"
   },
@@ -52,6 +54,10 @@
     ],
     "extraResources": [
       {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
+      },
+      {
         "from": "THIRD_PARTY_LICENSES.md",
         "to": "THIRD_PARTY_LICENSES.md"
       },
@@ -71,7 +77,7 @@
       ],
       "icon": "build/icon.ico",
       "legalTrademarks": "Unofficial fan project",
-      "signAndEditExecutable": false
+      "signExecutable": false
     },
     "nsis": {
       "oneClick": false,

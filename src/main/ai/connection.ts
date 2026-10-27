@@ -56,8 +56,10 @@ export class ConnectionMonitor extends EventEmitter {
   reportFailure(e: unknown) {
     if (!(e instanceof ProviderError)) { this.set({ state: 'error', detail: String((e as Error)?.message ?? e).slice(0, 200) }); return; }
     if (e.kind === 'aborted') return;
+    ++this.gen; // An older login check cannot overwrite a failed real request.
     if (e.kind === 'network' || e.kind === 'timeout') this.set({ state: 'disconnected', detail: e.message });
     else if (e.kind === 'auth' || e.kind === 'config' || e.kind === 'model' || e.kind === 'bad_request') this.set({ state: 'error', detail: e.message });
-    else this.set({ detail: e.message }); // rate limit / server hiccup: connection itself is fine
+    else if (e.kind === 'rate_limit') this.set({ state: 'error', detail: `${e.message}${e.retryAfterMs ? ` Retry in about ${Math.ceil(e.retryAfterMs / 1000)} seconds.` : ''}` });
+    else this.set({ detail: e.message });
   }
 }

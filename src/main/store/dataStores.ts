@@ -4,7 +4,8 @@ import { EventEmitter } from 'node:events';
 import type { ChatMessage, MemoryItem, Note, Reminder } from '../../shared/ipc';
 import { newId, readJson, writeJsonAtomic } from './jsonFile';
 
-const MAX_HISTORY_IN_MEMORY = 2000;
+// Keep a separate large recall horizon; live prompts still use historyTurns.
+const MAX_HISTORY_IN_MEMORY = 50000;
 
 /** Conversation history: append-only JSONL, compacted on load (retention + cap). */
 export class HistoryStore {
@@ -49,6 +50,7 @@ export class HistoryStore {
     fs.appendFileSync(this.file, JSON.stringify(m) + '\n');
   }
   recent(limit = 50): ChatMessage[] { return this.items.slice(-limit); }
+  recallHistory(): ChatMessage[] { return this.items.slice(); }
   clear() { this.items = []; try { fs.rmSync(this.file, { force: true }); } catch { /* */ } }
 }
 
@@ -56,15 +58,30 @@ export class HistoryStore {
 export class MemoryStore extends EventEmitter {
   private file: string;
   private items: MemoryItem[];
-  static MAX = 200;
+  static MAX = 1000;
   constructor(dir: string) {
     super();
     this.file = path.join(dir, 'memory.json');
     this.items = (readJson<MemoryItem[]>(this.file, []).value || []).filter((m) => m && typeof m.text === 'string');
+    this.fileSignature = this.signature();
   }
-  private save() { writeJsonAtomic(this.file, this.items); this.emit('changed'); }
-  list() { return [...this.items]; }
-  approved() { return this.items.filter((m) => m.status === 'approved' && !m.archived); }
+  private fileSignature = '';
+  private signature() {
+    try { const stat = fs.statSync(this.file); return `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`; } catch { return ''; }
+  }
+  /** Imports restored by another process must become visible without losing the last good snapshot. */
+  private refresh() {
+    const signature = this.signature();
+    if (!signature || signature === this.fileSignature) return;
+    try {
+      const raw: unknown = JSON.parse(fs.readFileSync(this.file, 'utf8').replace(/^\uFEFF/, ''));
+      if (!Array.isArray(raw) || !raw.every(m => m && typeof m.text === 'string' && typeof m.id === 'string')) return;
+      this.items = raw as MemoryItem[]; this.fileSignature = signature;
+    } catch { /* A partial external write must never replace the last good memories. */ }
+  }
+  private save() { writeJsonAtomic(this.file, this.items); this.fileSignature = this.signature(); this.emit('changed'); }
+  list() { this.refresh(); return structuredClone(this.items); }
+  approved() { this.refresh(); return structuredClone(this.items.filter((m) => m.status === 'approved' && !m.archived)); }
   add(text: string, source: 'user' | 'model'): MemoryItem {
     const clean = text.replace(/\s+/g, ' ').trim().slice(0, 300);
     if (!clean) throw new Error('Memory text is empty');

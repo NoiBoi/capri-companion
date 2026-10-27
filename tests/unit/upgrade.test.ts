@@ -204,8 +204,9 @@ describe('ConnectionMonitor', () => {
     expect(m.status.state).toBe('disconnected');
     m.reportSuccess('gemini', 'gemini-3.5-flash-lite');
     expect(m.status.state).toBe('connected');
-    m.reportFailure(new ProviderError('rate', 'rate_limit'));
-    expect(m.status.state).toBe('connected');
+    m.reportFailure(new ProviderError('rate', 'rate_limit', 429, 309000));
+    expect(m.status.state).toBe('error');
+    expect(m.status.detail).toContain('309 seconds');
     m.reportFailure(new ProviderError('bad key', 'auth'));
     expect(m.status.state).toBe('error');
     m.reportFailure(new ProviderError('down', 'network'));

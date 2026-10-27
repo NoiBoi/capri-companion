@@ -42,10 +42,20 @@ export interface ActionResult { id: string; ok: boolean; summary: string; data?:
 
 /** Coarse status shown on the character + panel */
 export type AssistantPhase = 'idle' | 'listening' | 'transcribing' | 'thinking' | 'speaking' | 'error' | 'offline';
-export interface BubbleState { text: string; phase: AssistantPhase; composer: boolean; side: 'left' | 'right' }
+export interface BubbleState { text: string; phase: AssistantPhase; composer: boolean; side: 'left' | 'right'; tail?: { x: number; y: number }; startedAt?: number; delivery?: 'aside' | 'reply'; company?: string }
 
 /** Cues the main process sends to the character renderer */
 export type CharacterCue =
+  | { type: 'flourish'; kind: import('./theatrics').FlourishKind | null; side?: number }
+  | { type: 'theatre'; kind: import('./theatrics').SceneKind | null; target?: { x: number; y: number }; stand?: boolean }
+  | { type: 'cutin'; kind: 'grin' | 'laugh' | 'look' | 'eyes' | 'many'; preview?: boolean }
+  | { type: 'userReturn'; from: 'idle' | 'sleep' }
+  | { type: 'perchMotion'; phase: 'dangle' | 'stand' | null }
+  | { type: 'devPreview'; preview: import('./developer').DevPreview | null }
+  | { type: 'entrance' }
+  | { type: 'activity'; kind: import('./activity').ActivityKind; side?: number }
+  | { type: 'dragging'; active: boolean }
+  | { type: 'attention'; point: { x: number; y: number } | null; seconds: number }
   | { type: 'life'; event: LifeEvent }
   | { type: 'phase'; phase: AssistantPhase }
   | { type: 'react'; reaction: 'happy' | 'surprised' | 'annoyed' | 'curious' | 'wave' | 'nod' }
@@ -55,16 +65,17 @@ export type CharacterCue =
   | { type: 'mic'; command: 'start' | 'stop' | 'cancel' }
   | { type: 'pause'; paused: boolean }
   | { type: 'interact'; enabled: boolean }
-  | { type: 'presence'; idleSec: number; quiet: boolean }
+  | { type: 'presence'; idleSec: number; quiet: boolean; simulated?: 'idle' | 'sleep' }
   | { type: 'remark'; text: string }
   | { type: 'bubble'; text: string } // a line in her speech bubble, no gesture
   | { type: 'textTalk'; text: string }
   | { type: 'workPose'; pose: 'back' | 'crouch' | 'sit' | null } // while she works on the PC (null = back to normal)
   | { type: 'connection'; state: ConnectionStatus['state'] }
   | { type: 'teleport'; phase: 'out' | 'in'; id: number; effects: boolean; animation?: 'perch_glitch' }
-  | { type: 'attachment'; mode: 'perch' | 'hang' | 'moving' | null }
+  | { type: 'attachment'; mode: 'perch' | 'inverted' | 'moving' | null }
   | { type: 'clip'; name: string }
   | { type: 'surface'; surface: 'taskbar' | 'window' | 'air' | 'edge_left' | 'edge_right' }
+    | { type: 'poseSupport'; support: import('./secondaryBehavior').PoseSupport }
   | { type: 'pointer'; x: number; y: number }
   | { type: 'dash'; dir: -1 | 1 | 0 };
 
@@ -121,6 +132,16 @@ export interface CharacterEvents {
 
 /** invoke() channels from either renderer to main */
 export interface InvokeMap {
+  'dev:absence': ['idle' | 'sleep' | 'return' | 'clear', import('./developer').DevSnapshot];
+  'bubble:reply': [void, void];
+  'dev:get': [void, import('./developer').DevSnapshot];
+  'dev:run': [import('./developer').DevCommand, import('./developer').DevState];
+  'dev:stop': [void, import('./developer').DevState];
+  'intro:done': [number, void];
+  'theatre:ready': [undefined, void];
+  'theatre:done': [number, void];
+  'taskbar:command': ['open' | 'minimize' | 'intro' | 'settings' | 'quit' | 'normal' | 'explore' | 'sleep', void];
+  'taskbar:mode': [void, 'normal' | 'explore' | 'sleep'];
   'settings:get': [void, Settings];
   'settings:set': [Partial<Settings> | Record<string, unknown>, { settings: Settings; repaired: string[] }];
   'settings:reset': [void, Settings];
@@ -129,6 +150,7 @@ export interface InvokeMap {
   'secrets:delete': [string, boolean];
   'chat:send': [{ text: string; viaVoice?: boolean }, { messageId: string }];
   'chat:stop': [void, void];
+  'chat:state': [void, { phase: AssistantPhase; busy: boolean }];
   'chat:history': [{ limit?: number }, ChatMessage[]];
   'chat:clear': [void, void];
   'memory:list': [void, MemoryItem[]];
@@ -138,6 +160,17 @@ export interface InvokeMap {
   'memory:approve': [string, void];
   'memory:delete': [string, void];
   'memory:clear': [void, void];
+  'memory:patterns': [void, import('./interactionProfile').InteractionProfileSummary];
+  'memory:clearPatterns': [void, void];
+  'relationship:get': [void, { state: import('./relationship').RelationshipState; retired: import('./relationship').RetiredLine[] }];
+  'relationship:taste': [{ id?: string; topic: string; text: string }, import('./relationship').CapriTaste];
+  'relationship:thread': [{ id?: string; title: string; summary: string; status: import('./relationship').ThreadStatus }, import('./relationship').ProjectThread];
+  'relationship:status': [{ id: string; status: import('./relationship').ThreadStatus; snoozeDays?: number }, void];
+  'relationship:remove': [{ kind: 'taste' | 'thread'; id: string }, void];
+  'dialogue:retire': [string, import('./relationship').RetiredLine];
+  'dialogue:restore': [string, void];
+  'dialogue:scene': [void, import('./conversationScene').ConversationSceneState];
+  'dialogue:clearScene': [void, void];
   'notes:list': [void, Note[]];
   'notes:delete': [string, void];
   'reminders:list': [void, Reminder[]];
@@ -159,15 +192,18 @@ export interface InvokeMap {
   'folders:pick': [void, string | null];
   'panel:open': [string | void, void];
   'panel:close': [void, void];
+  'panel:ready': [void, void];
   'voice:ptt': ['start' | 'stop' | 'cancel', void];
   // character renderer → main
   'char:hit': [boolean, void];
+  'char:anchor': [{ x: number; y: number; hand?: { x:number; y:number }; body?: { x: number; y: number; width: number; height: number } }, void];
   'char:drag': ['start' | 'end', void];
   'char:click': [void, void];
   'char:menu': [void, void];
   'char:speechState': [{ utteranceId: string; state: 'start' | 'end' | 'error' }, void];
   'char:audio': [{ wav: Uint8Array; durationMs: number }, void];
   'char:micError': [string, void];
+  'char:poseRenderer': [import('./developer').PoseRendererState, void];
   'char:fps': [number, void];
   'char:ready': [void, void];
   'char:personality': [{ mood: Mood; event?: LifeEvent }, void];
@@ -184,16 +220,26 @@ export interface InvokeMap {
 }
 export type InvokeChannel = keyof InvokeMap;
 export const INVOKE_CHANNELS: InvokeChannel[] = [
+  'dev:absence',
+  'bubble:reply',
+  'dev:get', 'dev:run', 'dev:stop',
+  'theatre:ready', 'theatre:done', 'intro:done', 'taskbar:command', 'taskbar:mode',
   'settings:get', 'settings:set', 'settings:reset', 'secrets:status', 'secrets:set', 'secrets:delete',
-  'chat:send', 'chat:stop', 'chat:history', 'chat:clear', 'memory:list', 'memory:add', 'memory:approve',
-  'memory:undo', 'memory:update', 'memory:delete', 'memory:clear', 'notes:list', 'notes:delete', 'reminders:list', 'reminders:cancel',
+  'chat:send', 'chat:stop', 'chat:state', 'chat:history', 'chat:clear', 'memory:list', 'memory:add', 'memory:approve',
+  'memory:undo', 'memory:update', 'memory:delete', 'memory:clear', 'memory:patterns', 'memory:clearPatterns', 'notes:list', 'notes:delete', 'reminders:list', 'reminders:cancel',
+  'relationship:get', 'relationship:taste', 'relationship:thread', 'relationship:status', 'relationship:remove', 'dialogue:retire', 'dialogue:restore',
+  'dialogue:scene', 'dialogue:clearScene',
   'action:respond', 'provider:test', 'provider:models', 'claude:status', 'claude:signin', 'claude:code', 'claude:signout', 'diagnostics:get', 'logs:tail', 'app:openDataFolder',
-  'app:resetAll', 'app:quit', 'app:restart', 'apps:pick', 'folders:pick', 'panel:open', 'panel:close',
-  'voice:ptt', 'char:hit', 'char:drag', 'char:click', 'char:menu', 'char:speechState', 'char:audio',
-  'char:micError', 'char:fps', 'char:ready', 'tts:fetch', 'connection:get', 'connection:check', 'teleport:now', 'char:teleport',
+  'app:resetAll', 'app:quit', 'app:restart', 'apps:pick', 'folders:pick', 'panel:open', 'panel:close', 'panel:ready',
+  'voice:ptt', 'char:hit', 'char:anchor', 'char:drag', 'char:click', 'char:menu', 'char:speechState', 'char:audio',
+  'char:micError', 'char:poseRenderer', 'char:fps', 'char:ready', 'tts:fetch', 'connection:get', 'connection:check', 'teleport:now', 'char:teleport',
   'char:personality', 'char:interaction', 'bubble:open', 'bubble:close', 'bubble:get', 'bubble:resize',
 ];
 export const EVENT_CHANNELS = [
+  'theatre:play', 'theatre:update',
+  'trail:play',
+  'companion:mode',
+  'intro:play',
   'chat:delta', 'chat:done', 'chat:message', 'chat:phase', 'action:confirm', 'action:result', 'memory:changed',
   'settings:changed', 'reminder:fired', 'transcript', 'panel:tab', 'cue', 'connection:status',
   'bubble:state',

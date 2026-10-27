@@ -7,9 +7,9 @@ type Report = (id: string, state: 'start' | 'end' | 'error') => void;
 
 /** Picks a default substitute voice: a female English Windows voice if available. */
 export function pickVoice(voices: SpeechSynthesisVoice[], preferred: string): SpeechSynthesisVoice | null {
-  if (preferred) { const v = voices.find((x) => x.name === preferred); if (v) return v; }
+  if (preferred) { const v = voices.find((x) => x.name === preferred); return v ?? null; }
   const en = voices.filter((v) => v.lang.toLowerCase().startsWith('en'));
-  return en.find((v) => /zira|aria|jenny|hazel|susan|eva|female/i.test(v.name)) ?? en.find((v) => v.localService) ?? en[0] ?? voices[0] ?? null;
+  return en.find((v) => /zira|aria|jenny|hazel|susan|eva|female/i.test(v.name)) ?? null;
 }
 
 /**
@@ -50,13 +50,13 @@ export class Speaker {
     this.processing = true;
     const generation = this.generation;
     const v = this.settings().voice;
+    if (!v.ttsEnabled) { this.processing = false; this.report(item.id, 'end'); void this.next(); return; }
     try {
       if (v.ttsEngine === 'openai') await this.playRemote(item, v, generation);
       else await this.playSystem(item, v);
     } catch {
-      // remote TTS failed → fall back to the local voice for this sentence
-      if (generation === this.generation && v.ttsEngine === 'openai') { try { await this.playSystem(item, v); } catch { this.report(item.id, 'error'); } }
-      else if (generation === this.generation) this.report(item.id, 'error');
+      // Never substitute another voice when the configured voice fails.
+      if (generation === this.generation) this.report(item.id, 'error');
     }
     if (generation !== this.generation) return;
     this.playing = null;
@@ -69,7 +69,8 @@ export class Speaker {
       if (typeof speechSynthesis === 'undefined') return reject(new Error('no speechSynthesis'));
       const u = new SpeechSynthesisUtterance(item.text);
       const voice = pickVoice(speechSynthesis.getVoices(), v.systemVoice);
-      if (voice) u.voice = voice;
+      if (!voice) return reject(new Error('Configured voice is not ready'));
+      u.voice = voice;
       u.rate = v.rate; u.pitch = v.pitch; u.volume = v.volume;
       let done = false;
       const finish = (state: 'end' | 'error') => { if (done) return; done = true; this.audible = false; this.lips.stop(); this.report(item.id, state); state === 'end' ? resolve() : reject(new Error('tts error')); };

@@ -18,6 +18,7 @@ export interface TeleportDeps {
   userIdleSec(): number;
   /** After every move: lets the app work out where she now stands (taskbar / window / air / edge). */
   moved?(d: Destination, how: 'teleport' | 'glide'): void;
+  arrived?(d: Destination, reason: 'manual' | 'auto' | 'ai' | 'direct'): void;
   log: Logger;
 }
 
@@ -39,6 +40,11 @@ export class TeleportController {
   constructor(private d: TeleportDeps) {}
 
   get active() { return this.busy; }
+  private automaticBlock() {
+    const reason = this.d.blocked();
+    // The exploration owner may still request automatic travel itself.
+    return reason === 'window exploration handles autonomous movement' ? null : reason;
+  }
 
   /** Renderer finished a phase. */
   ack(id: number, phase: 'out' | 'in') { this.waiting.get(`${id}:${phase}`)?.(); }
@@ -53,7 +59,7 @@ export class TeleportController {
 
   /** Fly straight to a spot (computer control: she follows what she's working on). Skips if she's mid-move. */
   /** Teleport (glitch out, reappear) to an exact spot: she follows what she's working on. Skips if busy. */
-  async jumpTo(dest: Destination | (() => Destination), animation?: 'perch_glitch') {
+  async jumpTo(dest: Destination | (() => Destination), animation?: 'perch_glitch', cancelled?: () => boolean) {
     if (this.busy) return;
     this.busy = true;
     const id = ++this.seq, fx = this.d.settings().teleport.effects;
@@ -61,39 +67,48 @@ export class TeleportController {
       const departure = this.waitAck(id, 'out', fx ? 1500 : 400);
       this.d.cue({ type: 'teleport', phase: 'out', id, effects: fx, animation });
       await departure;
-      const target = typeof dest === 'function' ? dest() : dest;
-      this.d.move(target, 'teleport');
-      this.d.moved?.(target, 'teleport');
+      let target: Destination | undefined;
+      if (!cancelled?.()) {
+        target = typeof dest === 'function' ? dest() : dest;
+        this.d.move(target, 'teleport');
+        this.d.moved?.(target, 'teleport');
+      }
       const arrival = this.waitAck(id, 'in', fx ? 1800 : 400);
       this.d.cue({ type: 'teleport', phase: 'in', id, effects: fx, animation });
       await arrival;
+      if (target) this.d.arrived?.(target, 'direct');
     } finally { this.busy = false; }
   }
 
-  async flyTo(dest: Destination) {
-    if (this.busy) return;
+  async flyTo(dest: Destination, options: { gentle?: boolean; cancelled?: () => boolean; canOccupy?: (r: Rect) => boolean; silent?: boolean; curve?: number; pace?: number } = {}) {
+    if (this.busy) return false;
     this.busy = true;
-    try { await this.glide(dest); this.d.moved?.(dest, 'glide'); } finally { this.busy = false; }
+    try { const complete = await this.glide(dest, options); if (complete) { this.d.moved?.(dest, 'glide'); if (!options.silent) this.d.arrived?.(dest, 'direct'); } return complete; } finally { this.busy = false; }
   }
 
   /** Glide across the desktop (B 4:03 dash): the window slides, hair streams behind her. */
-  private async glide(dest: Destination): Promise<void> {
+  private async glide(dest: Destination, options: { gentle?: boolean; cancelled?: () => boolean; canOccupy?: (r: Rect) => boolean; curve?: number; pace?: number } = {}): Promise<boolean> {
     const cur = this.d.bounds();
-    if (!cur) return;
+    if (!cur) return false;
     const dx = dest.x - cur.x, dy = dest.y - cur.y;
-    const dur = Math.min(1100, Math.max(380, Math.hypot(dx, dy) / 1.5));
+    const dur = (options.gentle ? Math.min(5500, Math.max(2800, Math.hypot(dx, dy) / 0.22)) : Math.min(2200, Math.max(850, Math.hypot(dx, dy) / 0.7))) * Math.max(.6, Math.min(1.6, options.pace ?? 1));
     this.d.cue({ type: 'dash', dir: dx < 0 ? -1 : 1 });
     const t0 = Date.now();
-    await new Promise<void>((resolve) => {
+    const complete = await new Promise<boolean>((resolve) => {
       const step = () => {
+        if (options.cancelled?.()) { clearInterval(timer); resolve(false); return; }
         const u = Math.min(1, (Date.now() - t0) / dur);
         const e = u < 0.5 ? 4 * u * u * u : 1 - (-2 * u + 2) ** 3 / 2; // ease in-out
-        this.d.move({ ...dest, x: Math.round(cur.x + dx * e), y: Math.round(cur.y + dy * e) });
-        if (u >= 1) { clearInterval(timer); resolve(); }
+        const bend = Math.sin(Math.PI * e) * (options.curve ?? 0), length = Math.max(1, Math.hypot(dx, dy));
+        const step = { ...dest, x: Math.round(cur.x + dx * e - dy / length * bend), y: Math.round(cur.y + dy * e + dx / length * bend) };
+        if (options.canOccupy && !options.canOccupy(step)) { clearInterval(timer); resolve(false); return; }
+        this.d.move(step);
+        if (u >= 1) { clearInterval(timer); resolve(true); }
       };
       const timer = setInterval(step, 16);
     });
     this.d.cue({ type: 'dash', dir: 0 });
+    return complete;
   }
 
   async go(target: TeleportTarget, reason: 'manual' | 'auto' | 'ai', how: 'teleport' | 'glide' | 'either' = 'teleport'): Promise<{ ok: boolean; detail: string; to?: Rect }> {
@@ -111,10 +126,12 @@ export class TeleportController {
     const near = Math.hypot(dest.x - cur.x, dest.y - cur.y) < 900 && this.d.displays().some((x) => x.workArea.x <= cur.x + cur.width / 2 && cur.x + cur.width / 2 < x.workArea.x + x.workArea.width && x.workArea.x <= dest.x + dest.width / 2 && dest.x + dest.width / 2 < x.workArea.x + x.workArea.width);
     if (how === 'glide' || (how === 'either' && near && Math.random() < 0.4)) {
       try {
-        await this.glide(dest);
+        const completed = await this.glide(dest, { cancelled: () => reason === 'auto' && !!this.automaticBlock() });
+        if (!completed) return { ok: false, detail: this.automaticBlock() ?? 'Automatic movement interrupted.' };
         this.count++;
         this.last = `${new Date().toLocaleTimeString()} (${reason}, glide ${target}) → ${dest.x},${dest.y}`;
         this.d.moved?.(dest, 'glide');
+        this.d.arrived?.(dest, reason);
         this.d.log.info('glide', { reason, target, kind: dest.kind });
         return { ok: true, detail: `Glided (${target.replace('_', ' ')})`, to: dest };
       } finally { this.busy = false; }
@@ -125,11 +142,20 @@ export class TeleportController {
       const departure = this.waitAck(id, 'out', fx ? 1500 : 400);
       this.d.cue({ type: 'teleport', phase: 'out', id, effects: fx });
       const outOk = await departure;
+      const blocked = reason === 'auto' ? this.automaticBlock() : null;
+      if (blocked) {
+        // Restore her at the departure point when a new request interrupts automatic travel.
+        const restored = this.waitAck(id, 'in', fx ? 1800 : 400);
+        this.d.cue({ type: 'teleport', phase: 'in', id, effects: fx });
+        await restored;
+        return { ok: false, detail: blocked };
+      }
       this.d.move(dest, 'teleport');
       this.d.moved?.(dest, 'teleport');
       const arrival = this.waitAck(id, 'in', fx ? 1800 : 400);
       this.d.cue({ type: 'teleport', phase: 'in', id, effects: fx });
       const inOk = await arrival;
+      this.d.arrived?.(dest, reason);
       this.count++;
       this.last = `${new Date().toLocaleTimeString()} (${reason}, ${target}) → ${dest.x},${dest.y}`;
       this.d.log.info('teleport', { reason, target, x: dest.x, y: dest.y, outOk, inOk });

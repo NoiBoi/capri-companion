@@ -1,6 +1,7 @@
 import { Personality, type Mood, type LifeEvent, type LifeFrame } from '../../shared/personality';
 import type { AssistantPhase, CharacterCue } from '../../shared/ipc';
 import type { Settings } from '../../shared/settings';
+import type { DevPreview } from '../../shared/developer';
 import type { CapriApi } from '../../preload/preload';
 import { Animator, Blinker, NEUTRAL, type Params } from './params';
 import { Behavior } from './behavior';
@@ -8,6 +9,9 @@ import { Speaker } from './speaker';
 import { MicRecorder } from './audio';
 import { FRAME_SIZE } from '../../shared/framing';
 import { TeleportFx } from './teleportFx';
+import { DeepSleep } from './deepSleep';
+import { StatusFx } from './statusFx';
+import { AttentionRig } from '../../shared/presence';
 import { POSTURES, type PostureName, type Surface } from './postures';
 import { clipByName } from './clips';
 import type { Reaction } from './behavior';
@@ -35,10 +39,16 @@ const off = document.createElement('canvas'); // glitch post-process source
 const offCtx = off.getContext('2d')!;
 
 let settings: Settings;
+let lastRendererState = '';
 let phase: AssistantPhase = 'idle';
 let idleSec = 0;
 let quiet = false;
 let paused = false;
+let characterBooted = false;
+let hoverBegan = 0, lastHoverActAt = -12000;
+let hoverAnchor: { x: number; y: number } | null = null;
+let poseSupport: import('../../shared/secondaryBehavior').PoseSupport | undefined;
+let anchorSentAt = 0, lastAnchor = { x: -1, y: -1 }, lastAnchorBody = '';
 let pointer: { x: number; y: number } | null = null;
 let lastPointerAt = 0;
 let cursorLocal: { x: number; y: number } | null = null;
@@ -46,14 +56,23 @@ let hit = false;
 let dragging = false;
 let forced: Partial<Params> | null = null;
 let surface: Surface = 'taskbar';
-let attachment: 'perch' | 'hang' | 'moving' | null = null;
+let attachment: 'perch' | 'inverted' | 'moving' | null = null;
 let dashing = 0; // pose override for previews/tests only
 let textTalkUntil = 0;
 
 const fx = new TeleportFx(() => document.createElement('canvas'));
+const statusFx = new StatusFx();
+const deepSleep = new DeepSleep();
+let theatreStand = false;
+let theatreKind: import('../../shared/theatrics').SceneKind | null = null;
+let theatreTarget: {x:number;y:number} | null = null;
+const attention = new AttentionRig();
 const model = new CapriSpriteModel();
 const personality = new Personality();
 let life: LifeFrame | undefined;
+let devPreview: DevPreview | null = null;
+let perchMotion: 'dangle' | 'stand' | null = null;
+let simulatedAbsence: 'idle' | 'sleep' | null = null;
 let reportedMood: Mood = 'neutral';
 function lifeEvent(event: LifeEvent) {
   if (!settings?.character.personality) return;
@@ -96,11 +115,11 @@ let raf = 0;
 function frameBudget(): number {
   const cap = settings?.character.fpsCap ?? 60;
   if (behavior.state === 'sleeping') return 1000 / Math.min(cap, 15);
-  const busy = dashing !== 0 || fx.active || speaker.speaking || dragging || phase !== 'idle' || behavior.state !== 'idle' || pointer;
+  const busy = !!model.performance || !!theatreKind || deepSleep.active || dashing !== 0 || fx.active || speaker.speaking || dragging || phase !== 'idle' || behavior.state !== 'idle' || pointer;
   return 1000 / (busy ? cap : Math.min(cap, 30));
 }
 function loop(now: number) {
-  raf = requestAnimationFrame(loop);
+  if (!paused) raf = requestAnimationFrame(loop);
   acc = now - last;
   if (acc < frameBudget() - 1) return;
   const dt = Math.min(0.1, acc / 1000);
@@ -113,7 +132,7 @@ function setPaused(p: boolean) {
   if (p === paused) return;
   paused = p;
   if (p) cancelAnimationFrame(raf);
-  else { last = performance.now(); raf = requestAnimationFrame(loop); }
+  else if (characterBooted) { last = performance.now(); raf = requestAnimationFrame(loop); }
 }
 // Main pauses genuinely hidden pets explicitly. Covering the native window must
 // not stop teleport effects or leave a stale mouse hit region behind.
@@ -126,10 +145,12 @@ function tick(dt: number) {
   const mood = life?.mood ?? 'neutral';
   if (mood !== reportedMood) { reportedMood = mood; void api.invoke('char:personality', { mood }); }
   const level = speaker.lips.update(dt);
+  const gaze = attention.update(dt, { pointer, engaged: ['listening', 'transcribing', 'thinking', 'speaking'].includes(phase), held: dragging, sleeping: behavior.state === 'sleeping' });
   const target: Params = behavior.update(dt, {
-    phase, speechLevel: level, speaking: speaker.speaking, pointer, idleSec, quiet, intensity,
+    forceSleep: devPreview ? devPreview.deepSleep || devPreview.animation === 'sleep' : settings.behavior.mode === 'sleep' || simulatedAbsence === 'sleep',
+    phase: devPreview?.phase ?? phase, speechLevel: level, speaking: speaker.speaking, pointer: gaze, idleSec: devPreview ? 0 : idleSec, quiet, intensity,
     sleepAfterSec: settings.behavior.sleepAfterMinutes * 60,
-    surface, dashing, held: dragging,
+    surface, dashing, held: devPreview?.held ?? dragging,
   });
   const b = blinker.update(dt, { drowsy: target.sleep, suppressed: behavior.state === 'sleeping' });
   target.blinkL = Math.max(target.blinkL, b);
@@ -143,16 +164,42 @@ function tick(dt: number) {
   p.mouthOpen = Math.max(0, speaker.speaking ? level : p.mouthOpen); // lip-sync wins over gesture clips
 
   const teleporting = fx.active || fx.hidden;
-  model.faceToward(life && settings.character.animation === 'auto' ? life.look ?? 0 : pointer ? pointer.x : 0);
+  const sameHover = hoverAnchor && cursorLocal && performance.now() - hoverBegan < 10000 && Math.hypot(cursorLocal.x - hoverAnchor.x, cursorLocal.y - hoverAnchor.y) < 28;
+  const hovering = settings.behavior.smallActivities && !quiet && !teleporting && !dragging && settings.behavior.mode !== 'sleep' && phase === 'idle' && !!cursorLocal && (hit || !!sameHover);
+  if (!hovering) { hoverBegan = 0; hoverAnchor = null; }
+  else {
+    const now = performance.now(); if (!hoverBegan) { hoverBegan = now; hoverAnchor = { ...cursorLocal! }; }
+    if (now - hoverBegan > 600 && now - lastHoverActAt > 12000) {
+      lastHoverActAt = now; personality.event('hover');
+    }
+  }
+  model.faceToward(theatreKind && theatreTarget ? (theatreTarget.x - model.speechAnchor.x * W) / (W * .45) : pointer ? pointer.x : gaze ? gaze.x : life?.look ?? 0);
   if (!settings.voice.ttsEnabled && !speaker.speaking && performance.now() < textTalkUntil) p.mouthOpen = 0.12 + 0.30 * Math.abs(Math.sin(performance.now() / 95));
   if (model.stutter > 0 && !teleporting) { model.stutter--; return; } // glitch stutter: hold the last image a few frames
-  const glitch = !teleporting && settings.character.glitchEffects && (p.glitch > 0.05 || model.burst > 0);
+  const glitch = !deepSleep.active && !teleporting && settings.character.glitchEffects && (p.glitch > 0.05 || model.burst > 0);
   const g = glitch || teleporting ? offCtx : ctx;
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, canvas.width, canvas.height);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   lastP = p;
-  model.draw(g, p, dt, { personality: life, attachment, pose: modelPose(), ledge: surface === 'taskbar' || surface === 'window', taskbar: surface === 'taskbar', dragging, glitchEnabled: settings.character.glitchEffects, intensity, animation: settings.character.animation, facing: settings.character.facing }, W, H);
+  const stillMotion = matchMedia('(prefers-reduced-motion: reduce)').matches || !settings.character.theatricalMotion || intensity <= 0;
+  if (stillMotion) model.perform(null);
+  const asleep = devPreview?.deepSleep || settings.behavior.mode === 'sleep' || behavior.state === 'sleeping';
+  deepSleep.update(dt, !!asleep && !dragging && phase === 'idle', settings.character.deepSleep, !!devPreview?.deepSleep);
+  g.globalAlpha = 1 - deepSleep.amount;
+  model.draw(g, p, dt, { personality: devPreview ? undefined : life, attachment: devPreview ? devPreview.attachment ?? null : attachment, pose: modelPose(), ledge: surface === 'taskbar' || surface === 'window' || !!poseSupport?.sit, taskbar: surface === 'taskbar', dragging: devPreview?.held ?? dragging, sleeping: devPreview ? devPreview.deepSleep || devPreview.animation === 'sleep' : settings.behavior.mode === 'sleep' || behavior.state === 'sleeping', glitchEnabled: settings.character.glitchEffects, intensity: devPreview ? Math.max(.5, intensity) : intensity, animation: settings.behavior.mode === 'normal' ? settings.character.animation : settings.behavior.mode === 'sleep' ? 'sleep' : 'auto', previewClip: devPreview?.animation, secondaryPose: devPreview?.secondary, secondaryMotion: devPreview?.secondaryMotion, standing: theatreStand || !devPreview && poseSupport?.landing === 'stand', secondaryEnabled: settings.character.secondaryPoses && !theatreKind, secondaryRestPreview: devPreview?.secondaryScene === 'rest', support: devPreview?.secondaryScene ? { sit: true, lie: true, kind: devPreview.secondaryScene === 'rest' ? 'taskbar' : 'window_top' } : devPreview ? undefined : poseSupport, hovering: devPreview?.secondaryScene === 'hover' || !!hovering, inspectingBelow: devPreview?.secondaryScene === 'inspect' || attention.mode === 'window' && (gaze?.y ?? 0) > .35, moving: dashing !== 0 || teleporting, perchMotion, facing: settings.character.facing }, W, H);
+  g.globalAlpha = 1;
+  if (deepSleep.active) {
+    deepSleep.draw(g, W, H, stillMotion); model.captureHit(g);
+    model.speechAnchor = { x: .5, y: .45 }; model.speechBody = undefined;
+  }
+  model.hitOverride = deepSleep.amount > .8 ? (x,y) => deepSleep.hit(x,y,W,H) : undefined;
+  const rendererState = model.secondaryRendererState, rendererKey = JSON.stringify(rendererState);
+  if (rendererKey !== lastRendererState) { lastRendererState = rendererKey; void api.invoke('char:poseRenderer', rendererState); }
+  const head = model.speechAnchor, now = performance.now(), bodyKey = JSON.stringify([model.speechBody,model.sceneHand]);
+  if (now - anchorSentAt >= 100 && (Math.hypot(head.x - lastAnchor.x, head.y - lastAnchor.y) > .003 || bodyKey !== lastAnchorBody)) {
+    lastAnchor = { ...head }; lastAnchorBody = bodyKey; anchorSentAt = now; void api.invoke('char:anchor', { ...head, body: model.speechBody, hand: model.sceneHand });
+  }
   if (glitch) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -160,21 +207,32 @@ function tick(dt: number) {
     model.post(ctx, off, Math.max(0.3, p.glitch, model.burst * 0.9));
   }
   if (teleporting) fx.render(ctx, off, dt, dpr);
+  if (!teleporting) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    statusFx.draw(ctx, dt, W, H, attachment === 'inverted', settings.character.reactionCutins && settings.character.glitchEffects && !matchMedia('(prefers-reduced-motion: reduce)').matches && !asleep && !quiet);
+    if (theatreKind && theatreTarget) {
+      // Hold attention on the actual scene target instead of following passing cursor samples.
+      attention.watch({ x: (theatreTarget.x - model.speechAnchor.x * W) / (W * .45), y: (theatreTarget.y - model.speechAnchor.y * H) / (H * .35) }, .5);
+    }
+  }
   if (!dragging && cursorLocal) setHit(!teleporting && model.hitTest(ctx, cursorLocal.x, cursorLocal.y, dpr));
 }
 
 // head pats: the cursor rubbing back and forth over her head (Desktop Mate / Shimeji style)
-let patDir = 0, patTurns: number[] = [], patLastX = 0, patCool = 0;
+let patDir = 0, patTurns: number[] = [], patLastX = 0, patCool = 0, patAnchor = 0;
 function trackPat(x: number, y: number) {
-  if (!hit || dragging || y > H * 0.45) return;
+  if (deepSleep.active || !hit || dragging || !model.headHitTest(x, y, dpr)) { patTurns = []; patDir = 0; patLastX = x; patAnchor = x; return; }
+  model.holdFacing();
   const d = Math.sign(x - patLastX);
   patLastX = x;
-  if (!d) return;
+  if (!d || Math.abs(x - patAnchor) < 3) return;
+  patAnchor = x;
   const now = performance.now();
   if (d !== patDir) { patDir = d; patTurns.push(now); }
   patTurns = patTurns.filter((t) => now - t < 1400);
-  if (patTurns.length >= 4 && now > patCool) {
-    patTurns = []; patCool = now + 2500;
+  if (patTurns.length >= 3) model.rubHead();
+  if (patTurns.length >= 3 && now > patCool) {
+    patCool = now + 2500;
     model.pat();
     void api.invoke('char:interaction', 'pat');
     behavior.react('happy');
@@ -209,19 +267,21 @@ window.addEventListener('mousemove', (e) => {
   cursorLocal = { x: e.clientX, y: e.clientY };
   lastPointerAt = performance.now();
   // gaze target relative to her head (≈ 34% down the frame)
-  pointer = { x: (e.clientX - W / 2) / (W * 0.45), y: (e.clientY - H * 0.34) / (H * 0.35) };
+  pointer = { x: (e.clientX - model.speechAnchor.x * W) / (W * .45), y: (e.clientY - model.speechAnchor.y * H) / (H * .35) };
   if (!dragging) setHit(!fx.active && !fx.hidden && model.hitTest(ctx, e.clientX, e.clientY, dpr));
   trackPat(e.clientX, e.clientY);
 });
-window.addEventListener('mouseleave', () => { cursorLocal = null; pointer = null; if (!dragging) setHit(false); });
+// Windows can emit mouseleave when switching a transparent window between
+// interactive and pass-through. The main-process cursor sample is authoritative.
+window.addEventListener('mouseleave', () => { pointer = null; });
 window.addEventListener('mousedown', (e) => {
-  if (e.button !== 0 || !hit) return;
-  dragging = true;
-  document.body.style.cursor = 'grabbing';
+  // Verify the current artwork, rather than a hover flag from the previous frame.
+  if (e.button !== 0 || fx.active || fx.hidden || !model.hitTest(ctx, e.clientX, e.clientY, dpr)) return;
+  setHit(true);
   void api.invoke('char:drag', 'start');
 });
 window.addEventListener('mouseup', (e) => {
-  if (e.button !== 0 || !dragging) return;
+  if (e.button !== 0) return;
   dragging = false;
   document.body.style.cursor = hit ? 'grab' : 'default';
   void api.invoke('char:drag', 'end');
@@ -248,9 +308,19 @@ let wakeAuto = false;
 api.on('cue', (raw) => {
   const c = raw as CharacterCue;
   switch (c.type) {
-    case 'life': lifeEvent(c.event); break;
-    case 'phase': if (c.phase === 'speaking' && phase !== 'speaking') lifeEvent('reply'); phase = c.phase; if (c.phase !== 'idle') behavior.wake(); break;
-    case 'react': behavior.react(c.reaction); if (c.reaction === 'happy' || c.reaction === 'surprised') model.poke(); break;
+    case 'flourish': if (c.kind !== 'spin' && (!c.kind || settings.character.theatricalMotion && !matchMedia('(prefers-reduced-motion: reduce)').matches)) model.perform(c.kind, c.side); break;
+    case 'theatre': theatreKind = c.kind; theatreStand = !!c.stand; theatreTarget = c.target ?? null; if (!c.kind) { model.perform(null); attention.clear(); } break;
+    case 'cutin': if (settings.character.reactionCutins && !quiet && settings.behavior.mode !== 'sleep') statusFx.show(c.kind, c.preview); break;
+    case 'userReturn': simulatedAbsence = null; behavior.wake(); idleSec = 0; if (c.from === 'sleep') model.requestAnimation('wake', 13 / 15); else behavior.react('wave'); break;
+    case 'perchMotion': perchMotion = c.phase; break;
+    case 'devPreview': model.perform(null); devPreview = c.preview; model.resetSecondary(); if (!devPreview) { behavior.wake(); model.settle(); } break;
+    case 'activity': if (performance.now() - lastHoverActAt < 2500 && c.kind !== 'putdown') break; model.act(c.kind, c.side); if (c.kind === 'return') behavior.react('wave'); else if (c.kind === 'notice') behavior.react('curious'); else if (c.kind === 'settle' || c.kind === 'putdown') model.settle(); break;
+    case 'dragging': model.perform(null); statusFx.clear(); dragging = c.active; document.body.style.cursor = dragging ? 'grabbing' : 'grab'; if (!dragging) setHit(false); break;
+    case 'entrance': model.appear(); behavior.wake(); break;
+    case 'attention': if (c.point) attention.watch({ x: (c.point.x - model.speechAnchor.x * W) / (W * 0.45), y: (c.point.y - model.speechAnchor.y * H) / (H * 0.35) }, c.seconds); else attention.clear(); break;
+    case 'life': lifeEvent(c.event); if (c.event === 'pat') model.pat(); if (c.event === 'window') model.settle(); break;
+    case 'phase': if (c.phase === 'error' && settings.character.theatricalMotion) model.perform('flinch'); if (c.phase === 'speaking' && phase !== 'speaking') lifeEvent('reply'); phase = c.phase; statusFx.setPhase(c.phase); if (c.phase !== 'idle') behavior.wake(); break;
+    case 'react': if (c.reaction === 'surprised' && settings.character.theatricalMotion && !matchMedia('(prefers-reduced-motion: reduce)').matches) model.perform('flinch'); behavior.react(c.reaction); if (c.reaction === 'happy' || c.reaction === 'surprised') model.poke(); break;
     case 'speak': behavior.wake(); speaker.enqueue(c.utteranceId, c.text, settings.character.personality ? personality.mood : undefined); break;
     case 'stopSpeech': speaker.stopAll(); break;
     case 'wake': wakeAuto = true; behavior.react('surprised'); break;
@@ -260,14 +330,20 @@ api.on('cue', (raw) => {
       break;
     case 'pause': setPaused(c.paused); if (c.paused) speaker.stopAll(); break;
     case 'interact': canvas.style.filter = c.enabled ? 'drop-shadow(0 0 1.5px #22f27a) drop-shadow(0 0 1px #22f27a)' : ''; break; // click-through lifted for a moment
-    case 'presence': idleSec = c.idleSec; quiet = c.quiet; break;
-    case 'remark': behavior.react('wave'); break;
+    case 'presence': simulatedAbsence = c.simulated ?? null; idleSec = c.idleSec; quiet = c.quiet; break;
+    case 'remark': break;
     case 'bubble': break; // the attached bubble window owns text layout
-    case 'textTalk': textTalkUntil = performance.now() + Math.min(10000, Math.max(1800, c.text.length * 40)); behavior.react('happy'); break;
+    case 'textTalk': textTalkUntil = performance.now() + Math.min(10000, Math.max(1800, c.text.length * 40)); break;
     case 'workPose': workPose = c.pose; break;
-    case 'teleport': if (c.animation && c.effects) model.teleportAnimation(c.animation); onTeleport(c.phase, c.id, c.effects, !!c.animation); break;
+    case 'teleport': model.perform(null); statusFx.clear(); if (c.animation && c.effects) model.teleportAnimation(c.animation); onTeleport(c.phase, c.id, c.effects, !!c.animation); break;
     case 'attachment': attachment = c.mode; break;
     case 'clip': {
+      if (['laugh','maniac_grin','cheer'].includes(c.name) && settings.character.reactionCutins) statusFx.show(c.name === 'cheer' ? 'grin' : 'laugh');
+      if (settings.character.theatricalMotion && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        if (['cheer','proud'].includes(c.name)) model.perform('victory');
+        if (['surprised','annoyed'].includes(c.name)) model.perform('flinch');
+        if (['curious','thinking'].includes(c.name)) model.perform('curious');
+      }
       const spriteEmotes: Record<string, 'idle' | 'perch' | 'grin' | 'sleep' | 'glitch' | 'dangle'> = { sit: 'perch', curl_up: 'perch', stand: 'idle', grin: 'grin', laugh: 'grin', happy: 'grin', smug: 'grin', power_stance: 'glitch', menace: 'glitch', recline: 'sleep', yawn: 'sleep' };
       if (spriteEmotes[c.name]) model.requestAnimation(spriteEmotes[c.name], ['sit', 'stand', 'recline', 'curl_up'].includes(c.name) ? 20 : spriteEmotes[c.name] === 'glitch' ? 10 / 15 : 2);
       const e = EMOTE_MAP[c.name];
@@ -278,15 +354,17 @@ api.on('cue', (raw) => {
     }
     case 'connection': break;
     case 'surface': surface = c.surface; break;
+    case 'poseSupport': poseSupport = c.support; break;
     case 'pointer':
+      if (!cursorLocal || c.x !== cursorLocal.x || c.y !== cursorLocal.y) lastPointerAt = performance.now();
       cursorLocal = { x: c.x, y: c.y };
-      pointer = Math.hypot(c.x - W / 2, c.y - H / 2) < 1100 ? { x: (c.x - W / 2) / (W * 0.45), y: (c.y - H * 0.34) / (H * 0.35) } : null;
-      lastPointerAt = performance.now();
+      pointer = Math.hypot(c.x - W / 2, c.y - H / 2) < 1100 ? { x: (c.x - model.speechAnchor.x * W) / (W * .45), y: (c.y - model.speechAnchor.y * H) / (H * .35) } : null;
+      if (!dragging) { setHit(!fx.active && !fx.hidden && model.hitTest(ctx, c.x, c.y, dpr)); trackPat(c.x, c.y); }
       break;
     case 'dash': dashing = c.dir; break;
   }
 });
-api.on('settings:changed', (s) => { settings = s as Settings; });
+api.on('settings:changed', (s) => { const wasSleeping = settings.behavior.mode === 'sleep'; settings = s as Settings; if (wasSleeping && settings.behavior.mode !== 'sleep') behavior.wake(); void api.invoke('char:hit', hit); if (!settings.voice.ttsEnabled || settings.behavior.mode === 'sleep') speaker.stopAll(); });
 
 // ---------------------------------------------------------------- boot
 (async () => {
@@ -297,13 +375,17 @@ api.on('settings:changed', (s) => { settings = s as Settings; });
   anim.snap({ ...NEUTRAL });
   tick(1 / 60);
   await api.invoke('char:ready');
-  raf = requestAnimationFrame(loop);
+  characterBooted = true;
+  if (!paused) raf = requestAnimationFrame(loop);
   window.__capriDebug = {
-    behavior, anim, speaker, model, mic, fx, personality, lifeEvent, get life() { return life; }, postures: POSTURES,
+    deepSleep, statusFx, behavior, anim, speaker, model, mic, fx, personality, attention, lifeEvent, get life() { return life; }, postures: POSTURES,
     get pose() { return modelPose(); },
     get surface() { return surface; },
+    get attachment() { return attachment; },
     get hit() { return hit; },
+    get dragging() { return dragging; },
     get paused() { return paused; },
+    get idleSec() { return idleSec; },
     force(p: Partial<Params> | null) { forced = p; },
     hitAt: (x: number, y: number) => model.hitTest(ctx, x, y, dpr),
     // ---- deterministic capture mode (trailer / docs): stop the clock, advance exact frames, export pixels
@@ -325,3 +407,9 @@ api.on('settings:changed', (s) => { settings = s as Settings; });
     },
   };
 })();
+
+
+
+
+
+

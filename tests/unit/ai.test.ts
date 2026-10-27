@@ -17,6 +17,15 @@ const collect = async (g: AsyncGenerator<string>) => { let s = ''; for await (co
 const msgs: LLMMessage[] = [{ role: 'system', content: 'sys' }, { role: 'user', content: 'hi' }];
 
 describe('providers (streaming over HTTP)', () => {
+  it('attaches one low-detail image to the final user message for visual context', async () => {
+    const srv = await mockServer((_q, res) => res.end('data: [DONE]\n\n'));
+    try {
+      await collect(new OpenAIProvider(srv.url, 'vision', 'k').stream(msgs, { ...opts(), jpegBase64: 'fixture' }));
+      const sent = JSON.parse(srv.requests[0].body).messages;
+      expect(sent[0].content).toBe('sys');
+      expect(sent[1].content).toEqual([{ type: 'text', text: 'hi' }, { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,fixture', detail: 'low' } }]);
+    } finally { await srv.close(); }
+  });
   it('OpenAI-compatible SSE', async () => {
     const srv = await mockServer((_q, res) => {
       res.writeHead(200, { 'content-type': 'text/event-stream' });
@@ -132,14 +141,35 @@ function harness(provider: LLMProvider, confirm: (r: ActionRequest) => Promise<b
   const cues: CharacterCue[] = [];
   const history = new HistoryStore(dir, () => 0, () => true);
   const confirmSpy = vi.fn(confirm);
+  const onUserMessage = vi.fn();
   const c = new Conversation({
+    onUserMessage,
     settings: () => s, provider: () => provider, history, memories: () => [], actionCtx: ctx,
     emit: (ch, p) => events.push({ ch, p }), cue: (x) => cues.push(x), confirm: confirmSpy, log: nullLogger,
   });
-  return { c, ctx, s, events, cues, history, confirmSpy };
+  return { c, ctx, s, events, cues, history, confirmSpy, onUserMessage };
 }
 
 describe('Conversation orchestrator', () => {
+  it('observes accepted typed and voice messages once each, never empty input or replies', async () => {
+    const h = harness(scripted(['Hello.', 'Yeah?']));
+    await h.c.send('Hi'); await h.c.settle();
+    await h.c.send('You there?', { viaVoice: true }); await h.c.settle();
+    await expect(h.c.send('   ')).rejects.toThrow('Empty');
+    expect(h.onUserMessage).toHaveBeenCalledTimes(2);
+  });
+  it('loads actions on demand when a conversational request needs a tool', async () => {
+    const seen: LLMMessage[][] = [];
+    const h = harness(scripted(['<action>{"tool":"request_actions","args":{}}</action>',
+      'I will start it. <action>{"tool":"start_timer","args":{"seconds":10}}</action>', 'Timer started.'], seen));
+    await h.c.send('Ten seconds, please.'); await h.c.settle();
+    expect(seen[0][0].content).toContain('CONVERSATION MODE');
+    expect(seen[1][0].content).toContain('ACTIONS');
+    expect(h.ctx.reminders.active()).toHaveLength(1);
+    expect(h.history.recent(10).filter(m => m.role === 'user')).toHaveLength(1);
+    (h.ctx.reminders as unknown as { stop(): void }).stop();
+  });
+
   it('streams deltas, saves history, queues speech per sentence', async () => {
     const h = harness(scripted(['Hey choom. Ready when you are.']));
     await h.c.send('hello');
@@ -257,5 +287,25 @@ describe('attributed personal context', () => {
     expect(prompt).toContain('interpretation; User profile; profile supplied 2026-10-26'); expect(prompt).not.toContain('PRIVATE PENDING CLAIM');
     const settings = structuredClone(DEFAULT_SETTINGS); settings.memory.enabled = false;
     expect(buildSystemPrompt(settings, items)).not.toContain('Profile describes Sam as reserved');
+  });
+});
+
+
+describe('conversation speech failure recovery', () => {
+  it('leaves thinking when speech fails before generation finishes', async () => {
+    let c: Conversation;
+    const provider: LLMProvider = { name: 'mock', local: true,
+      async *stream() { yield 'Hello there. '; c.onSpeechEvent('error'); },
+      async test() { return { ok: true, detail: '' }; }, async listModels() { return []; } };
+    const h = harness(provider); c = h.c;
+    await c.send('hello'); await c.settle();
+    expect(c.phase).toBe('idle'); expect(c.busy).toBe(false);
+  });
+  it('reports provider initialization failure without remaining busy', async () => {
+    const provider = scripted(['unused']);
+    const h = harness(provider);
+    Object.defineProperty(provider, 'stream', { get() { throw new Error('Provider unavailable'); } });
+    await h.c.send('hello'); await h.c.settle();
+    expect(h.c.phase).toBe('error'); expect(h.c.busy).toBe(false);
   });
 });

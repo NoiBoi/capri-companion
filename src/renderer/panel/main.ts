@@ -2,6 +2,10 @@ import type { ActionRequest, ActionResult, AssistantPhase, ChatMessage, Connecti
 import { TOOL_NAMES, type Settings, type ToolName } from '../../shared/settings';
 import type { CapriApi } from '../../preload/preload';
 import { icon } from './icons';
+import { DEV_ANIMATIONS, DEV_ACTIVITIES, DEV_INTERACTIONS, DEV_DIALOGUE, DEV_SCENARIOS, type DevCommand, type DevSnapshot } from '../../shared/developer';
+import { SCENES, FLOURISHES } from '../../shared/theatrics';
+import { SECONDARY_POSES } from '../character/secondarySprites';
+import { PING_LINES, type PingKind } from '../../shared/contextPings';
 
 declare global { interface Window { capri: CapriApi } }
 const api = window.capri;
@@ -23,6 +27,7 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, 
 
 // ---------------------------------------------------------------- state
 let S: Settings;
+let booted = false;
 let secretStatus: Record<string, boolean> = {};
 let phase: AssistantPhase = 'idle';
 let phaseDetail = '';
@@ -36,6 +41,7 @@ const TABS: { id: string; label: string; icon: string }[] = [
   { id: 'memory', label: 'Memory', icon: 'memory' },
   { id: 'privacy', label: 'Privacy', icon: 'shield' },
   { id: 'system', label: 'System', icon: 'pulse' },
+  { id: 'developer', label: 'Developer', icon: 'model' },
 ];
 // older entry points (tray menu, shortcuts, tests) still land somewhere sensible
 const ALIASES: Record<string, string> = { settings: 'model', look: 'character', move: 'character', behavior: 'character', permissions: 'privacy', diagnostics: 'system' };
@@ -118,7 +124,7 @@ const CONN_LABEL: Record<ConnectionStatus['state'], string> = { connecting: 'Con
 function renderConn() {
   if (!conn) return;
   connChip.dataset.state = conn.state;
-  connText.textContent = conn.provider === 'offline' ? 'No AI' : CONN_LABEL[conn.state];
+  connText.textContent = conn.provider === 'offline' ? 'No AI' : /rate.limit/i.test(conn.detail) ? 'Rate limited' : CONN_LABEL[conn.state];
   connChip.title = `${conn.provider}${conn.model ? ` · ${conn.model}` : ''}: ${conn.detail}`;
 }
 
@@ -128,7 +134,10 @@ function renderRail() {
   rail.replaceChildren(...TABS.map((t) => h('button', { role: 'tab', 'aria-selected': String(t.id === tab), 'aria-label': t.label, onclick: () => go(t.id) }, icon(t.icon), h('span', { class: 'tip' }, t.label))));
 }
 let navigationRevision = 0;
+let developerPoll: number | undefined;
 function go(t: string) {
+  if (tab === 'developer' && t !== 'developer') void api.invoke('dev:stop').catch(() => {});
+  if (developerPoll !== undefined) { clearInterval(developerPoll); developerPoll = undefined; }
   navigationRevision++;
   t = ALIASES[t] ?? t;
   if (t !== 'welcome' && !TABS.some((x) => x.id === t)) t = 'chat';
@@ -137,7 +146,14 @@ function go(t: string) {
   statusEl = null; stopBtn = null;
   view.replaceChildren();
   view.className = 'enter';
-  void (RENDER[t] ?? renderChat)();
+  const revision = navigationRevision;
+  void Promise.resolve().then(() => (RENDER[t] ?? renderChat)()).catch((error: unknown) => {
+    if (revision !== navigationRevision) return;
+    view.replaceChildren(viewHead(t === 'memory' ? 'Memory' : t), h('div', { class: 'scroll' },
+      h('p', {}, 'Could not load this panel. Your saved data has not been deleted.'),
+      h('p', { class: 'hint' }, error instanceof Error ? error.message : String(error)),
+      btn('Retry', () => go(t), 'primary')));
+  });
   setTimeout(() => (view.className = ''), 200);
 }
 
@@ -164,6 +180,11 @@ function msgEl(m: ChatMessage): HTMLElement {
     m.role === 'assistant' ? h('span', { class: 'who' }, 'Capri') : null, ...richText(m.content));
   if (m.meta?.interrupted) el.append(h('span', { class: 'meta' }, '— interrupted'));
   if (m.meta?.error && m.content !== m.meta.error) el.append(h('span', { class: 'meta' }, m.meta.error));
+  if (m.role === 'assistant' && m.content && !m.meta?.error && !m.meta?.interrupted) el.append(btn('Retire a line', () => {
+    const line = h('textarea', { value: m.content.slice(0, 1000), rows: 3, maxLength: 1000, 'aria-label': 'Line to retire', style: 'width:100%' });
+    const edit: HTMLDivElement = h('div', {}, line, h('div', { class: 'row' }, btn('Retire', async () => { try { await api.invoke('dialogue:retire', line.value); edit.remove(); toast('Line retired. Restore it in Memory.'); } catch (e) { toast((e as Error).message, true); } }, 'quiet'), btn('Cancel', () => edit.remove(), 'quiet')));
+    el.append(edit); line.focus();
+  }, 'quiet'));
   return el;
 }
 const atBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 60;
@@ -191,6 +212,7 @@ function showConfirm(req: ActionRequest) {
 
 let mic = false;
 async function renderChat() {
+  const revision = navigationRevision;
   chatReady = false;
   scroller = h('div', { class: 'scroll' });
   messagesEl = h('div', { class: 'messages', role: 'log', 'aria-live': 'polite' });
@@ -214,11 +236,15 @@ async function renderChat() {
   micBtn.addEventListener('pointerleave', micStop);
   micBtn.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); mic ? micStop() : micStart(); } });
   stopBtn = h('button', { class: 'btn icon-only', type: 'button', title: 'Stop (Esc)', 'aria-label': 'Stop', onclick: () => api.invoke('chat:stop') }, icon('stop'));
+  const muteBtn = h('button', { class: 'btn', type: 'button', 'aria-label': S.voice.ttsEnabled ? 'Mute Capri' : 'Unmute Capri', onclick: async () => { await save('voice.ttsEnabled', !S.voice.ttsEnabled); refreshMute(); } });
+  const refreshMute = () => { muteBtn.textContent = S.voice.ttsEnabled ? 'Mute' : 'Unmute'; muteBtn.setAttribute('aria-label', S.voice.ttsEnabled ? 'Mute Capri' : 'Unmute Capri'); muteBtn.setAttribute('aria-pressed', String(!S.voice.ttsEnabled)); };
+  refreshMute();
   const sendBtn = h('button', { class: 'btn primary icon-only', type: 'button', title: 'Send (Enter)', 'aria-label': 'Send', onclick: () => send() }, icon('send'));
   statusEl = h('div', { class: 'status' });
-  view.append(h('div', { class: 'chat' }, scroller, statusEl, h('div', { class: 'composer' }, ta, micBtn, stopBtn, sendBtn)));
+  view.append(h('div', { class: 'chat' }, scroller, statusEl, h('div', { class: 'composer' }, ta, micBtn, muteBtn, stopBtn, sendBtn)));
 
   const hist = await api.invoke('chat:history', { limit: 200 });
+  if (revision !== navigationRevision || tab !== 'chat') return;
   if (!hist.length) {
     messagesEl.append(h('div', { class: 'empty' }, h('div', {}, 'Say something.'),
       h('div', { class: 'try' }, ...['Who are you?', 'Teleport', 'Timer 5 minutes'].map((q) => h('button', { type: 'button', onclick: () => send(q) }, q)))));
@@ -276,8 +302,8 @@ api.on('action:confirm', (p) => {
 api.on('action:result', (p) => { const r = p as ActionResult; if (!r.ok) toast(r.summary, true); });
 api.on('transcript', (p) => { const t = p as { text: string }; if (t.text) toast(`Heard: “${t.text}”`); });
 api.on('reminder:fired', (p) => { const r = p as Reminder; toast(r.text); });
-api.on('settings:changed', (s) => { S = s as Settings; if (tab === 'chat') renderPhase(); });
-api.on('panel:tab', (t) => { const target = ALIASES[String(t)] ?? String(t); if (target !== tab) go(target); });
+api.on('settings:changed', (s) => { S = s as Settings; if (tab === 'chat') { renderPhase(); const b = view.querySelector<HTMLButtonElement>('[aria-label="Mute Capri"], [aria-label="Unmute Capri"]'); if (b) { b.textContent = S.voice.ttsEnabled ? 'Mute' : 'Unmute'; b.setAttribute('aria-label', S.voice.ttsEnabled ? 'Mute Capri' : 'Unmute Capri'); b.setAttribute('aria-pressed', String(!S.voice.ttsEnabled)); } } });
+api.on('panel:tab', (t) => { const target = ALIASES[String(t)] ?? String(t); if (!booted) tab = target; else if (target !== tab) go(target); });
 api.on('memory:changed', () => { if (tab === 'memory') go('memory'); });
 
 // ---------------------------------------------------------------- model
@@ -329,8 +355,13 @@ function claudeAccountFields() {
 }
 
 async function renderModel() {
+  const revision = navigationRevision;
   secretStatus = await api.invoke('secrets:status');
+  if (revision !== navigationRevision) return;
+  const state = await api.invoke('chat:state'); phase = state.phase;
+  if (revision !== navigationRevision) return;
   conn = await api.invoke('connection:get');
+  if (revision !== navigationRevision) return;
   const sc = h('div', { class: 'scroll' });
   const result = h('div', { class: 'sub' });
   const datalist = h('datalist', { id: 'models' });
@@ -352,6 +383,9 @@ async function renderModel() {
     group('Provider',
       field('Provider', select('ai.provider', 'Provider', [['codex', 'Codex (your account)'], ['claude', 'Claude (your account)'], ['gemini', 'Google Gemini'], ['ollama', 'Ollama'], ['openai', 'OpenAI-compatible'], ['anthropic', 'Anthropic'], ['offline', 'None (offline commands)']], () => go('model'))),
       prov === 'codex' ? h('p', { class: 'sub' }, 'Uses your installed Codex CLI and existing sign-in. Chat and computer tasks count toward Codex usage. Click Test to check sign-in.') : null,
+      prov === 'codex' ? h('div', {},
+        field('Conversation model', text('ai.codex.chatModel', 'Conversation model', 'gpt-6-luna')),
+        field('Task model', text('ai.codex.taskModel', 'Task model', 'Codex default'))) : null,
       prov === 'gemini' ? h('div', {},
         field('Model', text('ai.gemini.model', 'Model', 'gemini-3.5-flash-lite', 'models')),
         field('Fallback', text('ai.gemini.fallbackModel', 'Fallback model', 'none', 'models')),
@@ -374,7 +408,9 @@ async function renderModel() {
 
 // ---------------------------------------------------------------- voice
 async function renderVoice() {
+  const revision = navigationRevision;
   secretStatus = await api.invoke('secrets:status');
+  if (revision !== navigationRevision) return;
   const sc = h('div', { class: 'scroll' });
   const voiceSel = h('select', { 'aria-label': 'Voice', onchange: (e: Event) => void save('voice.systemVoice', (e.target as HTMLSelectElement).value) });
   const fillVoices = () => {
@@ -417,11 +453,14 @@ async function renderVoice() {
 
 // ---------------------------------------------------------------- character: appearance, behavior, movement
 async function renderCharacter() {
+  const revision = navigationRevision;
   const d = await api.invoke('diagnostics:get');
+  if (revision !== navigationRevision) return;
   const t = d.teleport;
   const sc = h('div', { class: 'scroll' });
   const tp = (where: string, label: string) => btn(label, async () => { const r = await api.invoke('teleport:now', where); if (!r.ok) toast(r.detail, true); }, '', 'teleport');
   sc.append(
+    group('Behavior mode', field('Mode', select('behavior.mode', 'Behavior mode', [['normal', 'Company'], ['explore', 'Explore'], ['sleep', 'Sleep']])), sw('Everyday activities and cursor play', 'behavior.smallActivities'), h('div', { class: 'hint' }, 'Small local scenes fill the time between visits. Sleep pauses them. Explore visits windows without taking focus; talking wakes her. Keyboard activity keeps her awake too.')),
     group('Appearance',
       field('Size', range('character.scale', 'Size', 0.4, 2.5, 0.05, pct)),
       field('Opacity', range('character.opacity', 'Opacity', 0.2, 1, 0.05, pct)),
@@ -429,9 +468,12 @@ async function renderCharacter() {
       field('Pose / animation', select('character.animation', 'Pose / animation', [['auto', 'Automatic'], ['idle', 'Stand'], ['perch', 'Sit'], ['grin', 'Grin'], ['sleep', 'Sleep'], ['glitch', 'Glitch'], ['dangle', 'Hang']])),
       field('Facing', select('character.facing', 'Facing', [['cursor', 'Follow cursor'], ['original', 'Original artwork'], ['left', 'Left'], ['right', 'Right']])),
       sw('Speech bubbles', 'character.speechBubbles'),
+      sw('Opening animation on launch', 'character.startupIntro'),
       field('Frame rate', select('character.fpsCap', 'Frame rate', [['15', '15 fps'], ['30', '30 fps'], ['60', '60 fps'], ['120', '120 fps']], undefined, Number)),
       sw('Expressive behavior', 'character.personality'),
-      sw('Glitch effects', 'character.glitchEffects')),
+      sw('Glitch effects', 'character.glitchEffects'),
+      sw('Occasional alternate poses', 'character.secondaryPoses')),
+    group('Little spectacles', sw('Expressive hops, looks and afterimages', 'character.theatricalMotion'), sw('Mask-only deep sleep', 'character.deepSleep'), sw('Reaction close-ups', 'character.reactionCutins'), sw('Rare satellite moments', 'behavior.satelliteMoments'), sw('Playful window possession', 'behavior.windowPossession'), sw('Harmless cursor lightning', 'behavior.cursorLightning'), h('p', { class: 'hint' }, 'Large moments are spaced out and pause for chat, quiet company, games and settled lounging. Reduced motion keeps the scenes calm. You can also play or stop a scene from the tray menu.')),
     group('On the desktop',
       sw('Always on top', 'character.alwaysOnTop'),
       field('Click-through', toggle('character.clickThrough', 'Click-through'), 'Ctrl+Alt+C to interact for 15 s.'),
@@ -443,6 +485,14 @@ async function renderCharacter() {
       field('Every (minutes)', h('span', { class: 'row' }, num('teleport.minMinutes', 'Minimum minutes', 1, 240), h('span', { class: 'sub' }, 'to'), num('teleport.maxMinutes', 'Maximum minutes', 1, 480))),
       sw('Avoid the active window', 'teleport.avoidActiveWindow'),
       sw('Teleport effects', 'teleport.effects')),
+    group('Conversation cues',
+      sw('Notice local context', 'dialogue.localContext'),
+      sw('Occasional contextual pings', 'dialogue.contextPings'),
+      sw('Occasional song banter', 'dialogue.spotifyBanter'),
+      h('div', { class: 'hint' }, 'During Spotify visits, she may react to the current song using Windows playback details. At most one attempt per 15 minutes, sharing the existing AI budget.'),
+      h('div', { class: 'hint' }, 'Occasional clock, battery and broad app-activity reactions. No extra AI requests; tab titles are never read aloud.'),
+      field('Weather city (optional)', h('input', { type: 'text', value: S.dialogue.weatherCity, maxLength: 100, placeholder: 'City, state or country', 'aria-label': 'Weather city', onchange: (e: Event) => save('dialogue.weatherCity', (e.target as HTMLInputElement).value.trim()) }), 'Leave blank for no weather requests. A city enables Open-Meteo forecasts, cached for 30 minutes. Ambiguous names are skipped.'),
+      h('a', { href: 'https://open-meteo.com/', target: '_blank', rel: 'noreferrer' }, 'Weather data by Open-Meteo')),
     group('Behavior',
       sw('Do not disturb', 'behavior.doNotDisturb'),
       field('Sleep after (minutes)', num('behavior.sleepAfterMinutes', 'Sleep after', 1, 240)),
@@ -451,19 +501,64 @@ async function renderCharacter() {
       sw('Idle remarks', 'behavior.idleRemarks'),
       S.behavior.idleRemarks ? sw('Say remarks out loud', 'behavior.proactiveVoice') : null,
       S.behavior.idleRemarks ? field('Remark every (minutes)', num('behavior.remarkIntervalMinutes', 'Remark interval', 5, 480)) : null,
-      sw('Explore on her own while I’m away', 'behavior.explore'),
-      S.behavior.explore ? field('After I’m idle for (minutes)', num('behavior.exploreAfterMinutes', 'Explore after', 2, 120)) : null),
+      sw('Explore background windows', 'behavior.explore'),
+      h('div', { class: 'hint' }, 'Allows visits in Company mode too. Visits are paced over minutes and pause for games, sleep, quiet hours and conversation. Occasional observations share a limited background request budget.')),
   );
   view.append(viewHead('Character'), sc);
 }
 
 // ---------------------------------------------------------------- memory
+function relationshipSections(data: Awaited<ReturnType<typeof relationshipData>>) {
+  const refresh = () => go('memory');
+  const run = async (action: () => Promise<unknown>) => { try { await action(); refresh(); } catch (e) { toast((e as Error).message, true); } };
+  const entryInput = (label: string, value = '', max = 300) => h('input', { type: 'text', value, maxLength: max, 'aria-label': label, placeholder: label, style: 'width:100%' });
+  const tasteCard = (taste?: typeof data.state.tastes[number]) => {
+    const topic = entryInput('Taste topic', taste?.topic, 70), preference = entryInput('Capri preference', taste?.text);
+    const card = h('div', { class: 'item' });
+    const edit = () => card.replaceChildren(h('div', { class: 'txt' }, topic, preference,
+      h('div', { class: 'row' }, btn('Save taste', () => run(() => api.invoke('relationship:taste', { id: taste?.id, topic: topic.value, text: preference.value })), 'primary'), taste ? btn('Cancel', refresh, 'quiet') : null)));
+    if (!taste) { edit(); return card; }
+    card.append(h('div', { class: 'txt' }, taste.topic, h('div', { class: 'sub' }, taste.text),
+      h('details', {}, h('summary', {}, taste.source.role === 'assistant' ? 'From Capri’s own words' : 'Set by you'), h('p', { class: 'hint' }, taste.source.evidence))),
+      btn('Edit', edit, 'quiet'), btn('Delete', () => run(() => api.invoke('relationship:remove', { kind: 'taste', id: taste.id })), 'quiet'));
+    return card;
+  };
+  const threadCard = (thread?: typeof data.state.threads[number]) => {
+    const title = entryInput('Project name', thread?.title, 80), summary = entryInput('Current project status', thread?.summary);
+    const card = h('div', { class: 'item', style: 'flex-wrap:wrap' });
+    const edit = () => card.replaceChildren(h('div', { class: 'txt' }, title, summary, h('div', { class: 'row' },
+      btn('Save project', () => run(() => api.invoke('relationship:thread', { id: thread?.id, title: title.value, summary: summary.value, status: thread?.status ?? 'active' })), 'primary'), thread ? btn('Cancel', refresh, 'quiet') : null)));
+    if (!thread) { edit(); return card; }
+    const status = (value: import('../../shared/relationship').ThreadStatus, snoozeDays?: number) => run(() => api.invoke('relationship:status', { id: thread.id, status: value, snoozeDays }));
+    card.append(h('div', { class: 'txt', style: 'flex-basis:100%' }, thread.title, h('span', { class: 'tag' }, thread.status), h('div', { class: 'sub' }, thread.summary),
+      h('details', {}, h('summary', {}, 'Source and follow-up'), h('p', { class: 'hint' }, thread.source.evidence), h('p', { class: 'hint' }, thread.status === 'active' ? `May come up naturally after ${new Date(thread.nextAskAt).toLocaleString()}. This is not a scheduled reminder.` : 'No unsolicited follow-ups.'))),
+      btn('Edit', edit, 'quiet'),
+      thread.status === 'active' ? btn('Pause', () => status('paused'), 'quiet') : btn('Resume', () => status('active'), 'quiet'),
+      ...(thread.status === 'active' ? [btn('Snooze 7 days', () => status('active', 7), 'quiet')] : []),
+      ...(thread.status !== 'done' ? [btn('Done', () => status('done'), 'quiet')] : []),
+      ...(thread.status !== 'dismissed' ? [btn('Dismiss topic', () => status('dismissed'), 'quiet')] : []),
+      btn('Delete', () => run(() => api.invoke('relationship:remove', { kind: 'thread', id: thread.id })), 'quiet'));
+    return card;
+  };
+  const line = entryInput('Line to retire', '', 1000);
+  return [
+    group('Capri’s tastes', h('p', { class: 'hint' }, 'Stable preferences from her own delivered replies, kept separately from facts about you. Automatic learning builds these; you can edit or add one here. Use in conversations controls whether they guide her replies. These stay saved until deleted or you Forget all.'),
+      h('div', { class: 'list' }, ...data.state.tastes.map(tasteCard), tasteCard())),
+    group('Ongoing projects', h('p', { class: 'hint' }, 'Keeps the latest state you actually reported. Occasional follow-ups fit into a greeting or relevant conversation. Paused, completed and dismissed topics stay quiet; two unanswered check-ins pause further questions until you update the project.'),
+      h('div', { class: 'list' }, ...data.state.threads.map(threadCard), threadCard())),
+    group('Retired lines', h('p', { class: 'hint' }, 'Say “don’t say that again,” use the bubble’s ⊘ button, or retire a phrase here. These speech preferences stay in place until you restore them, even with personal memory off.'),
+      h('div', { class: 'list' }, ...data.retired.map(item => h('div', { class: 'item' }, h('div', { class: 'txt' }, item.text), btn('Restore line', () => run(() => api.invoke('dialogue:restore', item.id)), 'quiet')))),
+      line, btn('Retire line', () => run(() => api.invoke('dialogue:retire', line.value)), 'quiet')),
+  ];
+}
+const relationshipData = () => api.invoke('relationship:get');
 async function renderMemory() {
   const revision = navigationRevision;
-  const [mem, notes, rems] = await Promise.all([api.invoke('memory:list'), api.invoke('notes:list'), api.invoke('reminders:list')]);
+  const [mem, notes, rems, patterns, lasting, scene] = await Promise.all([api.invoke('memory:list'), api.invoke('notes:list').catch(() => []), api.invoke('reminders:list').catch(() => []), api.invoke('memory:patterns'), relationshipData(), api.invoke('dialogue:scene')]);
   if (revision !== navigationRevision) return;
   const sc = h('div', { class: 'scroll' });
   const add = h('input', { type: 'text', placeholder: 'Something to remember', maxLength: 300, 'aria-label': 'New memory', style: 'flex:1;width:auto' });
+  const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
   const memItem = (m: MemoryItem) => {
     const source = m.archived ? 'Forgotten automatically · excluded from conversations' : m.context ? m.context.label + ' · ' + m.context.kind + ' · supplied ' + m.context.asOf : m.source === 'model' ? 'Suggested by Capri' : 'Added by you';
     const card = h('div', { class: 'item' },
@@ -480,7 +575,13 @@ async function renderMemory() {
     return card;
   };
   sc.append(
+    group('Current exchange', h('p', { class: 'hint' }, 'Chat and desktop reactions share this short-lived context. It updates immediately; an optional background reading identifies her position or unfinished question. Earlier readings yield to new turns. Saved for at most 48 hours when memory and saved history are on.'),
+      scene.reading ? h('dl', { class: 'kv' }, h('dt', {}, 'Subject'), h('dd', {}, scene.reading.topic), h('dt', {}, 'Her position'), h('dd', {}, scene.reading.position || 'Unspecified'), h('dt', {}, 'Intention'), h('dd', {}, scene.reading.intention || 'Unspecified'), h('dt', {}, 'Open question'), h('dd', {}, scene.reading.openQuestion || 'None recorded')) : h('p', { class: 'hint' }, scene.entries.length ? 'Using the actual recent exchange. No background reading yet.' : 'No active exchange yet.'),
+      h('details', {}, h('summary', {}, 'Recent shared turns'), ...scene.entries.slice(-8).map(e => h('p', { class: 'hint' }, `${e.role === 'user' ? 'You' : 'Capri'}: ${e.text}`))),
+      btn('Clear current exchange', async () => { await api.invoke('dialogue:clearScene'); go('memory'); }, 'quiet')),
+    ...relationshipSections(lasting),
     group('Long-term',
+      h('p', { class: 'hint', role: 'status' }, `${mem.filter(m => m.status === 'approved' && !m.archived).length} active memories · ${mem.filter(m => !!m.context && !m.archived).length} with source information`),
       sw('Use in conversations', 'memory.enabled'),
       sw('Learn automatically', 'memory.autoLearn'),
       h('p', { class: 'hint' }, 'Learns facts and preferences you state, and replaces outdated details when you correct them. Runs after replies, with chat taking priority. Uses extra model requests. Review changes here or Undo them. Forgotten entries remain here until permanently deleted.'),
@@ -488,6 +589,12 @@ async function renderMemory() {
       h('div', { class: 'row', style: 'margin:8px 0' }, add,
         btn('Add', async () => { if (add.value.trim()) { try { await api.invoke('memory:add', add.value.trim()); go('memory'); } catch (e) { toast((e as Error).message, true); } } }, '', 'plus'),
         mem.length ? btn('Forget all', async () => { if (confirm('Delete all memories?')) { await api.invoke('memory:clear'); go('memory'); } }, 'danger') : null)),
+    group('Our patterns',
+      sw('Remember interaction and app patterns', 'memory.interactionProfile'),
+      h('p', { class: 'hint' }, 'Remembers daily interaction counts and active app categories while Capri is running. These totals help your chosen AI model respond. App categories also need Notice local context. No titles, message contents, screenshots or keystrokes enter this profile. Follows history retention. Turning this, memory or saved history off clears it.'),
+      h('p', { class: 'hint', role: 'status' }, patterns.daysObserved ? `Observed on ${count(patterns.daysObserved, 'day')} since ${patterns.since}. ${count(patterns.interactions.pat, 'head pat')}, ${count(patterns.interactions.poke, 'poke')}, ${count(patterns.interactions.chat, 'chat message')}. Last 7 days: ${count(patterns.recentInteractions.pat, 'pat')}, ${count(patterns.recentInteractions.poke, 'poke')}, ${count(patterns.recentInteractions.chat, 'chat')}.` : 'Nothing observed yet. Patterns build as you spend time together.'),
+      h('div', { class: 'list' }, ...patterns.activity.map(a => h('div', { class: 'item' }, h('div', { class: 'txt' }, a.category === 'art' ? 'Design and art apps' : a.category === 'notes' ? 'Notes and documents' : a.category === 'code' ? 'Coding apps' : a.category === 'other' ? 'Other apps' : a.category[0].toUpperCase() + a.category.slice(1), h('div', { class: 'sub' }, `${a.recentMinutes} minutes in the last 7 days · ${a.minutes} minutes total. Estimated active app time.`))))),
+      btn('Clear observed patterns', async () => { await api.invoke('memory:clearPatterns'); go('memory'); }, 'quiet')),
     group('History',
       sw('Save conversations', 'privacy.saveHistory'),
       field('Keep for (days, 0 = always)', num('memory.historyRetentionDays', 'Keep history for days', 0, 3650)),
@@ -548,9 +655,11 @@ async function renderPrivacy() {
 
 // ---------------------------------------------------------------- system: startup, shortcuts, health, logs
 async function renderSystem() {
+  const revision = navigationRevision;
   const sc = h('div', { class: 'scroll' });
   view.append(viewHead('System'), sc);
   sc.append(
+    group('Developer tools', btn('Open developer panel', () => go('developer')), h('p', { class: 'hint' }, 'Preview animations, run action cycles and inspect local behavior.')),
     group('Startup',
       sw('Launch at sign-in', 'startup.launchOnLogin'),
       sw('Reminder notifications', 'notifications.reminders'),
@@ -566,6 +675,7 @@ async function renderSystem() {
   const loadLogs = async () => { logs.textContent = (await api.invoke('logs:tail', 200)).join('\n'); logs.scrollTop = logs.scrollHeight; };
   let d: Diagnostics;
   try { d = await api.invoke('diagnostics:get'); } catch (e) { health.replaceChildren(h('span', { class: 'label' }, 'Health'), h('div', { class: 'err-text' }, (e as Error).message)); return; }
+  if (revision !== navigationRevision) return;
   const ok = (b: boolean, t: string) => h('span', { class: `tag ${b ? 'ok' : 'bad'}` }, t);
   health.replaceChildren(h('span', { class: 'label' }, 'Health'), h('dl', { class: 'kv' },
     h('dt', {}, 'AI'), h('dd', {}, ok(d.connection.state === 'connected', `${CONN_LABEL[d.connection.state]}${d.connection.state === 'connected' ? '' : ` · ${d.connection.detail}`}`)),
@@ -580,6 +690,68 @@ async function renderSystem() {
     h('dt', {}, 'Version'), h('dd', { class: 'mono' }, `${d.version} · Electron ${d.electron}`),
     h('dt', {}, 'Displays'), h('dd', { class: 'mono' }, d.displays.map((x) => `${x.bounds.width}×${x.bounds.height} @${Math.round(x.scaleFactor * 100)}%`).join(', '))));
   void loadLogs();
+}
+
+// ---------------------------------------------------------------- developer panel
+async function renderDeveloper() {
+  const revision = navigationRevision;
+  const sc = h('div', { class: 'scroll' }), header = viewHead('Developer'); view.append(header, sc);
+  const status = h('p', { role: 'status', id: 'dev-status' }, 'Connecting…');
+  const state = h('pre', { class: 'logs', id: 'dev-state', style: 'white-space:pre-wrap;max-height:none' });
+  const log = h('pre', { class: 'logs', id: 'dev-log', style: 'white-space:pre-wrap;max-height:230px;overflow:auto' });
+  const runButtons: HTMLButtonElement[] = [];
+  const seconds = h('input', { type: 'number', min: .5, max: 8, step: .5, value: 2, 'aria-label': 'Preview duration in seconds' });
+  const duration = () => Math.max(.5, Math.min(8, Number(seconds.value) || 2));
+  const choice = (label: string, values: readonly string[]) => h('select', { 'aria-label': label }, ...values.map(v => h('option', { value: v }, v.replaceAll('_', ' '))));
+  let reading = false;
+  const refresh = async () => {
+    if (reading || revision !== navigationRevision) return; reading = true;
+    try {
+      const d: DevSnapshot = await api.invoke('dev:get'); if (revision !== navigationRevision) return;
+      status.textContent = `${d.job.result.toUpperCase()}${d.job.label ? ' · ' + d.job.label : ''} · ${d.job.step || 'Choose a preview or check.'}`;
+      status.textContent += `\nDialogue: ${d.runtime.dialogueOutcome} · visual points: ${d.runtime.inspectionPoints} · shared scenes: ${d.runtime.sharedScenes}`;
+      state.textContent = `Capri: ${d.runtime.visible ? 'visible' : 'hidden'} · ${d.runtime.mode} · ${d.runtime.phase}\nFPS: ${d.runtime.fps ?? '—'} · moving: ${d.runtime.moving}\nVisit: ${d.runtime.visit} · tour: ${d.runtime.tour}\nGoal: ${d.runtime.goal ?? 'none'} · rest: ${d.runtime.restSeconds}s\nSimulated absence: ${d.runtime.absence ?? 'off'}\nPending model request: ${d.runtime.pendingRequest}\nApproved memories: ${d.runtime.approvedMemories} · preferred name: ${d.runtime.preferredName ?? 'not set'}`;
+      state.textContent += `\nScene: ${d.runtime.scene ?? 'none'}`;
+      const renderer = d.runtime.poseRenderer;
+      state.textContent += `\nPose motion: ${!renderer?.pose ? 'Primary sprite' : `${renderer.pose}: ${renderer.reduced ? 'Reduced motion' : !renderer.shader ? 'Static fallback' : renderer.motion > 0 ? 'Shader active' : 'Still comparison'}`}`;
+      log.textContent = d.job.log.map(entry => `${new Date(entry.at).toLocaleTimeString()}  ${entry.text}`).join('\n') || 'Results appear here.';
+      for (const b of runButtons) b.disabled = d.job.active;
+      stop.disabled = !d.job.active;
+    } catch (error) { status.textContent = String(error instanceof Error ? error.message : error); }
+    finally { reading = false; }
+  };
+  const run = async (command: DevCommand) => { try { await api.invoke('dev:run', command); await refresh(); } catch (error) { toast(String(error instanceof Error ? error.message : error), true); } };
+  const action = (label: string, command: () => DevCommand) => { const b = btn(label, () => void run(command())); runButtons.push(b); return b; };
+  const stop = btn('Stop preview', () => void api.invoke('dev:stop').then(refresh), 'primary');
+  const absence = (label: string, state: 'idle' | 'sleep' | 'return' | 'clear') => btn(label, () => { void api.invoke('dev:absence', state).then(refresh).catch(error => toast(String(error instanceof Error ? error.message : error), true)); });
+  header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px'; header.append(stop);
+  const animation = choice('Animation preview', DEV_ANIMATIONS), activity = choice('Activity preview', DEV_ACTIVITIES), interaction = choice('Interaction preview', DEV_INTERACTIONS);
+  const cycle = choice('Cycle preview', ['animations', 'interactions', 'activity', 'loading']), dialogue = choice('Dialogue event', DEV_DIALOGUE), surface = choice('Dialogue platform', ['generic', 'youtube', 'discord', 'chatgpt', 'spotify', 'browser']);
+  const secondaryMotion = choice('Secondary motion', ['animated', 'still']);
+  const secondary = choice('Secondary pose', SECONDARY_POSES), orientation = choice('Secondary orientation', ['upright', 'inverted']);
+  const scenario = choice('Behavior scenario', DEV_SCENARIOS), ping = choice('Contextual ping', Object.keys(PING_LINES));
+  sc.append(
+    group('Preview session', h('p', { class: 'hint' }, 'Local previews make no model requests. Clearly marked live checks can make one request within normal limits. One job at a time. Stop clears temporary state. Movement trials restore her position and do not enter shared memory.'), status, field('Seconds per step', seconds)),
+    group('Construct moments', ...SCENES.map(name => action(name === 'satellite' ? 'Satellite and red light' : name === 'possession' ? 'Possess an exposed window' : 'Playful cursor spark', () => ({ kind: 'scene', name, seconds: duration() }))), action('Sleep into her mask', () => ({ kind: 'mask', seconds: duration() })), h('div', { class: 'row' }, ...FLOURISHES.map(name => action(name, () => ({ kind: 'flourish', name, seconds: duration() })))), h('div', { class: 'row' }, ...(['grin','laugh','look','eyes','many'] as const).map(name => action('Cut-in: ' + name, () => ({ kind: 'cutin', name, seconds: duration() }))))),
+    group('Secondary artwork', field('Motion', secondaryMotion), field('Pose', secondary), field('Orientation', orientation), action('Preview secondary pose', () => ({ kind: 'secondary', motion: secondaryMotion.value as 'animated' | 'still', name: secondary.value as typeof SECONDARY_POSES[number], inverted: secondary.value !== 'recline' && orientation.value === 'inverted', seconds: duration() })), action('Compare still and animated poses', () => ({ kind: 'scenario', name: 'shader_compare', seconds: duration() })), h('p', { class: 'hint' }, 'Closed-eye sitting is reserved for sustained head rubbing on an upright window perch. Lower ledges alternate lying and original sitting, with a longer pause before roaming. Original strips remain the primary artwork.')),
+    group('Behavior scenarios', field('Scenario', scenario), action('Run behavior scenario', () => ({ kind: 'scenario', name: scenario.value as typeof DEV_SCENARIOS[number], seconds: duration() })),
+      h('div', { class: 'row' }, action('Sitting hover response', () => ({ kind: 'scenario', name: 'sit_hover', seconds: duration() })), action('Inspect below while sitting', () => ({ kind: 'scenario', name: 'sit_inspect', seconds: duration() })), action('Supported lying rest', () => ({ kind: 'scenario', name: 'recline_rest', seconds: duration() }))),
+      h('div', { class: 'row' }, action('Cursor visit and return', () => ({ kind: 'scenario', name: 'cursor_visit', seconds: duration() })), action('Quick window release', () => ({ kind: 'scenario', name: 'perch_quick', seconds: duration() })), action('Held window sequence', () => ({ kind: 'scenario', name: 'perch_held', seconds: duration() })), action('Inspect shared continuity', () => ({ kind: 'scenario', name: 'continuity', seconds: duration() })))),
+    group('Contextual pings', field('Context', ping), action('Preview contextual ping', () => ({ kind: 'ping', name: ping.value as PingKind, seconds: duration() })), h('p', { class: 'hint' }, 'Fixtures only: does not change the clock, weather, battery, real ping history or quiet settings. Late-night, weather, battery and long-session lines have many variants.')),
+    group('Live contextual checks', h('p', { class: 'hint' }, 'Uses a visible external window, a preview of its exposed content when supported, and up to one model request. Rate limits still apply; drop checks show a local fallback when limited. No computer-control actions.'),
+      h('div', { class: 'row' }, action('Live window-drop comment', () => ({ kind: 'live', name: 'drop' })), action('Live visual inspection', () => ({ kind: 'live', name: 'inspect' })), action('Live return comment', () => ({ kind: 'live', name: 'cursor_return' })))),
+    group('Animations', field('Sprite strip', animation), action('Play animation', () => ({ kind: 'animation', name: animation.value as typeof DEV_ANIMATIONS[number], seconds: duration() })),
+      field('Activity', activity), action('Play activity', () => ({ kind: 'activity', name: activity.value as typeof DEV_ACTIVITIES[number], seconds: duration() })),
+      field('Interaction', interaction), action('Play interaction', () => ({ kind: 'interaction', name: interaction.value as typeof DEV_INTERACTIONS[number], seconds: duration() }))),
+    group('Action cycles', field('Walkthrough', cycle), action('Run cycle', () => ({ kind: 'cycle', name: cycle.value as 'animations' | 'interactions' | 'activity' | 'loading', seconds: duration() })),
+      h('div', { class: 'row' }, action('Replay opening', () => ({ kind: 'intro' })), action('Run one exploration outing', () => ({ kind: 'explore' })), action('Run up to 3 exploration outings', () => ({ kind: 'explore', count: 3 })))),
+    group('Absence and return', h('p', { class: 'hint' }, 'Simulates inactivity without changing saved mode. After two seconds, move the mouse or type to return, or use Return now. Sleep wakes before teleporting; idle returns with a wave. Return lines follow normal voice settings.'),
+      h('div', { class: 'row' }, absence('Simulate idle', 'idle'), absence('Simulate sleep', 'sleep'), absence('Return now', 'return'), absence('Clear absence', 'clear'))),
+    group('Local dialogue', field('Event', dialogue), field('Platform', surface), action('Preview dialogue', () => ({ kind: 'dialogue', name: dialogue.value as typeof DEV_DIALOGUE[number], surface: surface.value === 'generic' ? undefined : surface.value as 'youtube' | 'discord' | 'chatgpt' | 'spotify' | 'browser', seconds: duration() }))),
+    group('Checks and live state', action('Run local checks', () => ({ kind: 'checks' })), h('p', { class: 'hint' }, 'Checks dialogue variety, identity context, exploration rest gates and renderer liveness. Full automated test suites still run outside the app.'), state),
+    group('Results', log),
+  );
+  await refresh(); if (revision === navigationRevision) developerPoll = window.setInterval(() => void refresh(), 1000);
 }
 
 // ---------------------------------------------------------------- first run
@@ -602,22 +774,34 @@ function renderWelcome() {
 }
 
 const RENDER: Record<string, () => unknown> = {
-  chat: renderChat, model: renderModel, voice: renderVoice, character: renderCharacter, memory: renderMemory, privacy: renderPrivacy, system: renderSystem, welcome: renderWelcome,
+  chat: renderChat, model: renderModel, voice: renderVoice, character: renderCharacter, memory: renderMemory, privacy: renderPrivacy, system: renderSystem, developer: renderDeveloper, welcome: renderWelcome,
 };
 
 // ---------------------------------------------------------------- boot
 document.getElementById('closeBtn')!.append(icon('close'));
-document.getElementById('closeBtn')!.addEventListener('click', () => api.invoke('panel:close'));
+// startup.ts owns the native close button, including when the bridge is unavailable.
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (phase === 'thinking' || phase === 'speaking') void api.invoke('chat:stop');
   else void api.invoke('panel:close');
 });
-(async () => {
-  S = await api.invoke('settings:get');
-  conn = await api.invoke('connection:get');
-  renderConn();
-  renderPhase();
-  if (!S.firstRunComplete && tab !== 'welcome') tab = 'welcome';
-  go(tab);
-})();
+async function startPanel() {
+  const deadline = <T>(promise: Promise<T>) => new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Settings connection timed out.')), 4000);
+    promise.then(resolve, reject).finally(() => clearTimeout(timer));
+  });
+  try {
+    S = await deadline(api.invoke('settings:get'));
+    const [state, connection] = await Promise.allSettled([deadline(api.invoke('chat:state')), deadline(api.invoke('connection:get'))]);
+    if (state.status === 'fulfilled') phase = state.value.phase;
+    if (connection.status === 'fulfilled') conn = connection.value;
+    renderConn(); renderPhase();
+    if (!S.firstRunComplete && tab !== 'welcome') tab = 'welcome';
+    booted = true; go(tab);
+    window.dispatchEvent(new Event('capri:panel-ready'));
+    await api.invoke('panel:ready');
+  } catch {
+    window.dispatchEvent(new Event('error'));
+  }
+}
+void startPanel();
