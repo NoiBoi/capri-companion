@@ -1,0 +1,52 @@
+{
+  "scope": "Exactly one first live optional generation using the configured Codex model and entirely synthetic context. No re-sampling or broad naturalness claim.",
+  "model": "gpt-6-luna",
+  "fixture": {
+    "userReport": "I am working on ArborCalc. The export is still broken. I will go to bed after this reply.",
+    "priorAssistantOpinion": "I prefer finishing the broken part before dressing it up, because polish does not make a failed export useful.",
+    "replyMinutesAgo": 11,
+    "currentPCInput": true
+  },
+  "result": {
+    "decision": {
+      "action": "silent",
+      "reason": "suppressed or stale target",
+      "delivered": false
+    },
+    "diagnostic": "personal_followup: chose quiet (suppressed or stale target)",
+    "failure": null,
+    "commitments": [
+      {
+        "id": "commitmentmvsfi91y2bfzxa",
+        "intention": "go to bed",
+        "condition": {
+          "kind": "reply"
+        },
+        "source": {
+          "messageId": "synthetic-u",
+          "text": "I will go to bed after this reply.",
+          "at": 1793210241229
+        },
+        "status": "eligible",
+        "expiresAt": 1793296641229,
+        "eligibleAt": 1793210301229,
+        "attempts": 0,
+        "transitions": [
+          {
+            "status": "waiting",
+            "at": 1793210241229,
+            "reason": "Explicit user intention",
+            "sourceId": "synthetic-u"
+          },
+          {
+            "status": "eligible",
+            "at": 1793210961240,
+            "reason": "Matching assistant reply was delivered",
+            "sourceId": "synthetic-a"
+          }
+        ]
+      }
+    ],
+    "delivered": []
+  }
+}

@@ -162,6 +162,9 @@ export interface InvokeMap {
   'memory:clear': [void, void];
   'memory:patterns': [void, import('./interactionProfile').InteractionProfileSummary];
   'memory:clearPatterns': [void, void];
+  'personal:get': [void, import('./personalContext').PersonalContextView];
+  'personal:manage': [{ id: string; action: 'complete' | 'dismiss' | 'forget' }, void];
+  'personal:clear': [void, void];
   'relationship:get': [void, { state: import('./relationship').RelationshipState; retired: import('./relationship').RetiredLine[] }];
   'relationship:taste': [{ id?: string; topic: string; text: string }, import('./relationship').CapriTaste];
   'relationship:thread': [{ id?: string; title: string; summary: string; status: import('./relationship').ThreadStatus }, import('./relationship').ProjectThread];
@@ -236,6 +239,7 @@ export const INVOKE_CHANNELS: InvokeChannel[] = [
   'memory:undo', 'memory:update', 'memory:delete', 'memory:clear', 'memory:patterns', 'memory:clearPatterns', 'notes:list', 'notes:delete', 'reminders:list', 'reminders:cancel',
   'relationship:get', 'relationship:taste', 'relationship:thread', 'relationship:status', 'relationship:remove', 'dialogue:retire', 'dialogue:restore',
   'dialogue:scene', 'dialogue:clearScene',
+  'personal:get', 'personal:manage', 'personal:clear',
   'continuity:get', 'continuity:manage', 'continuity:clear',
   'action:respond', 'provider:test', 'provider:models', 'claude:status', 'claude:signin', 'claude:code', 'claude:signout', 'diagnostics:get', 'logs:tail', 'app:openDataFolder',
   'app:resetAll', 'app:quit', 'app:restart', 'apps:pick', 'folders:pick', 'panel:open', 'panel:close', 'panel:ready', 'panel:viewed',

@@ -560,7 +560,7 @@ function relationshipSections(data: Awaited<ReturnType<typeof relationshipData>>
 const relationshipData = () => api.invoke('relationship:get');
 async function renderMemory() {
   const revision = navigationRevision;
-  const [mem, notes, rems, patterns, lasting, scene, experiences] = await Promise.all([api.invoke('memory:list'), api.invoke('notes:list').catch(() => []), api.invoke('reminders:list').catch(() => []), api.invoke('memory:patterns'), relationshipData(), api.invoke('dialogue:scene'), api.invoke('continuity:get')]);
+  const [mem, notes, rems, patterns, lasting, scene, experiences, personal] = await Promise.all([api.invoke('memory:list'), api.invoke('notes:list').catch(() => []), api.invoke('reminders:list').catch(() => []), api.invoke('memory:patterns'), relationshipData(), api.invoke('dialogue:scene'), api.invoke('continuity:get'), api.invoke('personal:get')]);
   if (revision !== navigationRevision) return;
   const sc = h('div', { class: 'scroll' });
   const add = h('input', { type: 'text', placeholder: 'Something to remember', maxLength: 300, 'aria-label': 'New memory', style: 'flex:1;width:auto' });
@@ -586,6 +586,18 @@ async function renderMemory() {
       h('details', {}, h('summary', {}, 'Recent shared turns'), ...scene.entries.slice(-8).map(e => h('p', { class: 'hint' }, `${e.role === 'user' ? 'You' : 'Capri'}: ${e.text}`))),
       btn('Clear current exchange', async () => { await api.invoke('dialogue:clearScene'); go('memory'); }, 'quiet')),
     ...relationshipSections(lasting),
+    group('Working understanding',
+      h('p', { class: 'hint' }, 'Your recent reports and short intentions connect with the current exchange and named projects. A return to PC input does not prove where you were. These records follow saved-history controls, expire, and can be forgotten here.'),
+      ...personal.situations.filter(s => !s.validTo && s.expiresAt > Date.now()).map(s => h('div', { class: 'item' },
+        h('div', { class: 'txt' }, s.value, h('div', { class: 'sub' }, `You reported: “${s.source.text}” · ${new Date(s.source.at).toLocaleString()} · valid until ${new Date(s.expiresAt).toLocaleString()}`)),
+        btn('Forget situation', async () => { await api.invoke('personal:manage', { id: s.id, action: 'forget' }); go('memory'); }, 'quiet'))),
+      ...personal.commitments.slice(-10).reverse().map(c => h('div', { class: 'item', style: 'display:block' },
+        h('div', { class: 'txt' }, c.intention,
+          h('div', { class: 'sub' }, `${c.status} · ${c.condition.kind === 'reply' ? 'After the matching reply' : c.condition.kind === 'topic' ? 'After finishing ' + c.condition.topic : 'At ' + new Date(c.condition.at!).toLocaleString()}`),
+          h('div', { class: 'hint' }, `You said: “${c.source.text}” · ${new Date(c.source.at).toLocaleString()}`),
+          h('details', {}, h('summary', {}, 'What happened'), ...c.transitions.map(t => h('p', { class: 'hint' }, `${new Date(t.at).toLocaleString()}: ${t.status} · ${t.reason}`)))),
+        h('div', { class: 'row' }, ...(['complete','dismiss','forget'] as const).map(action => btn(action === 'complete' ? 'Mark done' : action === 'dismiss' ? 'Stop follow-ups' : 'Forget intention', async () => { await api.invoke('personal:manage', { id: c.id, action }); go('memory'); }, 'quiet'))))),
+      personal.situations.length || personal.commitments.length ? btn('Clear working understanding', async () => { await api.invoke('personal:clear'); go('memory'); }, 'quiet') : emptyLine('No recent situations or intentions yet.')),
     group('Shared experiences',
       h('p', { class: 'hint' }, 'Selected discoveries and shared developments. Interpretations stay tentative. Open interests expire without reminders.'),
       ...experiences.slice(-12).reverse().map(e => h('div', { class: 'item', style: 'display:block' },

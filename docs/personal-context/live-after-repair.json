@@ -1,0 +1,64 @@
+{
+  "scope": "One follow-up verification after correcting targetless follow-ups being cancelled by routine pose changes. The original suppressed first result is retained separately. No broad naturalness claim.",
+  "model": "gpt-6-luna",
+  "fixture": {
+    "userReport": "I am working on ArborCalc. The export is still broken. I will go to bed after this reply.",
+    "priorAssistantOpinion": "I prefer finishing the broken part before dressing it up, because polish does not make a failed export useful.",
+    "replyMinutesAgo": 11,
+    "currentPCInput": true
+  },
+  "result": {
+    "decision": {
+      "interpretation": "The user is active on the PC after saying they would go to bed; a light callback is appropriate without assuming what happened.",
+      "interest": null,
+      "action": "speak",
+      "line": "You said bed after that reply, and here we are back at ArborCalc. I’m not calling it a broken promise, but this export is getting an awfully generous bedtime extension.",
+      "gesture": "none",
+      "reason": "One playful, sourced callback connects the eligible sleep intention to the current project without claiming the user stayed awake or the export is unfinished beyond what is reported.",
+      "delivered": true
+    },
+    "diagnostic": "personal_followup: speak (One playful, sourced callback connects the eligible sleep intention to the current project without claiming the user stayed awake or the export is unfinished beyond what is reported.)",
+    "failure": null,
+    "commitments": [
+      {
+        "id": "commitmentmvsfmy062kvrfw",
+        "intention": "go to bed",
+        "condition": {
+          "kind": "reply"
+        },
+        "source": {
+          "messageId": "synthetic-u",
+          "text": "I will go to bed after this reply.",
+          "at": 1793210460190
+        },
+        "status": "mentioned",
+        "expiresAt": 1793296860190,
+        "eligibleAt": 1793210520190,
+        "attempts": 0,
+        "transitions": [
+          {
+            "status": "waiting",
+            "at": 1793210460190,
+            "reason": "Explicit user intention",
+            "sourceId": "synthetic-u"
+          },
+          {
+            "status": "eligible",
+            "at": 1793211180200,
+            "reason": "Matching assistant reply was delivered",
+            "sourceId": "synthetic-a"
+          },
+          {
+            "status": "mentioned",
+            "at": 1793211188038,
+            "reason": "Specific callback was actually delivered"
+          }
+        ],
+        "mentionedAt": 1793211188038
+      }
+    ],
+    "delivered": [
+      "You said bed after that reply, and here we are back at ArborCalc. I’m not calling it a broken promise, but this export is getting an awfully generous bedtime extension."
+    ]
+  }
+}

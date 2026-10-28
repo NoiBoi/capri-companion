@@ -7,7 +7,8 @@ import { ProviderError, type LLMProvider } from './providers';
 import type { MemoryStore } from '../store/dataStores';
 import type { Logger } from '../log';
 import type { RelationshipStore } from '../store/relationship';
-import { parseRelationshipLearning, RELATIONSHIP_EXTRACTION, EPISODIC_EXTRACTION } from './relationshipLearning';
+import { parseRelationshipLearning, RELATIONSHIP_EXTRACTION, EPISODIC_EXTRACTION, PERSONAL_EXTRACTION } from './relationshipLearning';
+import type { PersonalContext } from '../store/personalContext';
 import type { ConversationScene } from '../store/conversationScene';
 import type { CompanionScenes } from '../store/companionScenes';
 import type { ExperienceSource } from '../../shared/continuity';
@@ -34,7 +35,7 @@ export function parseLearning(raw: string, userText: string) {
 /** One bounded extraction; only the user's message provides evidence. No desktop actions. */
 export class MemoryLearning {
   context = '';
-  private queue: { text: string; messageId: string; at?: number; assistant?: { text: string; messageId: string } }[] = [];
+  private queue: { text: string; messageId: string; at?: number; assistant?: { text: string; messageId: string; at?: number } }[] = [];
   private queueFile?: string;
   private persistQueue() {
     if (!this.queueFile) return;
@@ -54,9 +55,9 @@ export class MemoryLearning {
     this.timerDue = 0;
   }
   discard() { this.pause(); this.queue = []; this.persistQueue(); }
-  attachReply(messageId: string, text: string, replyId: string) {
+  attachReply(messageId: string, text: string, replyId: string, at = Date.now()) {
     const job = this.queue.find(j => j.messageId === messageId);
-    if (job && text.trim()) { job.assistant = { text: text.slice(0, 4000), messageId: replyId }; this.persistQueue(); }
+    if (job && text.trim()) { job.assistant = { text: text.slice(0, 4000), messageId: replyId, at }; this.persistQueue(); }
   }
   enqueue(text: string, messageId: string) {
     this.pause();
@@ -99,7 +100,7 @@ export class MemoryLearning {
       if (!ctrl.signal.aborted) this.schedule(Math.max(this.d.settings().ai.provider === 'codex' ? 60000 : 2000, this.retryDelay));
     }
   }
-  constructor(private d: { settings(): Settings; provider(): LLMProvider; memory: MemoryStore; log: Logger; canLearn?(): boolean; dir?: string; relationship?: RelationshipStore; scene?: ConversationScene; episodes?: CompanionScenes; deliveredAsides?(): { text: string; messageId: string; at: number }[] }) {
+  constructor(private d: { settings(): Settings; provider(): LLMProvider; memory: MemoryStore; log: Logger; canLearn?(): boolean; dir?: string; relationship?: RelationshipStore; scene?: ConversationScene; episodes?: CompanionScenes; personalContext?: PersonalContext; deliveredAsides?(): { text: string; messageId: string; at: number }[] }) {
     if (!d.dir) return;
     this.queueFile = path.join(d.dir, 'memory-learning-queue.json');
     const s = d.settings();
@@ -114,7 +115,7 @@ export class MemoryLearning {
   }
   /** History privacy can change without disabling approved personal memory. */
   privacyChanged() { this.persistQueue(); }
-  async learn(text: string, messageId: string, signal: AbortSignal, sources: { text: string; messageId: string; at?: number; assistant?: { text: string; messageId: string } }[] = [{ text, messageId }]): Promise<void> {
+  async learn(text: string, messageId: string, signal: AbortSignal, sources: { text: string; messageId: string; at?: number; assistant?: { text: string; messageId: string; at?: number } }[] = [{ text, messageId }]): Promise<void> {
     this.context = '';
     const s = this.d.settings();
     if (!s.memory.enabled || !s.memory.autoLearn || text.length < 3 || text.length > 12000 || signal.aborted) return;
@@ -124,13 +125,16 @@ export class MemoryLearning {
     const relationshipSnapshot = this.d.relationship?.snapshot();
     const sceneSnapshot = this.d.scene?.snapshot();
     const episodeRevision = this.d.episodes?.checkpoint();
+    const personalLearningContext = this.d.personalContext?.learningContext();
+    const personalRevision = personalLearningContext?.revision;
     const tasteSources: { text: string; messageId: string; at: number; preferenceQuestion?: string }[] = [...sources.flatMap(j => j.assistant ? [{ text: j.assistant.text, messageId: j.assistant.messageId, at: j.at ?? Date.now(), preferenceQuestion: j.text.slice(0,1000) }] : []), ...(this.d.deliveredAsides?.() ?? []).slice(-3)];
     let raw = '';
     try {
       for await (const chunk of provider.stream([
-        { role: 'system', content: PROMPT + '\n' + RELATIONSHIP_EXTRACTION + '\n' + EPISODIC_EXTRACTION },
+        { role: 'system', content: PROMPT + '\n' + RELATIONSHIP_EXTRACTION + '\n' + EPISODIC_EXTRACTION + '\n' + PERSONAL_EXTRACTION },
         { role: 'user', content: JSON.stringify({ existing_memories: snapshot.filter(m => !m.archived).map(m => ({ id: m.id, text: m.text, kind: m.context?.kind })), current_user_message: text,
           existing_relationship: relationshipSnapshot,
+          existing_working_context: personalLearningContext,
           shared_experiences: this.d.episodes?.recall(text).slice(0,2),
           current_scene: sceneSnapshot,
           taste_sources: tasteSources,
@@ -142,6 +146,10 @@ export class MemoryLearning {
       if (signal.aborted || !this.d.settings().memory.enabled || !this.d.settings().memory.autoLearn) return;
       const changes = parseLearning(raw, text);
       const relationshipChanges = parseRelationshipLearning(raw);
+      if (this.d.personalContext && personalRevision === this.d.personalContext.checkpoint()) {
+        this.d.personalContext.learn(relationshipChanges, sources.map(j => ({ text: j.text, messageId: j.messageId, at: j.at ?? Date.now() })), personalRevision);
+        for (const source of sources) if (source.assistant?.at) this.d.personalContext.replyDelivered(source.messageId, source.assistant.messageId, source.assistant.at);
+      }
       if (this.d.episodes && episodeRevision === this.d.episodes.checkpoint() && (!sceneSnapshot || sceneSnapshot.revision === this.d.scene?.snapshot().revision)) {
         const evidence: ExperienceSource[] = [...sources.flatMap(j => [
           { id: j.messageId, text: j.text.slice(0,1000), at: j.at ?? Date.now(), role: 'user' as const, reliability: 'statement' as const },

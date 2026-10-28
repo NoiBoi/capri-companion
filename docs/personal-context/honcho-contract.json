@@ -1,0 +1,53 @@
+{
+  "sdk": "@honcho-ai/sdk@2.7.0",
+  "scope": "Real SDK with loopback contract fixture. No Honcho backend or reasoning-quality comparison was run.",
+  "passed": true,
+  "checks": [
+    "synthetic-only boundary",
+    "separate user/Capri authorship",
+    "original timestamps",
+    "source ids",
+    "observer/target perspective",
+    "background readiness",
+    "evidence requested and preserved",
+    "isolated workspace cleanup"
+  ],
+  "requests": [
+    {
+      "method": "POST",
+      "url": "/v3/workspaces"
+    },
+    {
+      "method": "POST",
+      "url": "/v3/workspaces/capri-contract-fixture/peers"
+    },
+    {
+      "method": "POST",
+      "url": "/v3/workspaces/capri-contract-fixture/peers"
+    },
+    {
+      "method": "POST",
+      "url": "/v3/workspaces/capri-contract-fixture/sessions"
+    },
+    {
+      "method": "PUT",
+      "url": "/v3/workspaces/capri-contract-fixture/sessions/fixture-session/peers"
+    },
+    {
+      "method": "POST",
+      "url": "/v3/workspaces/capri-contract-fixture/sessions/fixture-session/messages"
+    },
+    {
+      "method": "GET",
+      "url": "/v3/workspaces/capri-contract-fixture/queue/status?session_id=fixture-session"
+    },
+    {
+      "method": "POST",
+      "url": "/v3/workspaces/capri-contract-fixture/peers/capri/chat"
+    },
+    {
+      "method": "DELETE",
+      "url": "/v3/workspaces/capri-contract-fixture"
+    }
+  ]
+}

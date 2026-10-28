@@ -13,7 +13,9 @@
     "dist": "node scripts/dist.mjs",
     "verify:package": "node scripts/verify-package.mjs",
     "behavior:replay": "node scripts/behavior-stage0.mjs",
-    "continuity:recall": "node scripts/continuity-recall.mjs"
+    "continuity:recall": "node scripts/continuity-recall.mjs",
+    "context:replay": "node scripts/personal-context-replay.mjs",
+    "context:honcho:check": "node scripts/verify-honcho-comparison.mjs"
   },
   "author": "Capri Companion contributors",
   "license": "MIT",
