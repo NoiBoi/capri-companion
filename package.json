@@ -1,6 +1,6 @@
 {
   "name": "capri-buddy",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "main": "dist/main/index.js",
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -24,6 +24,7 @@
     "@fontsource/chakra-petch": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@google/genai": "^2.31.0",
+    "@honcho-ai/sdk": "2.7.0",
     "koffi": "^3.3.4"
   },
   "devDependencies": {

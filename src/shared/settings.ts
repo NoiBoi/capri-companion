@@ -111,7 +111,7 @@ export const SettingsSchema = z.object({
     wakeWord: z.boolean(),
     interactionLines: z.boolean(), // a short spoken line when you poke, pat or call her
   }),
-  memory: z.object({ enabled: z.boolean(), autoLearn: z.boolean(), interactionProfile: z.boolean(), historyRetentionDays: z.number().int().min(0).max(3650) }),
+  memory: z.object({ enabled: z.boolean(), autoLearn: z.boolean(), interactionProfile: z.boolean(), historyRetentionDays: z.number().int().min(0).max(3650), honcho: z.object({ enabled: z.boolean(), baseUrl: httpUrl.refine(value => { try { const u = new URL(value); return u.protocol === 'http:' && ['127.0.0.1','localhost','[::1]'].includes(u.hostname) && !u.username && !u.password && u.pathname === '/' && !u.search && !u.hash; } catch { return false; } }, 'must be a local Honcho URL'), launcher: z.string().max(1000) }) }),
   privacy: z.object({ saveHistory: z.boolean(), logLevel: z.enum(['debug', 'info', 'warn', 'error']) }),
   actions: z.object({
     policies: z.record(z.enum(TOOL_NAMES), Policy),
@@ -227,7 +227,7 @@ export const DEFAULT_SETTINGS: Settings = {
     wakeWord: false,
     interactionLines: true,
   },
-  memory: { enabled: true, autoLearn: false, interactionProfile: true, historyRetentionDays: 90 },
+  memory: { enabled: true, autoLearn: false, interactionProfile: true, historyRetentionDays: 90, honcho: { enabled: false, baseUrl: 'http://127.0.0.1:8008', launcher: '' } },
   privacy: { saveHistory: true, logLevel: 'info' },
   actions: { policies: { ...DEFAULT_POLICIES }, approvedApps: [], searchRoots: [] },
   startup: { launchOnLogin: false },

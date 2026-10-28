@@ -24,6 +24,7 @@ export interface ConversationDeps {
   filterReply?(text: string): string;
   companionContext?(includeBackground?: boolean, userText?: string, includedIds?: ReadonlySet<string>): string;
   prepareContext?():Promise<void>;
+  longTermRecall?(text: string, signal: AbortSignal): Promise<string>;
   companionControl?(control: CompanyControl): string | Promise<string>;
   pauseLearning?(): void;
   queueLearning?(text: string, messageId: string): void;
@@ -140,6 +141,9 @@ export class Conversation {
       await this.d.prepareContext?.();
       if(ctrl.signal.aborted)throw new ProviderError('Stopped.','aborted');
       messages = this.buildMessages(userText);
+      const longTerm = this.privateTurn ? '' : await this.d.longTermRecall?.(userText, ctrl.signal);
+      if (ctrl.signal.aborted) throw new ProviderError('Stopped.', 'aborted');
+      if (longTerm) messages[0].content += longTerm;
       let actionMode = needsActions(userText, messages.slice(1, -1));
       let rewriteUsed = false;
       this.d.log.info('conversation context loaded', { approvedMemories: this.d.memories().length, memoryEnabled: s.memory.enabled, route: needsActions(userText, messages.slice(1, -1)) ? 'actions' : 'chat', inputCharacters: messages.reduce((n, m) => n + m.content.length, 0) });
@@ -185,6 +189,7 @@ export class Conversation {
         if (!actionMode && actions.some(a => (a.parsed as { tool?: string } | null)?.tool === 'request_actions')) {
           actionMode = true;
           messages[0] = this.buildMessages(userText, true)[0];
+          if (longTerm) messages[0].content += longTerm;
           this.d.log.info('conversation route upgraded', { route: 'actions' });
           continue;
         }

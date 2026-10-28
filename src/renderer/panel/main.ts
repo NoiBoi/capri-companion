@@ -560,7 +560,7 @@ function relationshipSections(data: Awaited<ReturnType<typeof relationshipData>>
 const relationshipData = () => api.invoke('relationship:get');
 async function renderMemory() {
   const revision = navigationRevision;
-  const [mem, notes, rems, patterns, lasting, scene, experiences, personal] = await Promise.all([api.invoke('memory:list'), api.invoke('notes:list').catch(() => []), api.invoke('reminders:list').catch(() => []), api.invoke('memory:patterns'), relationshipData(), api.invoke('dialogue:scene'), api.invoke('continuity:get'), api.invoke('personal:get')]);
+  const [mem, notes, rems, patterns, lasting, scene, experiences, personal, honcho] = await Promise.all([api.invoke('memory:list'), api.invoke('notes:list').catch(() => []), api.invoke('reminders:list').catch(() => []), api.invoke('memory:patterns'), relationshipData(), api.invoke('dialogue:scene'), api.invoke('continuity:get'), api.invoke('personal:get'), api.invoke('honcho:status')]);
   if (revision !== navigationRevision) return;
   const sc = h('div', { class: 'scroll' });
   const add = h('input', { type: 'text', placeholder: 'Something to remember', maxLength: 300, 'aria-label': 'New memory', style: 'flex:1;width:auto' });
@@ -581,6 +581,16 @@ async function renderMemory() {
     return card;
   };
   sc.append(
+    group('Long-term understanding',
+      sw('Use local Honcho memory', 'memory.honcho.enabled'),
+      h('p', { class: 'hint', role: 'status' }, `${honcho.state} · ${honcho.synced} saved sources · ${honcho.pending} pending`),
+      h('p', { class: 'hint' }, honcho.detail),
+      h('p', { class: 'hint' }, 'Learns from saved conversations and approved profile records. Requires Use in conversations, Learn automatically and saved history. Storage and embeddings stay on this PC; text reasoning uses your existing Codex account and allowance. Private exchanges are excluded. Chat keeps working if the service is unavailable.'),
+      h('p', { class: 'hint' }, 'Forgetting or correcting saved context clears the old Honcho reading and rebuilds from the remaining approved profile and future conversations. Old chat is not replayed after that reset. Pending deletion is retried when the local server returns.'),
+      honcho.userProfile ? h('details', {}, h('summary', {}, 'Understanding of you'), h('p', { style: 'white-space:pre-wrap' }, honcho.userProfile)) : null,
+      honcho.capriProfile ? h('details', {}, h('summary', {}, 'Capri’s own perspective'), h('p', { style: 'white-space:pre-wrap' }, honcho.capriProfile)) : null,
+      h('div', { class: 'row' }, btn('Sync now', async () => { await api.invoke('honcho:sync'); go('memory'); }, 'quiet'),
+        btn('Rebuild from approved profile', async () => { if (confirm('Clear Honcho’s current reading and restart from your approved profile and future conversations?')) { await api.invoke('honcho:rebuild'); go('memory'); } }, 'quiet'))),
     group('Current exchange', h('p', { class: 'hint' }, 'Chat and desktop reactions share this short-lived context. It updates immediately; an optional background reading identifies her position or unfinished question. Earlier readings yield to new turns. Saved for at most 48 hours when memory and saved history are on.'),
       scene.reading ? h('dl', { class: 'kv' }, h('dt', {}, 'Subject'), h('dd', {}, scene.reading.topic), h('dt', {}, 'Her position'), h('dd', {}, scene.reading.position || 'Unspecified'), h('dt', {}, 'Intention'), h('dd', {}, scene.reading.intention || 'Unspecified'), h('dt', {}, 'Open question'), h('dd', {}, scene.reading.openQuestion || 'None recorded')) : h('p', { class: 'hint' }, scene.entries.length ? 'Using the actual recent exchange. No background reading yet.' : 'No active exchange yet.'),
       h('details', {}, h('summary', {}, 'Recent shared turns'), ...scene.entries.slice(-8).map(e => h('p', { class: 'hint' }, `${e.role === 'user' ? 'You' : 'Capri'}: ${e.text}`))),

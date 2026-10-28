@@ -163,6 +163,9 @@ export interface InvokeMap {
   'memory:patterns': [void, import('./interactionProfile').InteractionProfileSummary];
   'memory:clearPatterns': [void, void];
   'personal:get': [void, import('./personalContext').PersonalContextView];
+  'honcho:status': [void, import('../main/ai/honchoMemory').HonchoStatus];
+  'honcho:sync': [void, import('../main/ai/honchoMemory').HonchoStatus];
+  'honcho:rebuild': [void, import('../main/ai/honchoMemory').HonchoStatus];
   'personal:manage': [{ id: string; action: 'complete' | 'dismiss' | 'forget' }, void];
   'personal:clear': [void, void];
   'relationship:get': [void, { state: import('./relationship').RelationshipState; retired: import('./relationship').RetiredLine[] }];
@@ -240,6 +243,7 @@ export const INVOKE_CHANNELS: InvokeChannel[] = [
   'relationship:get', 'relationship:taste', 'relationship:thread', 'relationship:status', 'relationship:remove', 'dialogue:retire', 'dialogue:restore',
   'dialogue:scene', 'dialogue:clearScene',
   'personal:get', 'personal:manage', 'personal:clear',
+  'honcho:status', 'honcho:sync', 'honcho:rebuild',
   'continuity:get', 'continuity:manage', 'continuity:clear',
   'action:respond', 'provider:test', 'provider:models', 'claude:status', 'claude:signin', 'claude:code', 'claude:signout', 'diagnostics:get', 'logs:tail', 'app:openDataFolder',
   'app:resetAll', 'app:quit', 'app:restart', 'apps:pick', 'folders:pick', 'panel:open', 'panel:close', 'panel:ready', 'panel:viewed',

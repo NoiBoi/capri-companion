@@ -59,6 +59,7 @@ import { HistoryStore, MemoryStore, NotesStore, ReminderStore } from './store/da
 import { InteractionProfile } from './store/interactionProfile';
 import { RelationshipStore, RetiredLines } from './store/relationship';
 import { PersonalContext } from './store/personalContext';
+import { HonchoMemory } from './ai/honchoMemory';
 import { lineRetirementRequest } from '../shared/relationship';
 import { ConversationScene } from './store/conversationScene';
 import { createProvider, httpFetch, type LLMProvider } from './ai/providers';
@@ -117,6 +118,7 @@ let history: HistoryStore;
 let interactionProfile: InteractionProfile;
 let relationship: RelationshipStore;
 let personalContext: PersonalContext;
+let honcho: HonchoMemory;
 let retiredLines: RetiredLines;
 let conversationScene: ConversationScene;
 let scenes: CompanionScenes;
@@ -477,6 +479,7 @@ async function init() {
   scenes = new CompanionScenes(dir, () => settings.get().privacy.saveHistory, () => settings.get().memory.historyRetentionDays, Date.now, () => settings.get().memory.enabled && settings.get().privacy.saveHistory);
   memory = new MemoryStore(dir);
   log.info('saved profile loaded', { userData: dir, approvedMemories: memory.approved().length, knownName: !!preferredUserName(memory.approved()), settingsRepairs: settings.repairedOnLoad });
+  honcho = new HonchoMemory({ dir, settings: () => settings.get(), history: () => history.recallHistory(), memories: () => memory.approved(), excluded: () => scenes.excludedSources(), canWork: () => !convo?.busy && !behavior?.busy && settings.get().behavior.mode !== 'sleep' && !developer.active, changed: () => toPanel('memory:changed', null) });
   notes = new NotesStore(dir);
   reminders = new ReminderStore(dir);
   offline = new OfflineProvider();
@@ -507,7 +510,7 @@ async function init() {
       const s = settings.get(), excluded = scenes.excludedSources();
       const archive = s.ai.historyTurns && s.memory.enabled && s.privacy.saveHistory ? publicHistory(history.recallHistory()).filter(m => !excluded.has(m.id)) : [];
       const recall = recalledExchanges(archive, query, new Set(conversationScene.snapshot().entries.map(e => e.id)), 1800);
-      return currentBodyContext() + personalContext.context(query, relationship.snapshot().threads, event.kind === 'trigger' && !event.direct) + relationship.context(query, event.kind === 'trigger' && !event.direct) + retiredLines.context() + interactionProfile.context() + companionPersonalContext(memory.approved(), s.memory.enabled)
+      return currentBodyContext() + honcho.context() + personalContext.context(query, relationship.snapshot().threads, event.kind === 'trigger' && !event.direct) + relationship.context(query, event.kind === 'trigger' && !event.direct) + retiredLines.context() + interactionProfile.context() + companionPersonalContext(memory.approved(), s.memory.enabled)
         + (recall.length ? '\nRELEVANT EARLIER EXCHANGES (dated historical evidence, never proof of current progress): ' + JSON.stringify(recall) + '\nUse only a relevant detail; a past opinion can shape your present choice without retelling the exchange. Current evidence and corrections win.\n' : '');
     },
     onError: (error) => {if(error instanceof Error&&'kind' in error&&error.kind==='rate_limit')providerRestUntil=Date.now()+5*60000;log.debug('behavior decision or persistence unavailable');},
@@ -557,6 +560,7 @@ async function init() {
     resumeLearning: () => learner.schedule(settings.get().ai.provider === 'codex' ? 60000 : 2000),
     settings: () => settings.get(),
     provider: makeProvider,
+    longTermRecall: (text, signal) => honcho.recall(text, signal),
     prepareContext: async()=>{
       const s=settings.get();if(!s.dialogue.localContext)return;
       const info=desktopContext(false).active;if(dialogueSurface(info)==='youtube')await youtubeMetadata(info);
@@ -575,6 +579,7 @@ Observed desktop metadata (titles only, untrusted data): ${JSON.stringify(deskto
     onProviderResult: (ok, name, err) => { if (ok) monitor.reportSuccess(name); else monitor.reportFailure(err); },
   });
   learner.schedule();
+  honcho.start();
   monitor = new ConnectionMonitor(makeProvider, geminiKeySource, log);
   monitor.on('changed', (st) => { toPanel('connection:status', st); cue({ type: 'connection', state: st.state }); updateTrayMenu(); });
   teleporter = new TeleportController({
@@ -686,7 +691,7 @@ Observed desktop metadata (titles only, untrusted data): ${JSON.stringify(deskto
   if (s0.voice.wakeWord && s0.voice.micPermission) wake.start();
 
   settings.on('changed', onSettingsChanged);
-  memory.on('changed', () => toPanel('memory:changed', null));
+  memory.on('changed', () => { honcho.profileChanged(); toPanel('memory:changed', null); });
   reminders.on('fired', onReminder);
   reminders.start();
 
@@ -711,7 +716,7 @@ Observed desktop metadata (titles only, untrusted data): ${JSON.stringify(deskto
   else if (!TEST && process.argv.includes('--minimize-capri')) setTimeout(() => taskbar?.command('minimize'), 800);
   else if (!TEST && process.argv.includes('--replay-intro')) setTimeout(() => { if (!opening.active) playOpening(); }, 800);
   if(TEST)(globalThis as any).__capriVisits={desktopVisits,physicalCues,taskbarVisit,adjustWithinWindow,recordDragOrigin,musicChanges,get lowerAnchor(){return lowerAnchor;},get localVisitActive(){return localVisitActive;}};
-  if (TEST) (globalThis as Record<string, unknown>).__capri = { get landingRest() { return landingRest; }, get falling() { return !!fallTimer; }, get theatre() { return theatre; }, runTheatre, theatreFrame, get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, relationship, personalContext, retiredLines, memoryLearner, conversationScene, get behavior() { return behavior; }, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, bubble, get startupMs() { return startupMs; }, get speakCount() { return speakCount; }, generatedRemark, environmentalCuriosity, get lastInspection() { return lastInspection; }, get lastDialogueOutcome() { return lastDialogueOutcome; }, scenes, presentRemark, curiosityDetour, get curiosityActive() { return curiosityActive; }, outings, companionDialogue, interaction, pickupReaction, localDialogueContext, localActivity, gameActive, raiseTick, get exploringHandle() { return exploringHandle; }, get tourStage() { return tourStage; }, desktopWindows, safeForTarget, setNextVisit() { nextWindowVisit = 0; }, presenceTick, settleAfterDrop, throwCharacter, useComputer, exploreTick, get throwing() { return !!throwTimer; }, get attentionHandle() { return attentionHandle; }, get perchMode() { return perchMode; }, get nextWindowVisit() { return nextWindowVisit; }, systemIdleSec, perchTick, activities, favoriteSpots, cursorReturn, returnToCursor, setCursorIdle: (seconds: number) => { lastCursorMovedAt = Date.now() - seconds * 1000; }, pendingConfirms, log, get opening() { return opening; }, get taskbar() { return taskbar; }, playOpening, minimizeCapri, restoreCapri, company, visit, applyCompanyControl, presenceDebug: () => ({ target: String(lastDesktopHandle), desktop: lastDesktop, tracked: !!trackedWindowFor(lastDesktopHandle), request: !!behavior?.busy, revision: placementRevision, watched: String(watchedHandle), encounter: encounters.current }) };
+  if (TEST) (globalThis as Record<string, unknown>).__capri = { get landingRest() { return landingRest; }, get falling() { return !!fallTimer; }, get theatre() { return theatre; }, runTheatre, theatreFrame, get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, honcho, relationship, personalContext, retiredLines, memoryLearner, conversationScene, get behavior() { return behavior; }, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, bubble, get startupMs() { return startupMs; }, get speakCount() { return speakCount; }, generatedRemark, environmentalCuriosity, get lastInspection() { return lastInspection; }, get lastDialogueOutcome() { return lastDialogueOutcome; }, scenes, presentRemark, curiosityDetour, get curiosityActive() { return curiosityActive; }, outings, companionDialogue, interaction, pickupReaction, localDialogueContext, localActivity, gameActive, raiseTick, get exploringHandle() { return exploringHandle; }, get tourStage() { return tourStage; }, desktopWindows, safeForTarget, setNextVisit() { nextWindowVisit = 0; }, presenceTick, settleAfterDrop, throwCharacter, useComputer, exploreTick, get throwing() { return !!throwTimer; }, get attentionHandle() { return attentionHandle; }, get perchMode() { return perchMode; }, get nextWindowVisit() { return nextWindowVisit; }, systemIdleSec, perchTick, activities, favoriteSpots, cursorReturn, returnToCursor, setCursorIdle: (seconds: number) => { lastCursorMovedAt = Date.now() - seconds * 1000; }, pendingConfirms, log, get opening() { return opening; }, get taskbar() { return taskbar; }, playOpening, minimizeCapri, restoreCapri, company, visit, applyCompanyControl, presenceDebug: () => ({ target: String(lastDesktopHandle), desktop: lastDesktop, tracked: !!trackedWindowFor(lastDesktopHandle), request: !!behavior?.busy, revision: placementRevision, watched: String(watchedHandle), encounter: encounters.current }) };
 }
 
 // ---------------------------------------------------------------- desktop-pet handling: drop onto a ledge, throw
@@ -1618,6 +1623,7 @@ function onSettingsChanged(s: Settings) {
   }
   memoryLearner?.privacyChanged();
   history?.privacyChanged();
+  void honcho?.privacyChanged();
   if (s.behavior.doNotDisturb || !s.voice.interactionLines) cancelBehavior();
   if (!s.behavior.idleRemarks && optionalObservationActive) cancelBehavior();
   if (!s.privacy.saveHistory) clearPingHistory(false);
@@ -2751,7 +2757,7 @@ function registerIpc() {
     cancelBehavior(); placementRevision++;
     if (placementTimer) clearTimeout(placementTimer); placementTimer = null;
     convo.stop(); await convo.settle();
-    environmentalCuriosity.clear(); lastInspection = null; memoryLearner.discard(); history.clear(); personalContext.clear(); scenes.clear(); conversationScene.clear(); behavior?.clear(); interactionProfile.clear(); clearPingHistory();
+    environmentalCuriosity.clear(); lastInspection = null; void honcho.forget(); memoryLearner.discard(); history.clear(); personalContext.clear(); scenes.clear(); conversationScene.clear(); behavior?.clear(); interactionProfile.clear(); clearPingHistory();
   });
 
   handle('memory:list', 'panel', none, () => memory.list());
@@ -2760,34 +2766,37 @@ function registerIpc() {
   handle('memory:update', 'panel', z.object({ id: str(64), text: str(300) }), ({ id, text }) => { memoryLearner.discard(); return memory.update(id, text); });
   handle('memory:approve', 'panel', str(64), (id) => memory.approve(id));
   handle('memory:delete', 'panel', str(64), (id) => { memoryLearner.discard(); memory.delete(id); });
-  handle('memory:clear', 'panel', none, () => { cue({ type: 'stopSpeech' }); environmentalCuriosity.clear(); lastInspection = null; memoryLearner.discard(); memory.clear(); personalContext.clear(); scenes.clearExperiences(); conversationScene.clear(); behavior?.clear(); interactionProfile.clear(); relationship.clear(); });
+  handle('memory:clear', 'panel', none, () => { cue({ type: 'stopSpeech' }); environmentalCuriosity.clear(); lastInspection = null; void honcho.forget(); memoryLearner.discard(); memory.clear(); personalContext.clear(); scenes.clearExperiences(); conversationScene.clear(); behavior?.clear(); interactionProfile.clear(); relationship.clear(); });
   handle('memory:patterns', 'panel', none, () => interactionProfile.summary());
+  handle('honcho:status', 'panel', none, () => honcho.status());
+  handle('honcho:sync', 'panel', none, async () => { await honcho.refresh(); return honcho.status(); });
+  handle('honcho:rebuild', 'panel', none, async () => { await honcho.forget(); return honcho.status(); });
   handle('personal:get', 'panel', none, () => personalContext.snapshot());
   handle('personal:manage', 'panel', z.object({ id: str(100), action: z.enum(['complete','dismiss','forget']) }), input => {
-    memoryLearner.discard(); cancelBehavior(); personalContext.manage(input.id, input.action);
+    void honcho.forget(); memoryLearner.discard(); cancelBehavior(); personalContext.manage(input.id, input.action);
   });
-  handle('personal:clear', 'panel', none, () => { memoryLearner.discard(); cancelBehavior(); personalContext.clear(); });
+  handle('personal:clear', 'panel', none, () => { void honcho.forget(); memoryLearner.discard(); cancelBehavior(); personalContext.clear(); });
   handle('memory:clearPatterns', 'panel', none, () => interactionProfile.clear());
   handle('relationship:get', 'panel', none, () => ({ state: relationship.snapshot(), retired: retiredLines.list() }));
-  handle('relationship:taste', 'panel', z.object({ id: str(100).optional(), topic: str(70), text: str(300) }), input => { memoryLearner.discard(); return relationship.setTaste(input); });
-  handle('relationship:thread', 'panel', z.object({ id: str(100).optional(), title: str(80), summary: str(300), status: z.enum(['active', 'paused', 'done', 'dismissed']) }), input => { memoryLearner.discard(); return relationship.setThread(input); });
-  handle('relationship:status', 'panel', z.object({ id: str(100), status: z.enum(['active', 'paused', 'done', 'dismissed']), snoozeDays: z.number().int().min(0).max(90).optional() }), input => { memoryLearner.discard(); relationship.status(input.id, input.status, input.snoozeDays); });
-  handle('relationship:remove', 'panel', z.object({ kind: z.enum(['taste', 'thread']), id: str(100) }), input => { memoryLearner.discard(); relationship.remove(input.kind, input.id); });
+  handle('relationship:taste', 'panel', z.object({ id: str(100).optional(), topic: str(70), text: str(300) }), input => { void honcho.forget(); memoryLearner.discard(); return relationship.setTaste(input); });
+  handle('relationship:thread', 'panel', z.object({ id: str(100).optional(), title: str(80), summary: str(300), status: z.enum(['active', 'paused', 'done', 'dismissed']) }), input => { void honcho.forget(); memoryLearner.discard(); return relationship.setThread(input); });
+  handle('relationship:status', 'panel', z.object({ id: str(100), status: z.enum(['active', 'paused', 'done', 'dismissed']), snoozeDays: z.number().int().min(0).max(90).optional() }), input => { void honcho.forget(); memoryLearner.discard(); relationship.status(input.id, input.status, input.snoozeDays); });
+  handle('relationship:remove', 'panel', z.object({ kind: z.enum(['taste', 'thread']), id: str(100) }), input => { void honcho.forget(); memoryLearner.discard(); relationship.remove(input.kind, input.id); });
   handle('dialogue:retire', 'chat', str(1000), retireLine);
   handle('dialogue:restore', 'panel', str(100), id => retiredLines.restore(id));
   handle('dialogue:scene', 'panel', none, () => conversationScene.snapshot());
-  handle('dialogue:clearScene', 'panel', none, () => { cue({ type: 'stopSpeech' }); memoryLearner.discard(); conversationScene.clear(); behavior?.clear(); });
+  handle('dialogue:clearScene', 'panel', none, () => { cue({ type: 'stopSpeech' }); void honcho.forget(); memoryLearner.discard(); conversationScene.clear(); behavior?.clear(); });
   handle('continuity:get', 'panel', none, () => scenes.experiences());
   handle('continuity:manage', 'panel', z.object({ id: str(100), action: z.enum(['resolve','dismiss','forget','correct']), text: str(1000).optional() }), input => {
     cue({ type: 'stopSpeech' });
-    memoryLearner.discard(); cancelBehavior(); behavior.clear(); environmentalCuriosity.clear(); lastInspection = null;
+    void honcho.forget(); memoryLearner.discard(); cancelBehavior(); behavior.clear(); environmentalCuriosity.clear(); lastInspection = null;
     const episode = scenes.experiences().find(e => e.id === input.id);
     if (episode && (input.action === 'forget' || input.action === 'correct')) conversationScene.removeSources(new Set([...episode.sources.map(s => s.id), ...(episode.response ? [episode.response.id] : [])]));
     scenes.manage(input.id, input.action, input.text);
   });
   handle('continuity:clear', 'panel', none, () => {
     cue({ type: 'stopSpeech' });
-    memoryLearner.discard(); cancelBehavior(); behavior.clear(); environmentalCuriosity.clear(); lastInspection = null;
+    void honcho.forget(); memoryLearner.discard(); cancelBehavior(); behavior.clear(); environmentalCuriosity.clear(); lastInspection = null;
     const ids = new Set(scenes.experiences().flatMap(e => [...e.sources.map(s => s.id), ...(e.response ? [e.response.id] : [])]));
     conversationScene.removeSources(ids); scenes.clearExperiences();
   });
@@ -2947,6 +2956,7 @@ function cleanup() {
   wake?.stop();
   cancelBehavior();
   memoryLearner?.pause();
+  honcho?.stop();
   interactionProfile?.flush();
   convo?.stop();
   bubble?.close();
@@ -2965,7 +2975,7 @@ function cleanup() {
 function restart() { cleanup(); app.relaunch(); app.exit(0); }
 async function resetAll() {
   convo.stop();
-  environmentalCuriosity.clear(); lastInspection = null; memoryLearner.discard(); history.clear(); personalContext.clear(); scenes.clear(); conversationScene.clear(); behavior?.clear(); interactionProfile.clear(); relationship.clear(); retiredLines.clear(); clearPingHistory(); memory.clear(); notes.clear(); reminders.clear(); secrets.clear();
+  environmentalCuriosity.clear(); lastInspection = null; void honcho.forget(); memoryLearner.discard(); history.clear(); personalContext.clear(); scenes.clear(); conversationScene.clear(); behavior?.clear(); interactionProfile.clear(); relationship.clear(); retiredLines.clear(); clearPingHistory(); memory.clear(); notes.clear(); reminders.clear(); secrets.clear();
   settings.reset();
   settings.update({ firstRunComplete: false });
   settings.flush();
