@@ -36,10 +36,12 @@ export function configureCodexCooldown(file: string) {
   };
 }
 export function codexRetryDelay(line: string): number | null {
-  if (!/\b429\b|Too Many Requests|rate[ _-]?limit/i.test(line)) return null;
+  if (!/\b429\b|Too Many Requests|rate[ _-]?limit|usage[ _-]?limit|usage_limit_reached|exceeded.*quota|quota.*exceeded/i.test(line)) return null;
   const delay = /(?:in|after)\s+([\d]+(?:\.[\d]+)?)\s*(ms|s|seconds?|minutes?|m)\b/i.exec(line);
   const jsonDelay = /["']?retry_after(?:_seconds)?["']?\s*[:=]\s*([\d]+(?:\.[\d]+)?)/i.exec(line);
-  const ms = delay ? Number(delay[1]) * (/^ms$/i.test(delay[2]) ? 1 : /^m/i.test(delay[2]) ? 60000 : 1000) : jsonDelay ? Number(jsonDelay[1]) * 1000 : 60000;
+  const reset = /["']?resets?_at["']?\s*[:=]\s*(\d{10,13})/i.exec(line);
+  const resetMs = reset ? Number(reset[1])*(reset[1].length===10?1000:1)-Date.now() : null;
+  const ms = delay ? Number(delay[1]) * (/^ms$/i.test(delay[2]) ? 1 : /^m/i.test(delay[2]) ? 60000 : 1000) : jsonDelay ? Number(jsonDelay[1]) * 1000 : resetMs ?? 60000;
   return Math.min(3600000, Math.max(1000, Math.ceil(ms)));
 }
 
@@ -129,7 +131,7 @@ async function executeCodex(prompt: string, opts: CodexOptions): Promise<string>
         if (diagnosticBuffer.trim()) recognizeLimit(diagnosticBuffer);
         diagnostics?.({ purpose: opts.purpose ?? 'reply', model: opts.model || 'Codex default', inputCharacters: prompt.length + instructions.length, elapsedMs: Date.now() - start, usage, retryAfterMs: rateDelay ?? undefined, ok: !opts.signal.aborted && rateDelay === null && !timedOut && !failure && code === 0 && !!text });
         if (opts.signal.aborted) reject(new ProviderError('Stopped.', 'aborted'));
-        else if (rateDelay !== null) reject(new ProviderError('Codex is temporarily rate-limiting replies.', 'rate_limit', 429, rateDelay));
+        else if (rateDelay !== null) reject(new ProviderError('Codex usage is unavailable for this signed-in account. Generated replies use the same Codex allowance; local controls still work.', 'rate_limit', 429, rateDelay));
         else if (timedOut) reject(new ProviderError('Codex reply timed out.', 'timeout'));
         else if (failure || code !== 0 || !text) reject(new ProviderError(failure || `Codex exited without a reply (${code}). Check Codex sign-in.`, 'server'));
         else resolve(text);

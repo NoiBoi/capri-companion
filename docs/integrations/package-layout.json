@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-28T22:40:35.162Z",
+  "version": "0.4.1",
+  "checks": [
+    {
+      "name": "staged app version",
+      "ok": true,
+      "detail": "0.4.1"
+    },
+    {
+      "name": "asar matches built main/index.js",
+      "ok": true
+    },
+    {
+      "name": "asar matches built preload/preload.js",
+      "ok": true
+    },
+    {
+      "name": "asar matches built renderer/panel.js",
+      "ok": true
+    },
+    {
+      "name": "extension resource matches manifest.json",
+      "ok": true
+    },
+    {
+      "name": "extension resource matches capture.js",
+      "ok": true
+    },
+    {
+      "name": "extension resource matches observe.js",
+      "ok": true
+    },
+    {
+      "name": "extension resource matches worker.js",
+      "ok": true
+    },
+    {
+      "name": "extension resource matches popup.js",
+      "ok": true
+    },
+    {
+      "name": "extension resource matches popup.html",
+      "ok": true
+    },
+    {
+      "name": "native Koffi packaged",
+      "ok": true
+    },
+    {
+      "name": "no profile/environment files in asar",
+      "ok": true
+    }
+  ],
+  "ok": true
+}

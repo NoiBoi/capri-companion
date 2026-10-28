@@ -114,5 +114,13 @@ describe('CLI rate limit protocol', () => {
     expect(codexRetryDelay('rate_limit retry after 1500ms')).toBe(1500);
     expect(codexRetryDelay('rate_limit "retry_after": 310')).toBe(310000);
     expect(codexRetryDelay('request ID 14290')).toBeNull();
+    expect(codexRetryDelay("You've hit your usage limit. Upgrade your plan or add credits to continue, or try again later.")).toBe(60000);
+    expect(codexRetryDelay('usage_limit_reached retry after 120 seconds')).toBe(120000);
+  });
+  it('treats a usage-limit failure as quota and never respawns during cooldown',async()=>{
+    const c=child(), request=runCodex('Hello',{signal:new AbortController().signal,timeoutMs:10000});await Promise.resolve();
+    c.stdout.emit('data',Buffer.from(JSON.stringify({type:'turn.failed',error:{message:"You've hit your usage limit. Upgrade your plan or add credits to continue, or try again later."}})+'\n'));c.emit('close',1);
+    await expect(request).rejects.toMatchObject({kind:'rate_limit'});
+    await expect(runCodex('Again',{signal:new AbortController().signal,timeoutMs:10000})).rejects.toMatchObject({kind:'rate_limit'});expect(spawn).toHaveBeenCalledTimes(1);
   });
 });

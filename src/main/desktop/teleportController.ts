@@ -78,6 +78,7 @@ export class TeleportController {
       if (revision === this.revision && !cancelled?.()) {
         target = typeof dest === 'function' ? dest() : dest;
         if (this.d.canOccupy?.(target) === false) target = undefined;
+        if (target) { await this.d.prepareFlight?.(); if(revision!==this.revision||cancelled?.())target=undefined; }
         if (target) { this.d.move(target, 'teleport'); this.d.moved?.(target, 'teleport'); }
       }
       const arrival = this.waitAck(id, 'in', fx ? 1800 : 400);
@@ -165,6 +166,11 @@ export class TeleportController {
         this.d.cue({ type: 'teleport', phase: 'in', id, effects: fx });
         await restored;
         return { ok: false, detail: blocked };
+      }
+      await this.d.prepareFlight?.();
+      if(revision!==this.revision || reason==='auto' && this.automaticBlock()) {
+        const restored=this.waitAck(id,'in',fx?1800:400);this.d.cue({type:'teleport',phase:'in',id,effects:fx});await restored;
+        return {ok:false,detail:'Movement cancelled by a newer instruction.'};
       }
       this.d.move(dest, 'teleport');
       this.d.moved?.(dest, 'teleport');

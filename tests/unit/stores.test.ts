@@ -83,6 +83,13 @@ describe('settings normalization', () => {
 });
 
 describe('SettingsStore persistence', () => {
+  it('round trips every settings section and nested leaf through a disk reload',()=>{
+    const dir=tmpDir(), s=new SettingsStore(dir), initial=structuredClone(DEFAULT_SETTINGS);
+    const change=(value:unknown):unknown=>typeof value==='boolean'?!value:typeof value==='number'?value:typeof value==='string'?value:Array.isArray(value)?value:value&&typeof value==='object'?Object.fromEntries(Object.entries(value).map(([k,v])=>[k,change(v)])):value;
+    const patch=change(initial) as typeof DEFAULT_SETTINGS;patch.dialogue.weatherCity='West Lafayette';patch.ai.codex={chatModel:'restart-chat',taskModel:'restart-task'};patch.ai.openai={baseUrl:'https://example.com/v1',model:'restart-model'};patch.voice.systemVoice='Restart fixture voice';patch.voice.volume=.42;patch.character.position={x:123,y:234,displayId:9};patch.actions.searchRoots=['C:\\project-fixture'];patch.actions.approvedApps=[{name:'Fixture',path:'C:\\fixture.exe'}];const result=s.update(patch);expect(result.repaired).toEqual([]);s.flush();
+    const restarted=new SettingsStore(dir);expect(restarted.get()).toEqual(result.settings);expect(restarted.repairedOnLoad).toEqual([]);
+    expect(Object.keys(restarted.get())).toEqual(Object.keys(DEFAULT_SETTINGS));
+  });
   it('persists updates and reloads them', () => {
     const dir = tmpDir();
     const s = new SettingsStore(dir);

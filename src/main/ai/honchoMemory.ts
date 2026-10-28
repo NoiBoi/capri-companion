@@ -111,7 +111,7 @@ export class HonchoMemory {
     let privateExchange = false;
     const history = this.d.history().filter(m => {
       if (m.role === 'user') privateExchange = !!m.meta?.private || /\b(off the record|(?:don['’]?t|do not) (?:save|remember) (?:this|anything))\b/i.test(m.content);
-      return !privateExchange && !m.meta?.private && !m.meta?.error && !m.meta?.interrupted && !excluded.has(m.id) && (m.role === 'user' || m.role === 'assistant') && m.ts > cutoff && m.content.trim();
+      return !privateExchange && !m.meta?.private && !m.meta?.contextSources?.length && !m.meta?.error && !m.meta?.interrupted && !excluded.has(m.id) && (m.role === 'user' || m.role === 'assistant') && m.ts > cutoff && m.content.trim();
     }).slice(-2000);
     sources.push(...history.map(m => ({ id: m.id, role: m.role as 'user' | 'assistant', text: m.content.slice(0, 20000), at: m.ts })));
     return { sources, profile };

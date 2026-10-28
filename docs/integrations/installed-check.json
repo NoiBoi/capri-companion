@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-28T22:42:18.171Z",
+  "runtime": {
+    "version": "0.4.1",
+    "userData": "C:\\Users\\matth\\Documents\\Capri Buddy",
+    "startupMs": 1075,
+    "approvedMemories": 40,
+    "connection": {
+      "state": "connected",
+      "provider": "codex",
+      "detail": "Codex is signed in with your existing account. Replies use your Codex usage."
+    },
+    "sources": [
+      {
+        "id": "chrome",
+        "collect": false,
+        "live": false
+      }
+    ],
+    "bridge": "off"
+  },
+  "packageMatches": true,
+  "rollback": "C:\\Users\\matth\\Documents\\Codex\\2026-10-25\\i-x20\\outputs\\Capri\\release\\rollback-before-life-0.4.1-20261028-184201",
+  "profileBackup": "C:\\Users\\matth\\Documents\\Codex\\2026-10-28\\files-pasted-by-the-user-capri\\work\\profile-before-life-0.4.1-20261028-184201",
+  "preserved": {
+    "memory.json": true,
+    "secrets.bin": true,
+    "relationship.json": true,
+    "historyPrefix": true,
+    "settingsExceptPosition": true
+  },
+  "ok": true
+}

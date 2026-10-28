@@ -22,7 +22,7 @@ export function friendlyError(e: unknown): string {
     switch (e.kind) {
       case 'auth': return `${e.message.startsWith('Gemini') ? e.message + ' ' : 'The model provider rejected the API key. '}Check it in Model settings.`;
       case 'model': return `${e.message} Pick another model in Model settings.`;
-      case 'rate_limit': return `The provider is rate-limiting requests${e.retryAfterMs ? ` (retry in ~${Math.ceil(e.retryAfterMs / 1000)} s)` : ''}. Try again in a moment.`;
+      case 'rate_limit': return `${e.message}${e.retryAfterMs ? ` Retry in about ${Math.ceil(e.retryAfterMs / 1000)} seconds.` : ''}`;
       case 'network': return 'Couldn’t reach the model server. Check your connection or that the local server is running.';
       case 'timeout': return 'The model took too long to respond (timeout).';
       case 'server': return `The model server had an error (${e.status ?? '?'}).`;

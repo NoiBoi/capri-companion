@@ -17,6 +17,7 @@ export interface ConversationDeps {
   history: { append(m: ChatMessage): void; recent(n: number): ChatMessage[]; recallHistory?(): ChatMessage[] };
   memories(): MemoryItem[];
   excludedMemorySources?(): Set<string>;
+  contextSources?(): string[];
   onUserMessage?(message: ChatMessage): void;
   onAssistantMessage?(message: ChatMessage, userMessageId: string): void;
   localReply?(text: string): string | null;
@@ -118,7 +119,7 @@ export class Conversation {
     const speak = s.voice.ttsEnabled;
     let messages: LLMMessage[];
     let visible = '';
-    let tainted = false;
+    let tainted = !!this.d.contextSources?.().length;
     let utterance = 0;
     let provider: LLMProvider | undefined;
     if (!control && localReply === null) this.setPhase('thinking');
@@ -216,7 +217,7 @@ export class Conversation {
         if (fallback) { visible = fallback; this.d.emit('chat:delta', { messageId: replyId, delta: fallback }); if (speak) this.say(replyId, utterance++, fallback); }
       }
       this.d.onProviderResult?.(true, provider.name);
-      const msg: ChatMessage = { id: replyId, role: 'assistant', content: visible.trim(), ts: Date.now(), meta: { provider: provider.name, private: this.privateTurn } };
+      const msg: ChatMessage = { id: replyId, role: 'assistant', content: visible.trim(), ts: Date.now(), meta: { provider: provider.name, private: this.privateTurn, contextSources: this.d.contextSources?.() } };
       this.d.history.append(msg);
       this.d.emit('chat:done', { message: msg });
       this.d.onAssistantMessage?.(msg, userMessageId);
@@ -230,7 +231,7 @@ export class Conversation {
       const err = aborted ? undefined : friendlyError(e);
       if (!aborted) { this.d.log.warn('turn failed', { provider: provider?.name ?? s.ai.provider, error: e as Error }); this.d.onProviderResult?.(false, provider?.name ?? s.ai.provider, e); }
       const content = visible.trim() || (aborted ? '' : err!);
-      const msg: ChatMessage = { id: replyId, role: 'assistant', content, ts: Date.now(), meta: { provider: provider?.name ?? s.ai.provider, error: err, interrupted: aborted, private: this.privateTurn } };
+      const msg: ChatMessage = { id: replyId, role: 'assistant', content, ts: Date.now(), meta: { provider: provider?.name ?? s.ai.provider, error: err, interrupted: aborted, private: this.privateTurn, contextSources: this.d.contextSources?.() } };
       if (content) this.d.history.append(msg);
       this.d.emit('chat:done', { message: msg });
       this.setPhase(aborted ? 'idle' : 'error', err);

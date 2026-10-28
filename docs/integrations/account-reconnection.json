@@ -1,0 +1,17 @@
+{
+  "date": "2026-10-28T22:34:22.877Z",
+  "scope": "One short real Codex reply on an isolated profile using current installed CLI authentication. No credentials, memories, history or external source content copied.",
+  "provider": "codex",
+  "result": {
+    "id": "amvsoz5442e5iu4",
+    "role": "assistant",
+    "content": "Yep, I’m here and the connection works.",
+    "ts": 1793226871175,
+    "meta": {
+      "provider": "codex",
+      "private": false,
+      "contextSources": []
+    }
+  },
+  "ok": true
+}

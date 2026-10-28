@@ -18,7 +18,7 @@ export class RequestGate {
   async run<T>(purpose: RequestPurpose, signal: AbortSignal, task: (signal: AbortSignal) => Promise<T>): Promise<T> {
     const check = () => {
       if (signal.aborted) throw new ProviderError('Stopped.', 'aborted');
-      if (Date.now() < this.until) throw new ProviderError('Codex is temporarily rate-limiting replies.', 'rate_limit', 429, this.until - Date.now());
+      if (Date.now() < this.until) throw new ProviderError('Codex usage is unavailable for this signed-in account. Generated replies use the same Codex allowance; local controls still work.', 'rate_limit', 429, this.until - Date.now());
     };
     check();
     if (purpose !== 'reply' && this.pending) throw new ProviderError('Background request deferred.', 'aborted');

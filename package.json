@@ -1,6 +1,6 @@
 {
   "name": "capri-buddy",
-  "version": "0.3.4",
+  "version": "0.4.1",
   "main": "dist/main/index.js",
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -76,6 +76,14 @@
         "filter": [
           "*.node"
         ]
+      },
+      {
+        "from": "extensions/chrome",
+        "to": "extensions/chrome"
+      },
+      {
+        "from": "docs/integrations",
+        "to": "integrations"
       }
     ],
     "win": {

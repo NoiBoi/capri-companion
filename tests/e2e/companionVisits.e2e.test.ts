@@ -142,6 +142,14 @@ it('clears an upside-down attachment before the first inspection flight movement
   await expect.poll(()=>char.evaluate(()=>(window as any).__capriDebug.attachment)).toBeNull();
   await a.evaluate(async()=>{await (globalThis as any).__flight;});
 });
+it.each(['jump','teleport'] as const)('clears an old inverted renderer attachment on %s arrival',async route=>{
+  const {a,char}=await boot();
+  await a.evaluate(()=>{(globalThis as any).__capri.teleporter.d.cue({type:'attachment',mode:'inverted'});});
+  await expect.poll(()=>char.evaluate(()=>(window as any).__capriDebug.attachment)).toBe('inverted');
+  await a.evaluate(async(_e,route)=>{const a=(globalThis as any).__capri;if(route==='jump'){const b=a.charWin.getBounds();await a.teleporter.jumpTo({...b,x:b.x+75,kind:'spot'});}else await a.teleporter.go('random','manual');},route);
+  await expect.poll(()=>char.evaluate(()=>(window as any).__capriDebug.attachment)).toBeNull();
+  expect(await a.evaluate(()=>(globalThis as any).__capri.perchMode)).toBe('perch');
+});
 it('chooses a local lying rest without inventing a battery or requesting a model',async()=>{
   const {a,char,requests}=await boot();
   expect(await a.evaluate(async()=>await (globalThis as any).__capriVisits.taskbarVisit('rest',17n))).toBe(true);

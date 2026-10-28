@@ -7,7 +7,7 @@ export function publicHistory(history: ChatMessage[]) {
   let privateTurn = false;
   return history.filter(m => {
     if (m.role === 'user') privateTurn = !!m.meta?.private || /\b(off the record|don['’]?t (?:save|remember) (?:this|anything)|do not (?:save|remember) (?:this|anything))\b/i.test(m.content);
-    return !privateTurn && !m.meta?.private;
+    return !privateTurn && !m.meta?.private && !m.meta?.contextSources?.length;
   });
 }
 const RELATED = [

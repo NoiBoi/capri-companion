@@ -40,6 +40,7 @@ const TABS: { id: string; label: string; icon: string }[] = [
   { id: 'voice', label: 'Voice', icon: 'voice' },
   { id: 'character', label: 'Character', icon: 'eye' },
   { id: 'memory', label: 'Memory', icon: 'memory' },
+  { id: 'connections', label: 'Connections', icon: 'shield' },
   { id: 'privacy', label: 'Privacy', icon: 'shield' },
   { id: 'system', label: 'System', icon: 'pulse' },
   { id: 'developer', label: 'Developer', icon: 'model' },
@@ -62,9 +63,15 @@ async function save(path: string, value: unknown) {
   if (r.repaired.length) toast(`Invalid value for ${r.repaired.join(', ')}; reset to default.`, true);
 }
 const timers: Record<string, number> = {};
+const pendingSettings = new Map<string, unknown>();
+async function flushSettings() { const items=[...pendingSettings];pendingSettings.clear();await Promise.all(items.map(([path,value])=>{clearTimeout(timers[path]);return save(path,value);})); }
+window.addEventListener('blur',()=>{void flushSettings();});
+window.addEventListener('beforeunload',()=>{void flushSettings();});
+document.getElementById('closeBtn')?.addEventListener('click',e=>{e.preventDefault();e.stopImmediatePropagation();void flushSettings().then(()=>window.close());},true);
 function saveDebounced(path: string, value: unknown, ms = 400) {
+  pendingSettings.set(path,value);
   clearTimeout(timers[path]);
-  timers[path] = window.setTimeout(() => void save(path, value), ms);
+  timers[path] = window.setTimeout(() => {pendingSettings.delete(path);void save(path, value);}, ms);
 }
 
 // ---------------------------------------------------------------- components
@@ -137,6 +144,7 @@ function renderRail() {
 let navigationRevision = 0;
 let developerPoll: number | undefined;
 function go(t: string) {
+  void flushSettings();
   if (tab === 'developer' && t !== 'developer') void api.invoke('dev:stop').catch(() => {});
   if (developerPoll !== undefined) { clearInterval(developerPoll); developerPoll = undefined; }
   navigationRevision++;
@@ -892,8 +900,58 @@ function renderWelcome() {
     choice('No AI', 'Commands only', 'offline'))));
 }
 
+async function renderConnections() {
+  const note = (text: string) => h('p',{class:'hint'},text);
+  const state = await api.invoke('life:get');
+  const run = async (action: () => Promise<unknown>) => { try { await action(); await go('connections'); } catch(e) { toast(e instanceof Error ? e.message : String(e),true); } };
+  const draftSave = h('div',{class:'hint',role:'status','aria-label':'Setup save status'},'Text drafts save automatically. Save source controls to apply sites and permissions.');
+  const saveDraft = (id:string,draft:import('../../shared/lifeContext').LifeDraft) => {draftSave.textContent='Saving setup draft…';void api.invoke('life:draft',{id,draft}).then(()=>{draftSave.textContent='Setup draft saved. Apply source controls to activate changes.';}).catch(e=>{draftSave.textContent='Draft could not save: '+String(e);});};
+  const idInput = h('input',{type:'text','aria-label':'Chrome extension ID',placeholder:'32-letter ID from chrome://extensions',value:state.drafts.pairing?.extensionId ?? state.bridge.extensionId ?? '',oninput:(e:Event)=>saveDraft('pairing',{extensionId:(e.target as HTMLInputElement).value})});
+  const token = h('input',{type:'text',readOnly:true,'aria-label':'Pairing token',placeholder:'Generated token appears here'});
+  const pairStatus = h('div',{role:'status'});
+  const sourceCards = state.sources.map(source => {
+    const changed = structuredClone(source);
+    const permission = (key:'collect'|'live'|'retain'|'content', label:string) => field(label,h('input',{type:'checkbox',role:'switch','aria-label':`${source.name}: ${label}`,checked:changed.permissions[key],onchange:(e:Event)=>{changed.permissions[key]=(e.target as HTMLInputElement).checked;}}));
+    const sites = h('textarea',{'aria-label':'Chrome allowed sites',value:state.drafts[source.id]?.sites ?? source.sites.join('\n'),oninput:(e:Event)=>saveDraft(source.id,{sites:(e.target as HTMLTextAreaElement).value}),rows:3,placeholder:'https://github.com\nhttps://developer.chrome.com'});
+    const name = h('input',{type:'text','aria-label':`${source.name}: Display name`,value:state.drafts[source.id]?.name ?? source.name,maxLength:100,oninput:(e:Event)=>saveDraft(source.id,{name:(e.target as HTMLInputElement).value})});
+    const days = h('input',{type:'number','aria-label':`${source.name}: Retention days`,value:state.drafts[source.id]?.retentionDays ?? source.retentionDays,min:1,max:30,oninput:(e:Event)=>saveDraft(source.id,{retentionDays:(e.target as HTMLInputElement).value})});
+    const health = state.health[source.id];
+    return group(source.name,
+      h('p',{},`${health?.state ?? 'waiting'}: ${health?.detail ?? ''}`),
+      health?.lastSync ? note('Last accepted sync: '+new Date(health.lastSync).toLocaleString()) : null,
+      health?.lastFailure ? note('Last failure: '+new Date(health.lastFailure).toLocaleString()) : null,
+      source.folder ? note('Selected folder: '+source.folder) : null,
+      field('Display name',name),permission('collect','Collect observations'),permission('live','Use in live dialogue'),permission('retain','Retain source history locally'),permission('content','Allow bounded content access'),
+      source.kind==='chrome' ? field('Allowed site origins, one per line',sites,'Chrome must also grant each site. Sensitive pages remain blocked.',true) : null,
+      field('Retention days',days,'1 to 30 days; current state still expires sooner.'),
+      h('div',{class:'row'},
+        btn('Save source controls',()=>run(async()=>{changed.name=name.value.trim();changed.retentionDays=Number(days.value);if(source.kind==='chrome')changed.sites=sites.value.split(/\s+/).filter(Boolean);await api.invoke('life:configure',changed); })),
+        btn(source.paused?'Resume':'Pause',()=>run(()=>api.invoke('life:configure',{...source,paused:!source.paused})), 'quiet'),
+        btn('Disconnect and forget',()=>run(()=>api.invoke('life:forget',{id:source.id})), 'quiet'),
+        source.kind==='project'?btn('Remove folder',()=>run(()=>api.invoke('life:forget',{id:source.id,remove:true})), 'quiet'):null));
+  });
+  const entities = state.entities.map(entity=>{
+    const aliases=h('textarea',{rows:2,value:state.drafts[entity.id]?.aliases ?? entity.aliases.join('\n'),oninput:(e:Event)=>saveDraft(entity.id,{aliases:(e.target as HTMLTextAreaElement).value}),'aria-label':`${entity.name}: Aliases`});
+    return h('div',{class:'item',style:'display:block'},h('strong',{},entity.name),note(`${entity.id} | ${entity.certainty} | ${entity.evidence}`),field('Explicit aliases, one per line',aliases,'Use a repository URL, folder path, or distinctive project name.',true),btn('Save explicit aliases',()=>run(()=>api.invoke('life:associate',{...entity,aliases:aliases.value.split('\n').map(a=>a.trim()).filter(Boolean),certainty:'explicit',evidence:'User edited explicit aliases in Connections'})),'quiet'));
+  });
+  const current = state.current.map(event=>{
+    const correction=h('input',{type:'text',value:event.summary,maxLength:1200,'aria-label':`Correct ${event.recordId}`});
+    return h('div',{class:'item',style:'display:block'},h('strong',{},event.summary),note(`${event.source} | ${event.quality} | ${new Date(event.occurredAt).toLocaleString()} | expires ${new Date(event.expiresAt).toLocaleTimeString()}`),note(event.detail),field('Your correction',correction,undefined,true),btn('Apply correction',()=>run(()=>api.invoke('life:correct',{source:event.source,recordId:event.recordId,summary:correction.value})),'quiet'));
+  });
+  view.replaceChildren(viewHead('Connections / Life Context'), h('div',{class:'scroll'},draftSave,
+    group('Private by choice',note('Sources add evidence to Capri’s existing context and attention. Displayed pages do not prove reading; file changes do not prove success. Enable Memory and local desktop context to use connected evidence.'),note(state.learning),note('Future Calendar, Last.fm / Spotify history, OwnTracks, mail, Teams, Gradescope and Discord adapters are disconnected contracts, not active connections.'),btn('Refresh diagnostics',()=>go('connections'),'quiet')),
+    group('Chrome extension',note(`Bridge: ${state.bridge.state}. Local port ${state.bridge.port}.`),field('Chrome extension ID',idInput,undefined,true),btn('Generate new pairing token',async()=>{try{const result=await api.invoke('life:pair',idInput.value.trim());token.value=result.token;pairStatus.textContent=result.persistent?'Copy this token into the extension popup. Rotating invalidates the old token.':'OS credential encryption is unavailable. Pairing lasts only for this session.';}catch(e){toast(String(e),true);}}),field('Pairing token',token,undefined,true),pairStatus,note('Load the supplied extensions/chrome folder using Chrome’s Load unpacked button. Add the same exact site origins here and in the extension popup. Content access permits one-time selected text or article excerpts, never automatic full-page bodies.')),
+    ...sourceCards,
+    group('Local projects',note('Select a specific project folder. Default collection uses filenames and Git metadata. Content access is a separate permission. Changes to source controls invalidate its old contextual records.'),btn('Add project folder',()=>run(()=>api.invoke('life:addProject')))),
+    group('Project identities and associations',...(entities.length?entities:[emptyLine('Select a project folder to create an explicit project identity.')])),
+    group('Current understanding',...(current.length?current:[emptyLine('No fresh authorized evidence.')])),
+    group('Recent accepted events',...state.events.slice(0,15).map(e=>h('div',{class:'item',style:'display:block'},h('span',{},e.summary),note(`${e.source} / ${e.recordId} revision ${e.revision}; ${e.operation}; ${new Date(e.receivedAt).toLocaleString()}`)))),
+    group('Attention opportunities',...state.candidates.slice(-12).reverse().map(c=>h('div',{class:'item',style:'display:block'},h('span',{},`${c.source}: ${c.status}`),note(c.reason),['pending','deferred'].includes(c.status)?btn('Dismiss opportunity',()=>run(()=>api.invoke('life:candidate',{id:c.id})),'quiet'):null)),emptyLine('Silence is valid. Opportunities expire; repeated evidence does not earn repeated callbacks.')),
+    group('Clear Life Context',note('Disconnects sources and clears this subsystem’s evidence and associations. Existing approved memories and saved Chat remain. Source-derived Chat is excluded from automatic recall and learning.'),btn('Disconnect all and clear Life Context',()=>run(()=>api.invoke('life:clear')),'quiet'))));
+}
+
 const RENDER: Record<string, () => unknown> = {
-  chat: renderChat, model: renderModel, voice: renderVoice, character: renderCharacter, memory: renderMemory, privacy: renderPrivacy, system: renderSystem, developer: renderDeveloper, welcome: renderWelcome,
+  chat: renderChat, model: renderModel, voice: renderVoice, character: renderCharacter, memory: renderMemory, connections: renderConnections, privacy: renderPrivacy, system: renderSystem, developer: renderDeveloper, welcome: renderWelcome,
 };
 
 // ---------------------------------------------------------------- boot
@@ -902,7 +960,7 @@ document.getElementById('closeBtn')!.append(icon('close'));
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (phase === 'thinking' || phase === 'speaking') void api.invoke('chat:stop');
-  else void api.invoke('panel:close');
+  else void flushSettings().then(()=>api.invoke('panel:close'));
 });
 async function startPanel() {
   const deadline = <T>(promise: Promise<T>) => new Promise<T>((resolve, reject) => {
