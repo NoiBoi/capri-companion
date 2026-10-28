@@ -8,7 +8,7 @@ export interface ChatMessage {
   role: ChatRole;
   content: string;
   ts: number;
-  meta?: { provider?: string; error?: string; interrupted?: boolean; actionStatus?: string };
+  meta?: { provider?: string; error?: string; interrupted?: boolean; actionStatus?: string; private?: boolean };
 }
 
 export interface MemoryRevision {
@@ -171,6 +171,9 @@ export interface InvokeMap {
   'dialogue:restore': [string, void];
   'dialogue:scene': [void, import('./conversationScene').ConversationSceneState];
   'dialogue:clearScene': [void, void];
+  'continuity:get': [void, import('./continuity').SharedExperience[]];
+  'continuity:manage': [{ id: string; action: 'resolve' | 'dismiss' | 'forget' | 'correct'; text?: string }, void];
+  'continuity:clear': [void, void];
   'notes:list': [void, Note[]];
   'notes:delete': [string, void];
   'reminders:list': [void, Reminder[]];
@@ -200,7 +203,7 @@ export interface InvokeMap {
   'char:drag': ['start' | 'end', void];
   'char:click': [void, void];
   'char:menu': [void, void];
-  'char:speechState': [{ utteranceId: string; state: 'start' | 'end' | 'error' }, void];
+  'char:speechState': [{ utteranceId: string; state: 'start' | 'end' | 'error' | 'cancel' }, void];
   'char:audio': [{ wav: Uint8Array; durationMs: number }, void];
   'char:micError': [string, void];
   'char:poseRenderer': [import('./developer').PoseRendererState, void];
@@ -229,6 +232,7 @@ export const INVOKE_CHANNELS: InvokeChannel[] = [
   'memory:undo', 'memory:update', 'memory:delete', 'memory:clear', 'memory:patterns', 'memory:clearPatterns', 'notes:list', 'notes:delete', 'reminders:list', 'reminders:cancel',
   'relationship:get', 'relationship:taste', 'relationship:thread', 'relationship:status', 'relationship:remove', 'dialogue:retire', 'dialogue:restore',
   'dialogue:scene', 'dialogue:clearScene',
+  'continuity:get', 'continuity:manage', 'continuity:clear',
   'action:respond', 'provider:test', 'provider:models', 'claude:status', 'claude:signin', 'claude:code', 'claude:signout', 'diagnostics:get', 'logs:tail', 'app:openDataFolder',
   'app:resetAll', 'app:quit', 'app:restart', 'apps:pick', 'folders:pick', 'panel:open', 'panel:close', 'panel:ready',
   'voice:ptt', 'char:hit', 'char:anchor', 'char:drag', 'char:click', 'char:menu', 'char:speechState', 'char:audio',

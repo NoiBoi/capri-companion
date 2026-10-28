@@ -55,21 +55,16 @@ describe('purposeful visit sequences', () => {
     const flight = t.go('left', 'auto', 'glide'); blocked = 'Staying here';
     expect((await flight).ok).toBe(false); expect(move).not.toHaveBeenCalled(); expect(t.active).toBe(false);
   });
-  it('studies before settling, considers one comment, then rests without repetition', () => {
+  it('finishes the tour intention without starting a second study/comment cycle', () => {
     const v = new VisitSequence(), revision = v.begin(7n);
-    expect(v.phase).toBe('approach'); expect(v.step(100, true, false)).toBeNull();
-    expect(v.arrive(revision, 1000, () => 0)).toBe(true);
-    expect(v.step(5499, true, false)).toBeNull();
-    expect(v.step(5500, true, false)).toBe('settle');
-    expect(v.step(7299, true, false)).toBeNull();
-    expect(v.step(7300, true, false)).toBe('consider_comment');
-    expect(v.step(8000, true, false)).toBeNull(); expect(v.phase).toBe('rest');
-    expect(v.step(37300, true, false)).toBeNull(); expect(v.phase).toBe('idle');
+    expect(v.phase).toBe('approach'); expect(v.target).toBe(7n);
+    expect(v.finish(revision)).toBe(true); expect(v.phase).toBe('idle'); expect(v.target).toBeNull();
+    expect(v.finish(revision)).toBe(false);
   });
   it('discards an old arrival and prevents comments after a target closes or an interruption', () => {
     const v = new VisitSequence(), old = v.begin(1n); v.cancel(); const fresh = v.begin(2n);
-    expect(v.arrive(old, 0)).toBe(false); expect(v.target).toBe(2n);
-    v.arrive(fresh, 0); expect(v.step(30000, true, true)).toBeNull(); expect(v.phase).toBe('idle');
-    const next = v.begin(3n); v.arrive(next, 0); v.step(30000, false, false); expect(v.target).toBeNull();
+    expect(v.finish(old)).toBe(false); expect(v.target).toBe(2n);
+    v.cancel(); expect(v.finish(fresh)).toBe(false); expect(v.phase).toBe('idle');
+    v.begin(3n); v.cancel(); expect(v.target).toBeNull();
   });
 });

@@ -4,7 +4,7 @@ import { ClaudeAccountProvider } from './claudeAccount';
 import { CodexAccountProvider } from './codexAccount';
 
 export interface LLMMessage { role: 'system' | 'user' | 'assistant'; content: string }
-export interface GenOptions { purpose?: 'memory' | 'ambient'; agentic?: boolean; jpegBase64?: string; temperature: number; maxTokens: number; timeoutMs: number; signal: AbortSignal }
+export interface GenOptions { purpose?: 'memory' | 'ambient'; outputSchema?: object; agentic?: boolean; jpegBase64?: string; temperature: number; maxTokens: number; timeoutMs: number; signal: AbortSignal }
 
 export interface LLMProvider {
   readonly name: string;

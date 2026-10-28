@@ -52,6 +52,23 @@ describe('current shared conversation', () => {
     expect(patterns).toMatchObject({ lines: 4, interjections: 4, questions: 2, reversals: 1 });
     expect(patterns.selfPerformance).toBeGreaterThan(0);
   });
+  it('keeps unsaved session continuity across unrelated settings changes and coalesces pat strokes', () => {
+    const dir = tmpDir(); let now = Date.now(), persistent = true;
+    const scene = new ConversationScene(dir, () => true, () => persistent, () => now);
+    scene.record({ id: 'old', role: 'assistant', text: 'An old persisted thought.', at: now++ });
+    persistent = false; scene.privacyChanged(); expect(scene.snapshot().entries).toEqual([]);
+    for (let i = 0; i < 100; i++) scene.record({ id: String(i), role: 'user', text: '[The user pats Capri.]', event: 'pat', at: now++ });
+    scene.privacyChanged(); scene.privacyChanged();
+    expect(scene.snapshot().entries).toHaveLength(1);
+    expect(fs.existsSync(path.join(dir, 'conversation-scene.json'))).toBe(false);
+  });
+  it('omits chat turns already supplied verbatim while preserving the scene reading and gesture', () => {
+    const scene = new ConversationScene(tmpDir(), () => true, () => false);
+    scene.record({ id: 'u', role: 'user', text: 'A unique current question.', at: Date.now() });
+    scene.record({ id: 'pat', role: 'user', text: '[The user pats Capri.]', event: 'pat', at: Date.now() });
+    const context = scene.context('chat', new Set(['u']));
+    expect(context).not.toContain('A unique current question.'); expect(context).toContain('[The user pats Capri.]');
+  });
   it('gives deliberate interaction a bounded lane independent of optional chatter and learning', () => {
     let now = Date.now(); const budget = new BackgroundBudget(undefined, () => now);
     for (let i = 0; i < 3; i++) { expect(budget.reserve('ambient')).toBe(true); now += 60001; }

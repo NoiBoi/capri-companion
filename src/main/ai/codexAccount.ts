@@ -155,7 +155,7 @@ export class CodexAccountProvider implements LLMProvider {
       yield await runCodex(messages.filter(m => m.role === 'user').map(m => m.content).join('\n'), { ...o, model, instructions: system + '\nUse an empty id for additions. Return only the required JSON.', outputSchema });
       return;
     }
-    yield await runCodex(turns, { ...o, model, instructions: system });
+    yield await runCodex(turns, { ...o, model, instructions: system, outputSchema: o.outputSchema });
   }
   async test(): Promise<{ ok: boolean; detail: string; latencyMs?: number }> {
     if (Date.now() < codexRequests.until) return { ok: false, detail: `Codex replies are rate-limited; retry in about ${Math.ceil((codexRequests.until - Date.now()) / 1000)} seconds.` };

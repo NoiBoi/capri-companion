@@ -184,3 +184,53 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { background: var(--acce
 svg.icon { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: square; stroke-linejoin: miter; }
 /* Comfortable fields and a visible keyboard focus state. */
 input[type="text"],input[type="password"],input[type="number"],input[type="time"],select,textarea{border-radius:6px;background:#17131e;min-height:34px;transition:border-color .12s,box-shadow .12s}input:focus-visible,select:focus-visible,textarea:focus-visible{border-color:#9c66ef;box-shadow:0 0 0 3px #9c66ef20;outline:none}textarea{padding:9px 11px;line-height:1.5}.composer{align-items:flex-end}.composer textarea{min-height:42px;height:42px;line-height:1.5;padding:10px 12px}.field.wide textarea{font:13px/1.6 var(--ui);min-height:150px}::selection{background:#803dd488;color:white}@media(prefers-reduced-motion:reduce){input,select,textarea{transition:none}}
+
+/* Developer workspace: status first, controls grouped by purpose. */
+.dev-scroll { padding-top: 0; }
+.dev-scroll > .hint { margin: 0 0 12px; }
+.dev-nav { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line-strong); padding-bottom: 10px; position: sticky; top: 0; background: var(--bg); z-index: 2; padding-top: 8px; }
+.dev-nav .btn { border-color: transparent; color: var(--muted); padding: 0 9px; }
+.dev-nav .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--text); background: var(--raised); }
+.dev-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 0 4px; }
+.dev-toolbar label { color: var(--muted); margin-right: auto; }
+.dev-toolbar input { width: 58px; }
+.dev-status { color: var(--muted); font: 11px/1.5 var(--mono); border-left: 2px solid var(--accent); padding: 7px 10px; margin: 8px 0 16px; overflow-wrap: anywhere; }
+.dev-metrics { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin-bottom: 12px; }
+.dev-metric { padding: 12px; background: var(--raised); border: 1px solid var(--line); min-width: 0; }
+.dev-metric span { display: block; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); font-size: 10px; margin-bottom: 7px; }
+.dev-metric strong { font-weight: 550; overflow-wrap: anywhere; }
+.dev-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.dev-card { min-width: 0; border: 1px solid var(--line); background: var(--surface); padding: 14px; margin-bottom: 12px; }
+.dev-grid > .dev-card { margin-bottom: 0; }
+.dev-grid { margin-bottom: 12px; }
+.dev-card h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; font-weight: 600; color: var(--muted); margin: 0 0 12px; }
+.dev-card p { overflow-wrap: anywhere; }
+.dev-lead { font-size: 14px; line-height: 1.5; margin: 0 0 12px; }
+.dev-kv { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+.dev-kv span { color: var(--muted); }
+.dev-kv strong { text-align: right; font-family: var(--mono); font-size: 11px; font-weight: 400; overflow-wrap: anywhere; }
+.dev-entry { padding: 10px 0; border-top: 1px solid var(--line); }
+.dev-entry h3 { font-size: 12px; font-weight: 600; margin: 0 0 4px; overflow-wrap: anywhere; }
+.dev-entry p { margin: 5px 0; }
+.dev-evidence { margin-top: 8px; color: var(--muted); font-size: 12px; }
+.dev-evidence summary { cursor: pointer; }
+.dev-empty { color: var(--faint); }
+.dev-alert { border: 1px solid var(--err); padding: 12px; margin-bottom: 12px; color: var(--err); }
+.dev-blockers { padding-left: 18px; margin: 4px 0 10px; color: var(--warn); font-size: 12px; }
+.dev-filter { display: flex; gap: 8px; margin: 10px 0 18px; }
+.dev-filter input { flex: 1; min-width: 0; }
+.dev-catalog { display: grid; gap: 14px; }
+.dev-catalog .group { padding: 14px; background: var(--surface); border: 1px solid var(--line); }
+.dev-catalog .group > .label { color: var(--text); margin-bottom: 10px; }
+.dev-catalog .group > .btn, .dev-catalog .group > .row { margin: 6px 0; }
+.dev-catalog .row .btn { white-space: normal; height: auto; min-height: 30px; text-align: left; }
+.dev-catalog select { max-width: 240px; }
+.dev-card .logs { max-height: 260px; overflow: auto; }
+@media (max-width: 620px) {
+  .dev-grid { grid-template-columns: 1fr; }
+  .dev-nav .btn { font-size: 11px; padding: 0 7px; }
+  .dev-filter { flex-wrap: wrap; }
+  .dev-catalog .field { grid-template-columns: 1fr; gap: 4px; }
+  .dev-catalog .field > .control { justify-self: stretch; }
+  .dev-catalog select { max-width: 100%; width: 100%; }
+}

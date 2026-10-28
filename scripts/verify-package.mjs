@@ -14,14 +14,14 @@ const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const installer = path.join(root, 'release', `Capri-Setup-${pkg.version}.exe`);
 if (!fs.existsSync(installer)) throw new Error(`Installer not found: ${installer} (run npm run dist)`);
 const target = path.join(os.tmpdir(), `capri-verify-${Date.now()}`);
+const exe = path.join(target, `${pkg.productName}.exe`);
 const results = [];
 const check = (name, ok, detail = '') => { results.push({ name, ok, detail }); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`); };
 
 console.log(`[verify] installing to ${target}`);
 const t0 = Date.now();
 execFileSync(installer, ['/S', `/D=${target}`], { stdio: 'inherit' });
-check('silent install completes', fs.existsSync(path.join(target, 'Capri.exe')), `${((Date.now() - t0) / 1000).toFixed(1)} s`);
-const exe = path.join(target, 'Capri.exe');
+check('silent install completes', fs.existsSync(exe), `${((Date.now() - t0) / 1000).toFixed(1)} s`);
 check('app.asar present', fs.existsSync(path.join(target, 'resources', 'app.asar')));
 const unpacked = path.join(target, 'resources', 'app.asar.unpacked', 'node_modules');
 const koffiNode = fs.existsSync(unpacked) && execSync(`dir /s /b "${unpacked}\\*.node"`, { encoding: 'utf8', shell: 'cmd.exe' }).trim();

@@ -84,8 +84,8 @@ export function createCharacterWindow(s: Settings, preload: string, log: Logger)
 }
 
 export function createPanelWindow(near: Rectangle, preload: string, log: Logger, tab?: string): BrowserWindow {
-  const size = { width: 420, height: 620 };
   const display = screen.getDisplayMatching(near).workArea;
+  const size = { width: tab === 'developer' ? Math.min(780, display.width) : 420, height: tab === 'developer' ? Math.min(800, display.height) : 620 };
   // prefer the left side of the character, else the right
   let x = near.x - size.width - 8;
   if (x < display.x) x = near.x + near.width + 8;

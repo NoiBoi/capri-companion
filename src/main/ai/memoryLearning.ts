@@ -7,8 +7,10 @@ import { ProviderError, type LLMProvider } from './providers';
 import type { MemoryStore } from '../store/dataStores';
 import type { Logger } from '../log';
 import type { RelationshipStore } from '../store/relationship';
-import { parseRelationshipLearning, RELATIONSHIP_EXTRACTION } from './relationshipLearning';
+import { parseRelationshipLearning, RELATIONSHIP_EXTRACTION, EPISODIC_EXTRACTION } from './relationshipLearning';
 import type { ConversationScene } from '../store/conversationScene';
+import type { CompanionScenes } from '../store/companionScenes';
+import type { ExperienceSource } from '../../shared/continuity';
 
 const Changes = z.object({ changes: z.array(z.object({
   op: z.enum(['add', 'update', 'forget']), id: z.string().max(64).optional(),
@@ -91,7 +93,7 @@ export class MemoryLearning {
       if (!ctrl.signal.aborted) this.schedule(Math.max(this.d.settings().ai.provider === 'codex' ? 60000 : 2000, this.retryDelay));
     }
   }
-  constructor(private d: { settings(): Settings; provider(): LLMProvider; memory: MemoryStore; log: Logger; canLearn?(): boolean; dir?: string; relationship?: RelationshipStore; scene?: ConversationScene; deliveredAsides?(): { text: string; messageId: string; at: number }[] }) {
+  constructor(private d: { settings(): Settings; provider(): LLMProvider; memory: MemoryStore; log: Logger; canLearn?(): boolean; dir?: string; relationship?: RelationshipStore; scene?: ConversationScene; episodes?: CompanionScenes; deliveredAsides?(): { text: string; messageId: string; at: number }[] }) {
     if (!d.dir) return;
     this.queueFile = path.join(d.dir, 'memory-learning-queue.json');
     const s = d.settings();
@@ -115,16 +117,18 @@ export class MemoryLearning {
     const snapshot = structuredClone(this.d.memory.list());
     const relationshipSnapshot = this.d.relationship?.snapshot();
     const sceneSnapshot = this.d.scene?.snapshot();
+    const episodeRevision = this.d.episodes?.checkpoint();
     const tasteSources = [...sources.flatMap(j => j.assistant ? [{ text: j.assistant.text, messageId: j.assistant.messageId, at: j.at ?? Date.now() }] : []), ...(this.d.deliveredAsides?.() ?? []).slice(-3)];
     let raw = '';
     try {
       for await (const chunk of provider.stream([
-        { role: 'system', content: PROMPT + '\n' + RELATIONSHIP_EXTRACTION },
+        { role: 'system', content: PROMPT + '\n' + RELATIONSHIP_EXTRACTION + '\n' + EPISODIC_EXTRACTION },
         { role: 'user', content: JSON.stringify({ existing_memories: snapshot.filter(m => !m.archived).map(m => ({ id: m.id, text: m.text, kind: m.context?.kind })), current_user_message: text,
           existing_relationship: relationshipSnapshot,
+          shared_experiences: this.d.episodes?.recall(text).slice(0,2),
           current_scene: sceneSnapshot,
           taste_sources: tasteSources,
-          source_messages: sources.map(j => ({ text: j.text, delivered_assistant_reply: j.assistant?.text, ...(j.at ? { said_at: new Date(j.at).toISOString(), local_time: new Date(j.at).toString() } : {}) })) }) },
+          source_messages: sources.map(j => ({ id: j.messageId, text: j.text, delivered_assistant_reply: j.assistant?.text, assistant_id: j.assistant?.messageId, ...(j.at ? { said_at: new Date(j.at).toISOString(), local_time: new Date(j.at).toString() } : {}) })) }) },
       ], { purpose: 'memory', temperature: 0, maxTokens: 2200, timeoutMs: Math.min(60000, s.ai.requestTimeoutSec * 1000), signal })) {
         if (signal.aborted) return;
         raw += chunk; if (raw.length > 12000) throw new Error('Oversized memory response.');
@@ -132,6 +136,13 @@ export class MemoryLearning {
       if (signal.aborted || !this.d.settings().memory.enabled || !this.d.settings().memory.autoLearn) return;
       const changes = parseLearning(raw, text);
       const relationshipChanges = parseRelationshipLearning(raw);
+      if (this.d.episodes && episodeRevision === this.d.episodes.checkpoint() && (!sceneSnapshot || sceneSnapshot.revision === this.d.scene?.snapshot().revision)) {
+        const evidence: ExperienceSource[] = [...sources.flatMap(j => [
+          { id: j.messageId, text: j.text.slice(0,1000), at: j.at ?? Date.now(), role: 'user' as const, reliability: 'statement' as const },
+          ...(j.assistant ? [{ id: j.assistant.messageId, text: j.assistant.text.slice(0,1000), at: j.at ?? Date.now(), role: 'assistant' as const, reliability: 'delivered' as const }] : [])
+        ]), ...(sceneSnapshot?.entries ?? []).map(e => ({ id: e.id, text: e.text.slice(0,1000), at: e.at, role: e.role, reliability: e.role === 'assistant' ? 'delivered' as const : 'statement' as const }))];
+        for (const episode of relationshipChanges.episodes) this.d.episodes.remember(episode, evidence, this.d.episodes.checkpoint(), episode.question || undefined);
+      }
       if (relationshipChanges.scene && sceneSnapshot) this.d.scene?.apply(relationshipChanges.scene, sceneSnapshot.revision);
       if (/\b(forget|remove|delete)\b/i.test(text)) {
         // Deletion requests must not create a new memory of the thing being forgotten.

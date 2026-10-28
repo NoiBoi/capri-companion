@@ -1,6 +1,15 @@
 import type { Rect } from './displays';
+import type { EnvironmentalReading } from '../../shared/curiosity';
 export interface InterestPoint { x: number; y: number; label: string }
 export interface WindowObservation { jpegBase64: string; region: Rect; window?: Rect }
+const shortText = (value: unknown) => typeof value === 'string' ? value.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 160) : '';
+export function inspectionReading(raw: string): EnvironmentalReading {
+  try {
+    const data = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, '').trim());
+    return { facts: Array.isArray(data.facts) ? data.facts.map(shortText).filter(Boolean).slice(0, 3) : [],
+      interpretation: shortText(data.interpretation), curiosity: shortText(data.curiosity) };
+  } catch { return { facts: [], interpretation: '', curiosity: '' }; }
+}
 /** Coordinates are normalized to the supplied exposed crop, never the whole screen. */
 export function parseInspection(raw: string, observation?: WindowObservation) {
   try {

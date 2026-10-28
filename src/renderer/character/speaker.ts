@@ -3,7 +3,7 @@ import type { Settings } from '../../shared/settings';
 import { LipSync } from './lipsync';
 
 type Utterance = { id: string; text: string; mood?: Mood };
-type Report = (id: string, state: 'start' | 'end' | 'error') => void;
+type Report = (id: string, state: 'start' | 'end' | 'error' | 'cancel') => void;
 
 /** Picks a default substitute voice: a female English Windows voice if available. */
 export function pickVoice(voices: SpeechSynthesisVoice[], preferred: string): SpeechSynthesisVoice | null {
@@ -30,7 +30,7 @@ export class Speaker {
   get speaking() { return this.audible; }
 
   enqueue(id: string, text: string, mood?: Mood) {
-    if (this.queue.length > 50) this.queue.shift(); // bounded
+    if (this.queue.length >= 50) { const dropped = this.queue.shift(); if (dropped) this.report(dropped.id, 'cancel'); }
     this.queue.push({ id, text, mood });
     if (!this.processing) void this.next();
   }
@@ -39,8 +39,9 @@ export class Speaker {
     this.generation++;
     this.processing = false;
     const pending = this.queue.splice(0);
-    for (const q of pending) this.report(q.id, 'end');
+    for (const q of pending) this.report(q.id, 'cancel');
     const active = this.playing; this.playing = null; active?.cancel();
+    this.audible = false; this.lips.stop();
     try { speechSynthesis.cancel(); } catch { /* */ }
   }
 
@@ -50,7 +51,9 @@ export class Speaker {
     this.processing = true;
     const generation = this.generation;
     const v = this.settings().voice;
-    if (!v.ttsEnabled) { this.processing = false; this.report(item.id, 'end'); void this.next(); return; }
+    if (!v.ttsEnabled) { this.processing = false; this.report(item.id, 'cancel'); void this.next(); return; }
+    // Even a request still waiting for audio has a cancellable terminal receipt.
+    this.playing = { id: item.id, cancel: () => this.report(item.id, 'cancel') };
     try {
       if (v.ttsEngine === 'openai') await this.playRemote(item, v, generation);
       else await this.playSystem(item, v);
@@ -72,25 +75,25 @@ export class Speaker {
       if (!voice) return reject(new Error('Configured voice is not ready'));
       u.voice = voice;
       u.rate = v.rate; u.pitch = v.pitch; u.volume = v.volume;
-      let done = false;
-      const finish = (state: 'end' | 'error') => { if (done) return; done = true; this.audible = false; this.lips.stop(); this.report(item.id, state); state === 'end' ? resolve() : reject(new Error('tts error')); };
-      u.onstart = () => { this.audible = true; this.lips.start(); this.report(item.id, 'start'); };
+      let done = false, watchdog: ReturnType<typeof setTimeout>;
+      const finish = (state: 'end' | 'error' | 'cancel') => { if (done) return; done = true; clearTimeout(watchdog); this.audible = false; this.lips.stop(); this.report(item.id, state); state === 'error' ? reject(new Error('tts error')) : resolve(); };
+      u.onstart = () => { if (done) return; this.audible = true; this.lips.start(); this.report(item.id, 'start'); };
       u.onboundary = (e) => { if (e.name === 'word') this.lips.boundary(e.charLength || 4); };
       u.onend = () => finish('end');
-      u.onerror = (e) => (e.error === 'interrupted' || e.error === 'canceled' ? finish('end') : finish('error'));
-      this.playing = { id: item.id, cancel: () => { speechSynthesis.cancel(); finish('end'); } };
-      speechSynthesis.speak(u);
+      u.onerror = (e) => (e.error === 'interrupted' || e.error === 'canceled' ? finish('cancel') : finish('error'));
+      this.playing = { id: item.id, cancel: () => { finish('cancel'); speechSynthesis.cancel(); } };
       // watchdog: some voices never fire onend
-      setTimeout(() => finish('end'), 4000 + item.text.length * 120);
+      watchdog = setTimeout(() => finish('error'), 4000 + item.text.length * 120);
+      try { speechSynthesis.speak(u); } catch { finish('error'); }
     });
   }
 
   private async playRemote(item: Utterance, v: Settings['voice'], generation: number) {
     const bytes = await this.fetchAudio(item.text, item.mood);
-    if (generation !== this.generation) { this.report(item.id, 'end'); return; }
+    if (generation !== this.generation) return;
     this.audioCtx ??= new AudioContext();
     const buf = await this.audioCtx.decodeAudioData(bytes.slice().buffer);
-    if (generation !== this.generation) { this.report(item.id, 'end'); return; }
+    if (generation !== this.generation) return;
     const src = this.audioCtx.createBufferSource();
     src.buffer = buf;
     const gain = this.audioCtx.createGain();
@@ -101,9 +104,9 @@ export class Speaker {
     src.connect(gain).connect(an).connect(this.audioCtx.destination);
     await new Promise<void>((resolve) => {
       let done = false;
-      const finish = () => { if (done) return; done = true; this.audible = false; this.lips.stop(); this.report(item.id, 'end'); resolve(); };
-      src.onended = finish;
-      this.playing = { id: item.id, cancel: () => { try { src.stop(); } catch { /* */ } finish(); } };
+      const finish = (state: 'end' | 'cancel') => { if (done) return; done = true; this.audible = false; this.lips.stop(); src.disconnect?.(); gain.disconnect?.(); an.disconnect?.(); this.report(item.id, state); resolve(); };
+      src.onended = () => finish('end');
+      this.playing = { id: item.id, cancel: () => { finish('cancel'); try { src.stop(); } catch { /* */ } } };
       this.lips.start(() => { an.getFloatTimeDomainData(data); let s = 0; for (const x of data) s += x * x; return Math.sqrt(s / data.length); });
       this.audible = true;
       this.report(item.id, 'start');

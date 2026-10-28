@@ -34,7 +34,7 @@ describe('voice identity', () => {
     const s = structuredClone(DEFAULT_SETTINGS); s.voice.ttsEnabled = false;
     const fetchAudio = vi.fn(), report = vi.fn();
     new Speaker(() => s, report, fetchAudio).enqueue('muted', 'Hello');
-    expect(fetchAudio).not.toHaveBeenCalled(); expect(report).toHaveBeenCalledWith('muted', 'end');
+    expect(fetchAudio).not.toHaveBeenCalled(); expect(report).toHaveBeenCalledWith('muted', 'cancel');
   });
   it('does not choose a male/default substitute or replace a missing configured voice', () => {
     const david = { name: 'Microsoft David', lang: 'en-US', localService: true } as SpeechSynthesisVoice;

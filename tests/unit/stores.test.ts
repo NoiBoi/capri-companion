@@ -8,6 +8,28 @@ import { HistoryStore, MemoryStore, NotesStore, ReminderStore } from '../../src/
 import { Logger, redact } from '../../src/main/log';
 import { fakeCipher, tmpDir } from './helpers';
 
+describe('history write economy and privacy', () => {
+  it('does not rewrite valid unchanged history at launch; still repairs a torn tail', () => {
+    const dir = tmpDir(), file = path.join(dir, 'history.jsonl');
+    const line = JSON.stringify({ id: 'u', role: 'user', content: 'A saved exchange.', ts: Date.now() }) + '\n';
+    fs.writeFileSync(file, line); const rename = vi.spyOn(fs, 'renameSync');
+    try {
+      expect(new HistoryStore(dir, () => 30, () => true).recent()).toHaveLength(1);
+      expect(rename).not.toHaveBeenCalled();
+      fs.appendFileSync(file, '{torn');
+      expect(new HistoryStore(dir, () => 30, () => true).recent()).toHaveLength(1);
+      expect(rename).toHaveBeenCalledTimes(1); expect(fs.readFileSync(file, 'utf8')).toBe(line);
+    } finally { rename.mockRestore(); }
+  });
+  it('removes the saved file on privacy change without erasing the ongoing session', () => {
+    const dir = tmpDir(); let enabled = true;
+    const h = new HistoryStore(dir, () => 30, () => enabled);
+    h.append({ id: 'u', role: 'user', content: 'Still in this session.', ts: Date.now() });
+    enabled = false; h.privacyChanged(); h.privacyChanged();
+    expect(fs.existsSync(path.join(dir, 'history.jsonl'))).toBe(false); expect(h.recent()).toHaveLength(1);
+  });
+});
+
 describe('settings normalization', () => {
   it('fills defaults for empty / garbage input', () => {
     expect(normalizeSettings(undefined).settings).toEqual(DEFAULT_SETTINGS);

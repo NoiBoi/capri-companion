@@ -1,6 +1,6 @@
 import type { DialogueSurface } from './dialogueContext';
 export type ExplorationGoal = 'music corner' | 'social corner' | 'something unfamiliar' | 'a small circuit' | 'somewhere to settle';
-export interface ExplorationPlace { key: string; surface?: DialogueSurface; favorite?: number }
+export interface ExplorationPlace { key: string; surface?: DialogueSurface; favorite?: number; interest?: number }
 export interface ExplorationState {
   version: 1; restUntil: number; completed: number; recentGoals: ExplorationGoal[];
   visits: { key: string; at: number; count: number }[];
@@ -57,6 +57,7 @@ export class ExplorationDirector {
     const score = (p: ExplorationPlace) => {
       const seen = this.state.visits.find(v => v.key === p.key);
       return (seen ? Math.min(15, (now - seen.at) / 60000) / (1 + seen.count) : 25)
+        + Math.max(0, Math.min(12, p.interest ?? 0))
         + (goal === 'somewhere to settle' ? Math.min(10, p.favorite ?? 0) : 0);
     };
     candidates.sort((a, b) => score(b) - score(a));

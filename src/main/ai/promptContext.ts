@@ -1,6 +1,15 @@
 import type { ChatMessage, MemoryItem } from '../../shared/ipc';
 import { identityMemories } from '../../shared/userIdentity';
+import { localRelevance } from '../../shared/recall';
 const tokens = (text: string) => new Set(text.toLowerCase().match(/[a-z]{3,}/g) ?? []);
+/** Filter legacy off-the-record pairs as well as newly flagged private messages, without rewriting history. */
+export function publicHistory(history: ChatMessage[]) {
+  let privateTurn = false;
+  return history.filter(m => {
+    if (m.role === 'user') privateTurn = !!m.meta?.private || /\b(off the record|don['’]?t (?:save|remember) (?:this|anything)|do not (?:save|remember) (?:this|anything))\b/i.test(m.content);
+    return !privateTurn && !m.meta?.private;
+  });
+}
 const RELATED = [
   ['exam', 'exams', 'test', 'tests', 'midterm', 'finals', 'studying', 'study'],
   ['job', 'jobs', 'intern', 'internship', 'internships', 'application', 'applications', 'resume', 'interview'],
@@ -45,10 +54,11 @@ export function recentContext<T extends { role: string; content: string }>(messa
   return selected;
 }
 
-const STOP = new Set('about after again also been before could did does doing from have just know like more remember said some that them then there these they thing this those told want were what when where which with would your you capri really think hello thanks thank please should okay one now'.split(' '));
+const STOP = new Set('the and for are was has had can our its not but about after again also been before could did does doing from have just know like more remember said some that them then there these they thing this those told want were what when where which with would your you capri really think hello thanks thank please should okay one now'.split(' '));
 const recallWords = (text: string) => [...tokens(text)].filter(w => !STOP.has(w));
 /** Search saved exchanges locally. Exact quotations keep recalled claims attributable and dated. */
 export function recalledExchanges(history: ChatMessage[], query: string, recentIds: Set<string>, budget = 3000) {
+  history = publicHistory(history);
   const words = recallWords(query), broad = /\b(?:what (?:did|were) we|where (?:did|were) we|last (?:conversation|time)|talk(?:ed|ing) about|left off)\b/i.test(query);
   const ownWords = /\b(?:you|your|capri)\b/i.test(query);
   const frequency = new Map<string, number>();
@@ -64,9 +74,11 @@ export function recalledExchanges(history: ChatMessage[], query: string, recentI
     if (reply && recentIds.has(reply.id)) continue;
     const userWords = new Set(recallWords(user.content)), replyWords = new Set(recallWords(reply?.content ?? ''));
     const matches = words.filter(w => userWords.has(w) || replyWords.has(w));
-    const score = words.reduce((sum, w) => sum + (userWords.has(w) ? 3 : replyWords.has(w) ? 1 : 0), 0);
+    const lexical = words.reduce((sum, w) => sum + (userWords.has(w) ? 3 : replyWords.has(w) ? 1 : 0), 0);
+    const hybrid = words.length >= 2 && matches.length === 0 ? localRelevance(query, user.content.slice(0,900) + ' ' + (reply?.content.slice(0,600) ?? '')) : { concept: 0 };
+    const score = lexical + hybrid.concept;
     const distinctive = matches.length === 1 && matches[0].length >= 5 && (frequency.get(matches[0]) ?? 0) <= 4 && (userWords.has(matches[0]) || ownWords && replyWords.has(matches[0]));
-    if ((matches.length >= 2 && score >= (ownWords ? 2 : 4)) || distinctive || broad) pairs.push({ user, reply, score });
+    if ((matches.length >= 2 && score >= (ownWords ? 2 : 4)) || distinctive || broad || words.length >= 2 && hybrid.concept > 0 && matches.length === 0) pairs.push({ user, reply, score });
   }
   const ranked = pairs.sort((a, b) => b.score - a.score || b.user.ts - a.user.ts);
   const selected: { at: string; user: string; capri?: string }[] = []; let chars = 0;

@@ -7,7 +7,7 @@ import path from 'node:path';
 
 const exe = process.argv[2];
 const ud = fs.mkdtempSync(path.join(os.tmpdir(), 'capri-perf-'));
-fs.writeFileSync(path.join(ud, 'settings.json'), JSON.stringify({ firstRunComplete: true, voice: { ttsEnabled: false } }));
+fs.writeFileSync(path.join(ud, 'settings.json'), JSON.stringify({ firstRunComplete: true, character: { hideOnFullscreen: false }, voice: { ttsEnabled: false } }));
 const t0 = Date.now();
 const app = await electron.launch({ ...(exe ? { executablePath: exe, args: [] } : { args: [path.resolve(import.meta.dirname, '..')] }), env: { ...process.env, CAPRI_TEST: '1', CAPRI_OFFSCREEN: process.env.CAPRI_ONSCREEN ? '0' : '1', CAPRI_USER_DATA: ud } });
 const char = await app.firstWindow();

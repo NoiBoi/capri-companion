@@ -31,26 +31,17 @@ export class Company {
   label(now = Date.now()) { return [this.focused(now) ? 'Quiet company' : '', this.staying ? 'Staying here' : ''].filter(Boolean).join(' · '); }
 }
 
-export type VisitPhase = 'idle' | 'approach' | 'study' | 'settle' | 'rest';
-/** One cancellable intention, advanced by the existing presence clock. No extra timers or model calls. */
+export type VisitPhase = 'idle' | 'approach';
+/** Cancellation token for the existing tour. The tour owns study, movement and rest. */
 export class VisitSequence {
   phase: VisitPhase = 'idle';
   target: bigint | null = null;
   revision = 0;
-  private due = 0;
-  private restMs = 30000;
   get approaching() { return this.phase === 'approach'; }
   begin(target: bigint) { this.cancel(); this.target = target; this.phase = 'approach'; return this.revision; }
-  arrive(revision: number, now: number, random = Math.random, restMs = 30000) {
+  finish(revision: number) {
     if (revision !== this.revision || this.phase !== 'approach') return false;
-    this.restMs = restMs; this.phase = 'study'; this.due = now + 4500 + random() * 3500; return true;
+    this.cancel(); return true;
   }
   cancel() { this.revision++; this.target = null; this.phase = 'idle'; }
-  step(now: number, valid: boolean, interrupted: boolean): 'settle' | 'consider_comment' | null {
-    if (!valid || interrupted) { this.cancel(); return null; }
-    if (this.phase === 'idle' || this.phase === 'approach' || now < this.due) return null;
-    if (this.phase === 'study') { this.phase = 'settle'; this.due = now + 1800; return 'settle'; }
-    if (this.phase === 'settle') { this.phase = 'rest'; this.due = now + this.restMs; return 'consider_comment'; }
-    this.cancel(); return null;
-  }
 }

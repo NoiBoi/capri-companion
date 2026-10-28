@@ -82,7 +82,7 @@ npm start
 
 To use Gemini while developing, put `GEMINI_API_KEY=your-key` in `.env.local` (git-ignored, never packaged).
 
-More: [architecture](docs/ARCHITECTURE.md) · [security and privacy](docs/SECURITY.md) · [testing](docs/TESTING.md) · [troubleshooting](docs/TROUBLESHOOTING.md) · [how her art is made](assets/capri/SOURCES.md)
+More: [architecture](docs/ARCHITECTURE.md) · [behavior integration and validation](docs/INTEGRATION_VALIDATION.md) · [security and privacy](docs/SECURITY.md) · [testing](docs/TESTING.md) · [troubleshooting](docs/TROUBLESHOOTING.md) · [how her art is made](assets/capri/SOURCES.md)
 
 ## Privacy
 

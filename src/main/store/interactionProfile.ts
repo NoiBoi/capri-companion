@@ -10,9 +10,10 @@ export class InteractionProfile {
   private last?: { at: number; category: ProfileCategory };
   private dirty = false;
   private lastSave = 0;
+  private disabled = false;
   constructor(dir: string, private enabled: () => boolean, private retainDays: () => number, private now = Date.now) {
     this.file = path.join(dir, 'interaction-profile.json');
-    if (!enabled()) { this.clear(); return; }
+    if (!enabled()) { this.clear(); this.disabled = true; return; }
     try {
       const data: unknown = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       if (Array.isArray(data)) {
@@ -53,6 +54,7 @@ export class InteractionProfile {
   }
   observe(category: ProfileCategory | null) {
     if (!this.enabled()) { this.privacyChanged(); return; }
+    this.disabled = false;
     const now = this.now(), prior = this.last;
     this.last = category ? { at: now, category } : undefined;
     // Require continuous foreground samples. Never count sleep, absence, gaps or restart time.
@@ -86,5 +88,5 @@ export class InteractionProfile {
     try { writeJsonAtomic(this.file, this.days); this.dirty = false; this.lastSave = this.now(); } catch { /* Retain dirty state for retry. */ }
   }
   clear() { this.days = []; this.last = undefined; this.dirty = false; try { fs.rmSync(this.file, { force: true }); } catch { /* absent */ } }
-  privacyChanged() { this.last = undefined; if (!this.enabled()) this.clear(); else { this.prune(); this.flush(); } }
+  privacyChanged() { this.last = undefined; if (!this.enabled()) { if (!this.disabled) this.clear(); this.disabled = true; } else { this.disabled = false; this.prune(); this.flush(false); } }
 }

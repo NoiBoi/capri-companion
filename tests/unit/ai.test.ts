@@ -258,6 +258,17 @@ describe('Conversation orchestrator', () => {
     await h2.c.settle();
     expect(seen[0].filter((m) => m.role !== 'system').some((m) => m.content.includes('reach'))).toBe(false);
   });
+  it('ignores delayed audio receipts from a stopped reply while the new reply is speaking', async () => {
+    const h = harness(scripted(['First reply.', 'Fresh reply.']));
+    await h.c.send('first'); await h.c.settle();
+    const oldId = (h.cues.find(c => c.type === 'speak') as { utteranceId: string }).utteranceId;
+    await h.c.send('second'); await h.c.settle();
+    const newId = (h.cues.filter(c => c.type === 'speak').at(-1) as { utteranceId: string }).utteranceId;
+    h.c.onSpeechEvent('start', newId); h.c.onSpeechEvent('end', oldId);
+    expect(h.c.phase).toBe('speaking');
+    h.c.onSpeechEvent('end', newId); expect(h.c.phase).toBe('idle');
+    h.c.onSpeechEvent('start', oldId); expect(h.c.phase).toBe('idle');
+  });
   it('speech events drive phase speaking → idle', async () => {
     const h = harness(scripted(['Hi there.']));
     await h.c.send('x');

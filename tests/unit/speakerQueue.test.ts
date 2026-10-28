@@ -27,11 +27,11 @@ describe('speech mood and sequencing', () => {
     await vi.waitFor(() => expect(a.fetch).toHaveBeenCalledTimes(2));
     expect(a.fetch).toHaveBeenLastCalledWith('Two.', 'content');
     a.speaker.stopAll(); a.resolves[1](new Uint8Array([1]));
-    await vi.waitFor(() => expect(a.report).toHaveBeenCalledWith('b', 'end'));
+    await vi.waitFor(() => expect(a.report).toHaveBeenCalledWith('b', 'cancel'));
   });
   it('does not play a late remote response after stop', async () => {
     const a = setup(); a.speaker.enqueue('a', 'One.', 'curious'); a.speaker.stopAll(); a.resolves[0](new Uint8Array([1]));
-    await vi.waitFor(() => expect(a.report).toHaveBeenCalledWith('a', 'end'));
+    await vi.waitFor(() => expect(a.report).toHaveBeenCalledWith('a', 'cancel'));
     expect(a.sources).toHaveLength(0); expect(a.speaker.speaking).toBe(false);
   });
   it('starts a fresh reply immediately while a cancelled fetch is still pending', async () => {
@@ -40,6 +40,14 @@ describe('speech mood and sequencing', () => {
     a.resolves[0](new Uint8Array([1])); a.resolves[1](new Uint8Array([1]));
     await vi.waitFor(() => expect(a.sources[0]?.start).toHaveBeenCalled());
     expect(a.sources).toHaveLength(1); a.speaker.stopAll();
+  });
+  it('reports cancellation once for playing and queued speech, rather than successful delivery', async () => {
+    const a = setup(); a.speaker.enqueue('a', 'Playing.'); a.speaker.enqueue('b', 'Queued.');
+    a.resolves[0](new Uint8Array([1])); await vi.waitFor(() => expect(a.sources[0]?.start).toHaveBeenCalled());
+    a.speaker.stopAll(); a.sources[0].onended();
+    expect(a.report.mock.calls.filter(([id, state]) => id === 'a' && state === 'cancel')).toHaveLength(1);
+    expect(a.report).toHaveBeenCalledWith('b', 'cancel');
+    expect(a.report.mock.calls.some(([, state]) => state === 'end')).toBe(false);
   });
 
 });

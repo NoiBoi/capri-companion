@@ -11,46 +11,53 @@ const MAX_HISTORY_IN_MEMORY = 50000;
 export class HistoryStore {
   private file: string;
   private items: ChatMessage[] = [];
+  private wasEnabled: boolean;
   constructor(dir: string, private retentionDays: () => number, private enabled: () => boolean) {
     this.file = path.join(dir, 'history.jsonl');
+    this.wasEnabled = enabled();
     this.load();
   }
   private load() {
+    if (!this.enabled()) { this.clear(); return; }
     let raw = '';
     try { raw = fs.readFileSync(this.file, 'utf8'); } catch { return; }
-    const out: ChatMessage[] = [];
+    const out: ChatMessage[] = []; let repair = false;
     for (const line of raw.split('\n')) {
       if (!line.trim()) continue;
       try {
         const m = JSON.parse(line) as ChatMessage;
-        if (m && typeof m.content === 'string' && typeof m.ts === 'number') out.push(m);
-      } catch { /* skip torn line (e.g. crash mid-write) */ }
+        if (m && typeof m.content === 'string' && Number.isFinite(m.ts)) out.push(m); else repair = true;
+      } catch { repair = true; /* skip torn line (e.g. crash mid-write) */ }
     }
     this.items = out;
-    this.compact();
+    this.compact(repair);
   }
-  compact() {
+  compact(repair = false) {
     const days = this.retentionDays();
     const cutoff = days > 0 ? Date.now() - days * 86400_000 : 0;
     const before = this.items.length;
     this.items = this.items.filter((m) => m.ts >= cutoff).slice(-MAX_HISTORY_IN_MEMORY);
-    if (this.items.length !== before || fs.existsSync(this.file)) this.rewrite();
+    if (this.items.length !== before || repair) this.rewrite();
   }
   private rewrite() {
     if (!this.enabled()) { this.items = []; try { fs.rmSync(this.file, { force: true }); } catch { /* */ } return; }
     const tmp = this.file + '.tmp';
-    fs.writeFileSync(tmp, this.items.map((m) => JSON.stringify(m)).join('\n') + (this.items.length ? '\n' : ''));
+    fs.writeFileSync(tmp, this.items.filter(m => !m.meta?.private).map((m) => JSON.stringify(m)).join('\n') + (this.items.length ? '\n' : ''));
     fs.renameSync(tmp, this.file);
   }
   append(m: ChatMessage) {
     this.items.push(m);
     if (this.items.length > MAX_HISTORY_IN_MEMORY * 1.2) this.compact();
-    if (!this.enabled()) return;
+    if (!this.enabled() || m.meta?.private) return;
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     fs.appendFileSync(this.file, JSON.stringify(m) + '\n');
   }
   recent(limit = 50): ChatMessage[] { return this.items.slice(-limit); }
   recallHistory(): ChatMessage[] { return this.items.slice(); }
+  privacyChanged() {
+    if (this.wasEnabled && !this.enabled()) try { fs.rmSync(this.file, { force: true }); } catch { /* session history remains available */ }
+    this.wasEnabled = this.enabled();
+  }
   clear() { this.items = []; try { fs.rmSync(this.file, { force: true }); } catch { /* */ } }
 }
 

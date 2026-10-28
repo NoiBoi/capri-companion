@@ -152,7 +152,7 @@ export class DialogueDirector {
     this.history = this.history.slice(-REPLAY_LIMIT);
     try { this.save?.(this.snapshot()); } catch { /* dialogue works with read-only storage */ }
   }
-  choose(c: DialogueContext, options: { required?: boolean } = {}): string {
+  choose(c: DialogueContext, options: { required?: boolean; remember?: boolean } = {}): string {
     c = { ...c, local: c.local ?? this.contextSource?.() };
     const history = this.recent(), last = history.at(-1);
     if (!options.required && OPTIONAL.has(c.event)) {
@@ -189,13 +189,13 @@ export class DialogueDirector {
     const chosen = beats.find(b => (draw -= score(b)) <= 0) ?? beats.at(-1)!;
     pool = pool.filter(x => x.beat === chosen);
     const result = pool[index(pool.length, this.random)];
-    this.remember(result.text, c, result.beat.intent, result.beat.id);
+    if (options.remember !== false) this.remember(result.text, c, result.beat.intent, result.beat.id);
     return result.text;
   }
-  acceptGenerated(raw: string, c: DialogueContext, intent: DialogueIntent): string {
+  acceptGenerated(raw: string, c: DialogueContext, intent: DialogueIntent, options: { remember?: boolean } = {}): string {
     const text = cleanGeneratedDialogue(raw);
     if (!text || !this.allowed(text) || [...this.recent().slice(-12).map(h => h.text), ...(c.recent ?? [])].some(line => similarDialogue(text, line))) return '';
-    this.remember(text, c, intent);
+    if (options.remember !== false) this.remember(text, c, intent);
     return text;
   }
 }

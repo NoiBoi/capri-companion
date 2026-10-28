@@ -2,10 +2,11 @@ import type { ActionRequest, ActionResult, AssistantPhase, ChatMessage, Connecti
 import { TOOL_NAMES, type Settings, type ToolName } from '../../shared/settings';
 import type { CapriApi } from '../../preload/preload';
 import { icon } from './icons';
-import { DEV_ANIMATIONS, DEV_ACTIVITIES, DEV_INTERACTIONS, DEV_DIALOGUE, DEV_SCENARIOS, type DevCommand, type DevSnapshot } from '../../shared/developer';
+import { DEV_ANIMATIONS, DEV_ACTIVITIES, DEV_INTERACTIONS, DEV_DIALOGUE, DEV_SCENARIOS, DEV_REACTIONS, DEV_PHASES, type DevCommand, type DevSnapshot } from '../../shared/developer';
 import { SCENES, FLOURISHES } from '../../shared/theatrics';
 import { SECONDARY_POSES } from '../character/secondarySprites';
 import { PING_LINES, type PingKind } from '../../shared/contextPings';
+import { MOODS, LIFE_EVENTS } from '../../shared/personality';
 
 declare global { interface Window { capri: CapriApi } }
 const api = window.capri;
@@ -554,7 +555,7 @@ function relationshipSections(data: Awaited<ReturnType<typeof relationshipData>>
 const relationshipData = () => api.invoke('relationship:get');
 async function renderMemory() {
   const revision = navigationRevision;
-  const [mem, notes, rems, patterns, lasting, scene] = await Promise.all([api.invoke('memory:list'), api.invoke('notes:list').catch(() => []), api.invoke('reminders:list').catch(() => []), api.invoke('memory:patterns'), relationshipData(), api.invoke('dialogue:scene')]);
+  const [mem, notes, rems, patterns, lasting, scene, experiences] = await Promise.all([api.invoke('memory:list'), api.invoke('notes:list').catch(() => []), api.invoke('reminders:list').catch(() => []), api.invoke('memory:patterns'), relationshipData(), api.invoke('dialogue:scene'), api.invoke('continuity:get')]);
   if (revision !== navigationRevision) return;
   const sc = h('div', { class: 'scroll' });
   const add = h('input', { type: 'text', placeholder: 'Something to remember', maxLength: 300, 'aria-label': 'New memory', style: 'flex:1;width:auto' });
@@ -580,6 +581,17 @@ async function renderMemory() {
       h('details', {}, h('summary', {}, 'Recent shared turns'), ...scene.entries.slice(-8).map(e => h('p', { class: 'hint' }, `${e.role === 'user' ? 'You' : 'Capri'}: ${e.text}`))),
       btn('Clear current exchange', async () => { await api.invoke('dialogue:clearScene'); go('memory'); }, 'quiet')),
     ...relationshipSections(lasting),
+    group('Shared experiences',
+      h('p', { class: 'hint' }, 'Selected discoveries and shared developments. Interpretations stay tentative. Open interests expire without reminders.'),
+      ...experiences.slice(-12).reverse().map(e => h('div', { class: 'item', style: 'display:block' },
+        h('div', { class: 'txt' }, e.topic,
+          h('div', { class: 'sub' }, e.status + ' · ' + new Date(e.updatedAt).toLocaleString()),
+          h('div', {}, e.sources.at(-1)?.role === 'user' && e.status === 'corrected' ? e.sources.at(-1)!.text : e.readings.at(-1)?.text ?? ''),
+          e.want ? h('div', { class: 'hint' }, `${e.want.status}: ${e.want.text} · expires ${new Date(e.want.expiresAt).toLocaleString()}`) : null,
+          h('details', {}, h('summary', {}, 'Source evidence'), ...e.sources.map(source => h('p', { class: 'hint' }, `${source.role}, ${source.reliability}, ${new Date(source.at).toLocaleString()}: ${source.text}`)), e.response ? h('p', { class: 'hint' }, `Capri actually said: ${e.response.text}`) : null)),
+        h('div', { class: 'row', style: 'flex-wrap:wrap;margin-top:8px' }, ...(['resolve','dismiss','forget'] as const).map(action => btn(action === 'resolve' ? 'Resolve' : action === 'dismiss' ? 'Drop interest' : 'Forget experience', async () => { await api.invoke('continuity:manage', { id: e.id, action }); go('memory'); }, 'quiet')),
+          btn('Correct', async () => { const text = prompt('What should Capri remember instead?'); if (text?.trim()) { await api.invoke('continuity:manage', { id: e.id, action: 'correct', text }); go('memory'); } }, 'quiet')))),
+      experiences.length ? btn('Clear shared experiences', async () => { await api.invoke('continuity:clear'); go('memory'); }, 'quiet') : emptyLine('No selected shared experiences yet.')),
     group('Long-term',
       h('p', { class: 'hint', role: 'status' }, `${mem.filter(m => m.status === 'approved' && !m.archived).length} active memories · ${mem.filter(m => !!m.context && !m.archived).length} with source information`),
       sw('Use in conversations', 'memory.enabled'),
@@ -695,26 +707,80 @@ async function renderSystem() {
 // ---------------------------------------------------------------- developer panel
 async function renderDeveloper() {
   const revision = navigationRevision;
-  const sc = h('div', { class: 'scroll' }), header = viewHead('Developer'); view.append(header, sc);
-  const status = h('p', { role: 'status', id: 'dev-status' }, 'Connecting…');
-  const state = h('pre', { class: 'logs', id: 'dev-state', style: 'white-space:pre-wrap;max-height:none' });
-  const log = h('pre', { class: 'logs', id: 'dev-log', style: 'white-space:pre-wrap;max-height:230px;overflow:auto' });
+  const header = viewHead('Capri / developer'), sc = h('div', { class: 'scroll dev-scroll' }); view.append(header, sc);
+  const status = h('p', { role: 'status', id: 'dev-status', class: 'dev-status' }, 'Connecting…');
+  const log = h('pre', { class: 'logs', id: 'dev-log' });
+  const state = h('div', { id: 'dev-state' }), mind = h('div', { id: 'dev-mind' });
+  const decisions = h('div', { class: 'dev-decisions' }), catalog = h('div', { class: 'dev-catalog' });
   const runButtons: HTMLButtonElement[] = [];
   const seconds = h('input', { type: 'number', min: .5, max: 8, step: .5, value: 2, 'aria-label': 'Preview duration in seconds' });
   const duration = () => Math.max(.5, Math.min(8, Number(seconds.value) || 2));
   const choice = (label: string, values: readonly string[]) => h('select', { 'aria-label': label }, ...values.map(v => h('option', { value: v }, v.replaceAll('_', ' '))));
+  const clock = (at: number) => new Date(at).toLocaleTimeString();
+  const wait = (n: number) => n > 0 ? n >= 60 ? `${Math.ceil(n / 60)} min` : `${n}s` : 'Ready';
+  const card = (title: string, ...children: Child[]) => h('section', { class: 'dev-card' }, h('h2', {}, title), ...children);
+  const line = (label: string, value: string) => h('div', { class: 'dev-kv' }, h('span', {}, label), h('strong', {}, value));
+  const note = (text: string) => h('p', { class: 'hint' }, text);
+  const evidence = (summary: string, items: string[]) => h('details', { class: 'dev-evidence' }, h('summary', {}, summary), ...items.map(t => h('p', {}, t)));
+  const empty = (text: string) => h('p', { class: 'dev-empty' }, text);
+  const fill = (element: HTMLElement, ...children: Child[]) => {
+    const expanded = new Set(Array.from(element.querySelectorAll('details[open]')).map(e => e.querySelector('summary')?.textContent));
+    element.replaceChildren(h('div', {}, ...children));
+    for (const e of element.querySelectorAll('details')) if (expanded.has(e.querySelector('summary')?.textContent)) e.open = true;
+  };
   let reading = false;
+  let renderDetailViews = () => {};
   const refresh = async () => {
     if (reading || revision !== navigationRevision) return; reading = true;
     try {
       const d: DevSnapshot = await api.invoke('dev:get'); if (revision !== navigationRevision) return;
-      status.textContent = `${d.job.result.toUpperCase()}${d.job.label ? ' · ' + d.job.label : ''} · ${d.job.step || 'Choose a preview or check.'}`;
-      status.textContent += `\nDialogue: ${d.runtime.dialogueOutcome} · visual points: ${d.runtime.inspectionPoints} · shared scenes: ${d.runtime.sharedScenes}`;
-      state.textContent = `Capri: ${d.runtime.visible ? 'visible' : 'hidden'} · ${d.runtime.mode} · ${d.runtime.phase}\nFPS: ${d.runtime.fps ?? '—'} · moving: ${d.runtime.moving}\nVisit: ${d.runtime.visit} · tour: ${d.runtime.tour}\nGoal: ${d.runtime.goal ?? 'none'} · rest: ${d.runtime.restSeconds}s\nSimulated absence: ${d.runtime.absence ?? 'off'}\nPending model request: ${d.runtime.pendingRequest}\nApproved memories: ${d.runtime.approvedMemories} · preferred name: ${d.runtime.preferredName ?? 'not set'}`;
-      state.textContent += `\nScene: ${d.runtime.scene ?? 'none'}`;
-      const renderer = d.runtime.poseRenderer;
-      state.textContent += `\nPose motion: ${!renderer?.pose ? 'Primary sprite' : `${renderer.pose}: ${renderer.reduced ? 'Reduced motion' : !renderer.shader ? 'Static fallback' : renderer.motion > 0 ? 'Shader active' : 'Still comparison'}`}`;
-      log.textContent = d.job.log.map(entry => `${new Date(entry.at).toLocaleTimeString()}  ${entry.text}`).join('\n') || 'Results appear here.';
+      status.textContent = `${d.job.result.toUpperCase()}${d.job.label ? ' · ' + d.job.label : ''} · ${d.job.step || 'No preview running. Live state refreshes every second.'}`;
+      const { runtime: r, mind: m, gates: g } = d, last = m.situation.journal.at(-1), renderer = r.poseRenderer;
+      const fresh = m.environment.subjects.find(s => s.current)?.reading;
+      fill(state, 
+        h('div', { class: 'dev-metrics' }, ...[
+          ['Presence', `${r.visible ? 'Visible' : 'Hidden'} / ${r.mode}`], ['Expression', `${renderer?.mood ?? 'Unknown'} / ${renderer?.phase ?? r.phase}`],
+          ['Attention', `${m.situation.interests.length} interests / ${m.episodes.filter(e => e.want?.status === 'open').length} open wants`],
+          ['Provider', `${g.provider} / ${g.connection}`],
+        ].map(([label, value]) => h('div', { class: 'dev-metric' }, h('span', {}, label), h('strong', {}, value)))),
+        m.diagnostics.failure ? h('div', { class: 'dev-alert', role: 'note' }, `${clock(m.diagnostics.failure.at)} · ${m.diagnostics.failure.summary}. A successful connection does not establish a valid decision.`) : null,
+        h('div', { class: 'dev-grid' },
+          card('Current direction', h('p', { class: 'dev-lead' }, m.situation.interests.at(-1)?.intention ?? r.goal ?? 'Quiet company; no active curiosity.'),
+            line('Last choice', last ? `${last.event} → ${last.action}` : 'No decision yet'), note(last?.reason ?? 'An event can produce silence, a gesture, movement or speech.'),
+            line('Expression accepted', last?.delivered ? 'Yes' : 'No'), note('Accepted means the host accepted an expression. It is not proof that audio finished.')),
+          card('What she is attending to', h('p', { class: 'dev-lead' }, m.situation.facts.at(-1)?.title ?? 'No admitted desktop observation'),
+            note(fresh?.hypothesis ?? 'No fresh visual interpretation for the current subject.'),
+            line('Stable foreground', `${m.environment.stableSeconds}s`), line('Window switches / minute', String(m.environment.switchesPerMinute)),
+            fresh?.openCuriosity ? note(`Unresolved: ${fresh.openCuriosity}`) : null),
+          card('Why she may be quiet', g.blockers.length ? h('ul', { class: 'dev-blockers' }, ...g.blockers.map(t => h('li', {}, t))) : note('No current host blocker. Timing, evidence and the model can still favor silence.'),
+            line('Core initiative gate', g.initiativeReady ? 'Open' : 'Waiting'), line('After direct interaction', wait(m.diagnostics.retrySeconds)),
+            line('Visual inspection interval', wait(g.inspectionSeconds)), line('Next movement window', wait(g.nextVisitSeconds)),
+            note('These are earliest eligibility windows, not promises to speak or move.')),
+          card('Body and continuity', line('Artwork', renderer?.pose ?? renderer?.clip ?? 'Waiting for renderer'), line('Pose motion', !renderer?.pose ? 'Primary sprite' : renderer.reduced ? 'Reduced motion' : renderer.shader && renderer.motion > 0 ? 'Shader active' : 'Still / fallback'),
+            line('Visit / tour', `${r.visit} / ${r.tour}`), line('Moving', String(r.moving)), line('FPS', String(r.fps ?? 'Unknown')),
+            line('Saved experiences', String(m.episodes.length)), line('Approved memories', String(r.approvedMemories)), line('Shared recent scenes', String(r.sharedScenes)))),
+        card('Request allowance', note('Optional requests share a ceiling. Direct chat replies have their own priority. No requests are made by viewing this panel.'),
+          ...g.budgets.map(b => line(b.purpose, `${b.used}/${b.limit} in 10 min · ${wait(b.retrySeconds)}`)),
+          line('Decision pending', String(r.pendingRequest)), line('Desktop context / learning / history', [g.localContext, g.learning, g.saveHistory].map(v => v ? 'On' : 'Off').join(' / '))),
+        card('Latest contextual outcome', h('p', {}, r.dialogueOutcome)),
+      );
+      renderDetailViews = () => {
+      if (!panes.get('Mind & memory')!.hidden) fill(mind, 
+        note('Inspect stored observations, attributed evidence and compact, tentative interpretations. This view does not generate an internal monologue. Preview actions do not create personal memories.'),
+        card('Current interests', ...m.situation.interests.map(i => h('article', { class: 'dev-entry' }, h('h3', {}, i.topic), h('p', {}, i.intention), note(`Expires in ${wait(Math.max(0, Math.ceil((i.expiresAt - Date.now()) / 1000)))}`), evidence('Source evidence', [`${i.sourceId}: ${i.quote}`]))), m.situation.interests.length ? null : empty('No active short-lived interest.')),
+        card('Observed evidence', ...m.situation.facts.slice().reverse().map(f => h('article', { class: 'dev-entry' }, h('h3', {}, f.title || f.process), note(`${clock(f.at)} · ${f.process} · ${f.evidence}`), h('p', {}, f.detail))), m.situation.facts.length ? null : empty('No admitted observations.')),
+        card('Visual readings', ...m.environment.subjects.filter(s => s.reading?.evidence).map(s => h('article', { class: 'dev-entry' }, h('h3', {}, s.current ? 'Current subject' : `Earlier subject / ${s.ageSeconds}s ago`), note('Model interpretation of an exposed screenshot; not independently verified.'), h('p', {}, s.reading?.hypothesis ?? ''), ...((s.reading?.evidence?.facts ?? []).map(t => h('p', {}, t))), note(s.reading?.openCuriosity || 'No unresolved curiosity.'))), m.environment.subjects.some(s => s.reading?.evidence) ? null : empty('No fresh visual reading.')),
+        card('Shared conversation', m.exchange.reading ? h('div', {}, line('Topic', m.exchange.reading.topic), line('Position', m.exchange.reading.position || 'None'), line('Intention', m.exchange.reading.intention || 'None'), line('Open question', m.exchange.reading.openQuestion || 'None')) : note('No attributed conversation summary.'),
+          evidence(`${m.exchange.entries.length} recent exchange entries`, m.exchange.entries.map(e => `${clock(e.at)} · ${e.role}: ${e.text}`))),
+        card('Remembered experiences and wants', ...m.episodes.slice().reverse().map(e => h('article', { class: 'dev-entry' }, h('h3', {}, e.topic), note(`${e.status} · ${clock(e.updatedAt)}${e.want ? ` · want ${e.want.status}` : ''}`), h('p', {}, e.readings.at(-1)?.text ?? ''), e.want ? h('p', {}, `${e.want.text}${e.want.askedAt ? ' (already asked)' : ''}`) : null,
+          evidence(`${e.sources.length} attributed sources`, e.sources.map(s => `${s.role} / ${s.reliability}: ${s.text}`)))), m.episodes.length ? note('Correct, resolve, drop or forget an experience in Memory.') : empty('No episodic experience retained. Routine contact and window switches do not automatically create episodes.')),
+        card('Character tastes', ...m.relationship.tastes.map(t => h('article', { class: 'dev-entry' }, h('h3', {}, t.topic), h('p', {}, t.text), evidence('Supporting quote', [t.source.evidence]))), m.relationship.tastes.length ? null : empty('No learned character taste.')),
+        card('Ongoing projects', ...m.relationship.threads.map(t => h('article', { class: 'dev-entry' }, h('h3', {}, `${t.title} / ${t.status}`), h('p', {}, t.summary))), m.relationship.threads.length ? null : empty('No ongoing project thread.')),
+      );
+      if (!panes.get('Results')!.hidden) fill(decisions, ...m.situation.journal.slice().reverse().map(j => h('article', { class: 'dev-entry' }, h('h3', {}, `${clock(j.at)} · ${j.event} → ${j.action}`), h('p', {}, j.reason), j.interpretation ? note(`Tentative interpretation: ${j.interpretation}`) : null, note(`Host accepted expression: ${j.delivered ? 'yes' : 'no'}`))), m.situation.journal.length ? null : empty('No recent decision journal.'));
+      };
+      renderDetailViews();
+      log.textContent = d.job.log.map(entry => `${clock(entry.at)}  ${entry.text}`).join('\n') || 'Preview results appear here.';
       for (const b of runButtons) b.disabled = d.job.active;
       stop.disabled = !d.job.active;
     } catch (error) { status.textContent = String(error instanceof Error ? error.message : error); }
@@ -724,14 +790,24 @@ async function renderDeveloper() {
   const action = (label: string, command: () => DevCommand) => { const b = btn(label, () => void run(command())); runButtons.push(b); return b; };
   const stop = btn('Stop preview', () => void api.invoke('dev:stop').then(refresh), 'primary');
   const absence = (label: string, state: 'idle' | 'sleep' | 'return' | 'clear') => btn(label, () => { void api.invoke('dev:absence', state).then(refresh).catch(error => toast(String(error instanceof Error ? error.message : error), true)); });
-  header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px'; header.append(stop);
   const animation = choice('Animation preview', DEV_ANIMATIONS), activity = choice('Activity preview', DEV_ACTIVITIES), interaction = choice('Interaction preview', DEV_INTERACTIONS);
   const cycle = choice('Cycle preview', ['animations', 'interactions', 'activity', 'loading']), dialogue = choice('Dialogue event', DEV_DIALOGUE), surface = choice('Dialogue platform', ['generic', 'youtube', 'discord', 'chatgpt', 'spotify', 'browser']);
   const secondaryMotion = choice('Secondary motion', ['animated', 'still']);
   const secondary = choice('Secondary pose', SECONDARY_POSES), orientation = choice('Secondary orientation', ['upright', 'inverted']);
   const scenario = choice('Behavior scenario', DEV_SCENARIOS), ping = choice('Contextual ping', Object.keys(PING_LINES));
-  sc.append(
-    group('Preview session', h('p', { class: 'hint' }, 'Local previews make no model requests. Clearly marked live checks can make one request within normal limits. One job at a time. Stop clears temporary state. Movement trials restore her position and do not enter shared memory.'), status, field('Seconds per step', seconds)),
+  const toolbar = h('div', { class: 'dev-toolbar' }, h('label', {}, 'Duration ', seconds, ' sec'), action('Run local checks', () => ({ kind: 'checks' })), stop);
+  const nav = h('nav', { class: 'dev-nav', 'aria-label': 'Developer sections' });
+  const panes = new Map<string, HTMLElement>();
+  const show = (name: string) => { for (const [id, pane] of panes) pane.hidden = name !== id; for (const b of nav.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.textContent === name)); renderDetailViews(); };
+  for (const name of ['Overview', 'Mind & memory', 'Playground', 'Live checks', 'Results']) { const pane = h('div', { class: 'dev-pane', hidden: name !== 'Overview' }); panes.set(name,pane); nav.append(btn(name, () => show(name))); }
+  sc.append(note('Live understanding, behavior diagnostics and a complete preview library.'), nav, toolbar, status, ...panes.values());
+  show('Overview');
+  panes.get('Overview')!.append(state);
+  panes.get('Mind & memory')!.append(mind);
+  const search = h('input', { type: 'search', placeholder: 'Find an animation, event or scenario…', 'aria-label': 'Search previews' });
+  const category = choice('Preview category', ['all', 'artwork', 'expression', 'movement', 'dialogue']);
+  panes.get('Playground')!.append(note('Local previews use no model requests. Movement trials restore position. Feature settings and reduced-motion preferences still affect some expressions.'), h('div', { class: 'dev-filter' }, search, category), catalog);
+    catalog.append(
     group('Construct moments', ...SCENES.map(name => action(name === 'satellite' ? 'Satellite and red light' : name === 'possession' ? 'Possess an exposed window' : 'Playful cursor spark', () => ({ kind: 'scene', name, seconds: duration() }))), action('Sleep into her mask', () => ({ kind: 'mask', seconds: duration() })), h('div', { class: 'row' }, ...FLOURISHES.map(name => action(name, () => ({ kind: 'flourish', name, seconds: duration() })))), h('div', { class: 'row' }, ...(['grin','laugh','look','eyes','many'] as const).map(name => action('Cut-in: ' + name, () => ({ kind: 'cutin', name, seconds: duration() }))))),
     group('Secondary artwork', field('Motion', secondaryMotion), field('Pose', secondary), field('Orientation', orientation), action('Preview secondary pose', () => ({ kind: 'secondary', motion: secondaryMotion.value as 'animated' | 'still', name: secondary.value as typeof SECONDARY_POSES[number], inverted: secondary.value !== 'recline' && orientation.value === 'inverted', seconds: duration() })), action('Compare still and animated poses', () => ({ kind: 'scenario', name: 'shader_compare', seconds: duration() })), h('p', { class: 'hint' }, 'Closed-eye sitting is reserved for sustained head rubbing on an upright window perch. Lower ledges alternate lying and original sitting, with a longer pause before roaming. Original strips remain the primary artwork.')),
     group('Behavior scenarios', field('Scenario', scenario), action('Run behavior scenario', () => ({ kind: 'scenario', name: scenario.value as typeof DEV_SCENARIOS[number], seconds: duration() })),
@@ -748,11 +824,27 @@ async function renderDeveloper() {
     group('Absence and return', h('p', { class: 'hint' }, 'Simulates inactivity without changing saved mode. After two seconds, move the mouse or type to return, or use Return now. Sleep wakes before teleporting; idle returns with a wave. Return lines follow normal voice settings.'),
       h('div', { class: 'row' }, absence('Simulate idle', 'idle'), absence('Simulate sleep', 'sleep'), absence('Return now', 'return'), absence('Clear absence', 'clear'))),
     group('Local dialogue', field('Event', dialogue), field('Platform', surface), action('Preview dialogue', () => ({ kind: 'dialogue', name: dialogue.value as typeof DEV_DIALOGUE[number], surface: surface.value === 'generic' ? undefined : surface.value as 'youtube' | 'discord' | 'chatgpt' | 'spotify' | 'browser', seconds: duration() }))),
-    group('Checks and live state', action('Run local checks', () => ({ kind: 'checks' })), h('p', { class: 'hint' }, 'Checks dialogue variety, identity context, exploration rest gates and renderer liveness. Full automated test suites still run outside the app.'), state),
-    group('Results', log),
   );
+
+  const reaction = choice('Reaction preview', DEV_REACTIONS), mood = choice('Mood preview', MOODS), life = choice('Life event preview', LIFE_EVENTS), phase = choice('Phase preview', DEV_PHASES);
+  catalog.prepend(group('Expression and state', field('Reaction', reaction), action('Play reaction', () => ({ kind: 'reaction', name: reaction.value as typeof DEV_REACTIONS[number], seconds: duration() })),
+    field('Mood', mood), action('Preview mood', () => ({ kind: 'mood', name: mood.value as typeof MOODS[number], seconds: duration() })),
+    field('Life event', life), action('Trigger life event', () => ({ kind: 'life', name: life.value as typeof LIFE_EVENTS[number], seconds: duration() })),
+    field('Phase', phase), action('Preview phase', () => ({ kind: 'phase', name: phase.value as typeof DEV_PHASES[number], seconds: duration() }))));
+  const categories: Record<string,string> = { 'Expression and state':'expression', 'Construct moments':'expression', 'Secondary artwork':'artwork', Animations:'artwork', 'Behavior scenarios':'movement', 'Action cycles':'movement', 'Absence and return':'movement', 'Contextual pings':'dialogue', 'Local dialogue':'dialogue' };
+  for (const section of Array.from(catalog.children) as HTMLElement[]) {
+    const title = section.querySelector('.label')?.textContent ?? '';
+    if (title === 'Live contextual checks') { panes.get('Live checks')!.append(section); continue; }
+    section.dataset.category = categories[title] ?? 'movement';
+    section.dataset.search = [section.textContent, ...Array.from(section.querySelectorAll('option')).map(o => o.value)].join(' ').toLowerCase();
+  }
+  const filter = () => { const query = search.value.toLowerCase().trim(); for (const section of Array.from(catalog.children) as HTMLElement[]) section.hidden = (category.value !== 'all' && section.dataset.category !== category.value) || !section.dataset.search?.includes(query); };
+  search.addEventListener('input', filter); category.addEventListener('change', filter);
+  panes.get('Live checks')!.prepend(note('These controls use real exposed-window context and can spend model usage. They honor privacy, focus and request limits. A denied or quiet result is shown in Overview and Results.'));
+  panes.get('Results')!.append(card('Preview log', log), card('Recent decisions', note('A bounded journal of compact decisions from actual events. Local previews have a separate log.'), decisions));
   await refresh(); if (revision === navigationRevision) developerPoll = window.setInterval(() => void refresh(), 1000);
 }
+
 
 // ---------------------------------------------------------------- first run
 function renderWelcome() {

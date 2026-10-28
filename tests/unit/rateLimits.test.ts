@@ -52,6 +52,16 @@ describe('CLI rate limit protocol', () => {
     vi.mocked(spawn).mockReturnValue(child as never);
     return child;
   }
+  it('passes the behavioral output schema to Codex so required fields cannot silently disappear', async () => {
+    const c = child(), outputSchema = { type: 'object', properties: { reason: { type: 'string' } }, required: ['reason'], additionalProperties: false };
+    const stream = new CodexAccountProvider().stream([{ role: 'user', content: 'Inspect this view.' }], {
+      purpose: 'ambient', outputSchema, signal: new AbortController().signal, timeoutMs: 10000, temperature: .9, maxTokens: 768 });
+    const response = stream.next(); await Promise.resolve();
+    const args = vi.mocked(spawn).mock.calls[0][1] as string[], file = args[args.indexOf('--output-schema') + 1];
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual(outputSchema);
+    c.stdout.emit('data', Buffer.from('{"type":"item.completed","item":{"type":"agent_message","text":"{\\"reason\\":\\"interesting detail\\"}"}}\n'));
+    c.emit('close', 0); await response; await stream.return(undefined);
+  });
   it('replaces coding instructions, separates the persona from conversation, and records real usage', async () => {
     const c = child(); const stream = new CodexAccountProvider().stream([
       { role: 'system', content: 'Capri personality and all approved memories.' }, { role: 'user', content: 'Hello' },

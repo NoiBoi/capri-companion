@@ -10,13 +10,13 @@ export class StatusFx {
   private cutin: { kind: string; left: number } | null = null;
   private sinceCutin = 100;
   show(kind: 'grin' | 'laugh' | 'look' | 'eyes' | 'many', force = false) { if (!force && this.sinceCutin < 35) return; this.cutin = { kind, left: 1.3 }; this.sinceCutin = 0; }
-  clear() { this.cutin = null; }
+  clear() { this.cutin = null; this.impact = 0; }
   get currentCutin() { return this.cutin?.kind ?? null; }
   constructor() { this.error.src = 'capri/mochiiwuff/cutin-many.png'; for (const name of ['grin','laugh','look','eyes','many']) { const image = new Image(); image.src = `capri/mochiiwuff/cutin-${name}.png`; this.cutins.set(name,image); } }
   setPhase(phase: AssistantPhase) {
     if (phase === this.phase) return;
     this.phase = phase; this.elapsed = 0;
-    if (phase === 'error') this.impact = 1.2;
+    this.impact = phase === 'error' ? 1.2 : 0;
   }
   draw(ctx: CanvasRenderingContext2D, dt: number, W: number, H: number, inverted: boolean, effects: boolean) {
     this.sinceCutin += dt; if (this.cutin) { this.cutin.left -= dt; if (this.cutin.left <= 0) this.cutin = null; }

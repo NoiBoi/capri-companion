@@ -20,7 +20,7 @@ async function launch() {
     JSON.stringify({
       firstRunComplete: true,
       ai: { provider: "offline" },
-      character: { startupIntro: false, glitchEffects: true, deepSleep: true },
+      character: { startupIntro: false, glitchEffects: true, deepSleep: true, hideOnFullscreen: false },
       behavior: {
         satelliteMoments: true, windowPossession: true, quietHours: { enabled: false },
         idleRemarks: false,
@@ -142,6 +142,20 @@ describe("construct life and desktop spectacles", () => {
   });
   it("runs every visual scene without capturing content, changing focus or moving the pointer", async () => {
     const { app, char } = await launch();
+    await app.evaluate(({ app }) => {
+      const g = globalThis as any;
+      g.__theatreInputAttempts = 0;
+      // Observe native input attempts, independently of the human moving the mouse.
+      // Block any accidental writes rather than performing them in a test.
+      const nativeRequire = process.getBuiltinModule('module').createRequire(app.getAppPath() + '/package.json');
+      const koffi = nativeRequire('koffi'), load = koffi.load;
+      koffi.load = (...args: any[]) => {
+        const library = load(...args), func = library.func;
+        library.func = (...signature: any[]) => /SetCursorPos|SendInput/.test(signature.join(' '))
+          ? () => { g.__theatreInputAttempts++; return 0; } : func.apply(library, signature);
+        return library;
+      };
+    });
     await app.evaluate(({ screen }) => {
       const g = globalThis as any,
         area = screen.getPrimaryDisplay().workArea;
@@ -153,8 +167,8 @@ describe("construct life and desktop spectacles", () => {
       ];
     });
     for (const kind of SCENES) {
-      const before = await app.evaluate(({ screen }) => ({
-        pointer: screen.getCursorScreenPoint(),
+      const before = await app.evaluate(() => ({
+        inputAttempts: (globalThis as any).__theatreInputAttempts,
         scenes: (globalThis as any).__capri.scenes.recent().length,
       }));
       const overlay = await scene(app, kind);
@@ -204,11 +218,12 @@ describe("construct life and desktop spectacles", () => {
       await expect
         .poll(() => app.evaluate(() => (globalThis as any).__sceneResult))
         .toBe(true);
-      const after = await app.evaluate(({ screen }) => ({
-        pointer: screen.getCursorScreenPoint(),
+      const after = await app.evaluate(() => ({
+        inputAttempts: (globalThis as any).__theatreInputAttempts,
         scenes: (globalThis as any).__capri.scenes.recent().length,
       }));
       expect(after).toEqual(before);
+      expect(after.inputAttempts).toBe(0);
       expect(
         await app.evaluate(() => {
           const a = (globalThis as any).__capri;

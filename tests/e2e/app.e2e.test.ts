@@ -10,6 +10,17 @@ import { _electron as electron, type ElectronApplication, type Page } from 'play
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
 
 const ROOT = path.resolve(__dirname, '..', '..');
+// Inspection fixtures use the same decision envelope as the unified production core.
+function companionRequest(body: any) {
+  const content = body.messages.at(-1).content;
+  const value = JSON.parse(Array.isArray(content) ? content.find((p: any) => p.type === 'text').text : content);
+  return value.input ? { ...value.input.context, event: value.event, context: value.input.context, situation: value.situation } : value;
+}
+function visualDecision(value: { line: string; facts?: string[]; interpretation?: string; curiosity?: string; points?: unknown[] }) {
+  const quiet = value.line === '<quiet/>';
+  return { ...value, line: quiet ? '' : value.line, interpretation: value.interpretation || 'A tentative reading of the exposed crop.',
+    interest: null, action: quiet ? 'silent' : 'speak', gesture: 'none', reason: 'A single grounded visual decision.' };
+}
 const EXE = process.env.CAPRI_EXE; // set to test a packaged build instead of the dev bundle
 const apps: ElectronApplication[] = [];
 const dirs: string[] = [];
@@ -17,8 +28,9 @@ const dirs: string[] = [];
 function profile(settings: Record<string, unknown> = {}) {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'capri-e2e-'));
   dirs.push(d);
-  const { ai, ...rest } = settings as { ai?: Record<string, unknown> };
-  fs.writeFileSync(path.join(d, 'settings.json'), JSON.stringify({ firstRunComplete: true, voice: { ttsEnabled: false }, teleport: { auto: false }, ai: { provider: 'offline', ...(ai ?? {}) }, ...rest }));
+  const { ai, character, ...rest } = settings as { ai?: Record<string, unknown>; character?: Record<string, unknown> };
+  // Host fullscreen activity must not silently hide an isolated offscreen fixture.
+  fs.writeFileSync(path.join(d, 'settings.json'), JSON.stringify({ firstRunComplete: true, character: { hideOnFullscreen: false, ...(character ?? {}) }, voice: { ttsEnabled: false }, teleport: { auto: false }, ai: { provider: 'offline', ...(ai ?? {}) }, ...rest }));
   return d;
 }
 async function launch(userData: string, opts: { liveKey?: boolean; env?: Record<string, string> } = {}) {
@@ -215,6 +227,7 @@ describe('opening and taskbar controls', () => {
   it('simulates idle and sleep without changing saved mode and returns with a teleport from each', async () => {
     const { app, char } = await launch(profile({ behavior: { quietHours: { enabled: false } }, teleport: { effects: false } }));
     const panel = await openPanel(app, char, 'developer');
+      await panel.getByRole('button', { name: 'Playground', exact: true }).click();
     await app.evaluate(() => { const g = globalThis as any; g.__capriDesktopOverride = { title: 'Test', process: 'test.exe' }; });
     for (const state of ['idle', 'sleep'] as const) {
       await panel.getByRole('button', { name: state === 'idle' ? 'Simulate idle' : 'Simulate sleep', exact: true }).click();
@@ -228,11 +241,95 @@ describe('opening and taskbar controls', () => {
       expect((await panel.evaluate(() => window.capri.invoke('dev:get'))).runtime.absence).toBeNull();
     }
   });
+  it('does not let a routine ambient decision postpone a stable visual inspection for the full remark interval', async () => {
+    const events: string[] = [];
+    const mock = await mockModel(body => {
+      const content: any = body.messages.at(-1)!.content;
+      const payload = JSON.parse(Array.isArray(content) ? content.find(p => p.type === 'text').text : content); events.push(payload.event);
+      return JSON.stringify({ interpretation: 'A bounded quiet reading.', interest: null, action: 'silent', line: '', gesture: 'none', reason: 'No need to speak.', facts: ['One route crosses the edge.'], curiosity: '' });
+    });
+    try {
+      const { app } = await launch(openaiProfile(mock.url, { memory: { autoLearn: false }, dialogue: { localContext: true, contextPings: false }, behavior: { explore: false, smallActivities: false, idleRemarks: true, quietHours: { enabled: false } } }));
+      await app.evaluate(async () => {
+        const g = globalThis as any, a = g.__capri, rect = { x: 100, y: 200, width: 800, height: 500 }, nativeNow = Date.now;
+        g.__auditNativeNow = nativeNow; g.__auditClock = nativeNow() + 11 * 60000; Date.now = () => g.__auditClock; a.behavior.now = () => g.__auditClock;
+        g.__capriWindowsOverride = [{ handle: -97n, rect }]; g.__capriWindowInfo = { '-97': { title: 'Route', process: 'fixture.exe' } };
+        g.__capriForegroundHandle = -97n; g.__capriDesktopOverride = { title: 'Route', process: 'fixture.exe' };
+        g.__capriObservationOverride = { jpegBase64: 'test-image', region: rect, window: rect };
+        await a.generatedRemark('activity', 'Routine metadata opportunity.', { target: -97n });
+        g.__auditClock += 121000;
+      });
+      const key = (await import('node:crypto')).createHash('sha256').update(JSON.stringify(['fixture.exe', 'Route'])).digest('hex').slice(0,24);
+      await app.evaluate((_e, key) => {
+        const g = globalThis as any, a = g.__capri;
+        for (let i = 0; i < 8; i++) {
+          a.environmentalCuriosity.observe(key, g.__auditClock);
+          if (i === 3) a.environmentalCuriosity.choose(g.__auditClock, { blocked: false, mayInspect: false });
+          if (i < 7) g.__auditClock += 5000;
+        }
+        a.settings.update({ behavior: { smallActivities: true } }); a.presenceTick();
+      }, key);
+      await expect.poll(() => events.includes('inspect'), { message: JSON.stringify(await app.evaluate(() => { const a = (globalThis as any).__capri; return { events: a.behavior.snapshot(), environment: a.environmentalCuriosity.snapshot(Date.now()), ready: a.behavior.canInitiate(), outcome: a.lastDialogueOutcome, opening: a.opening.active, company: a.company.label() }; })) }).toBe(true);
+      await expect.poll(() => app.evaluate(() => (globalThis as any).__capri.behavior.busy)).toBe(false);
+      expect(events).toEqual(['activity', 'inspect']);
+      await app.evaluate(() => { Date.now = (globalThis as any).__auditNativeNow; });
+    } finally { await mock.close(); }
+  });
+  it('shows grounded mind state, blockers and searchable previews without generating or learning from previews', async () => {
+    const mock = await mockModel(body => {
+      const content: any = body.messages.at(-1)!.content;
+      const payload = JSON.parse(Array.isArray(content) ? content.find(p => p.type === 'text').text : content), obs = payload.input.observation;
+      return JSON.stringify({ interpretation: 'The boundary crossing could be intentional.', interest: { topic: 'route boundary', intention: 'Look at the branch outside the box.', sourceId: obs.id, quote: obs.detail },
+        action: 'defer', line: '', gesture: 'none', reason: 'Wait for a natural opening.', facts: ['A branch crosses the boundary.'], curiosity: 'Is the crossing intentional?' });
+    });
+    try {
+      const { app, char } = await launch(openaiProfile(mock.url, { memory: { autoLearn: false }, behavior: { quietHours: { enabled: false }, explore: false, idleRemarks: false } }));
+      await app.evaluate(async () => {
+        const g = globalThis as any, a = g.__capri, rect = { x: 100, y: 200, width: 800, height: 500 };
+        g.__capriWindowsOverride = [{ handle: -77n, rect }]; g.__capriWindowInfo = { '-77': { title: 'Fixture route', process: 'fixture.exe' } };
+        g.__capriObservationOverride = { jpegBase64: 'test-image', region: rect, window: rect };
+        await a.generatedRemark('placed_window', 'Consider this route.', { target: -77n });
+        a.settings.update({ behavior: { doNotDisturb: true } });
+      });
+      const before = await app.evaluate(() => (globalThis as any).__capri.scenes.recent());
+      const panel = await openPanel(app, char, 'developer');
+      await expect.poll(() => panel.locator('#dev-state').textContent()).toContain('Do not disturb');
+      expect(await panel.getByRole('heading', { name: 'Current direction', exact: true }).count()).toBe(1);
+      if (process.env.CAPRI_DEV_OVERVIEW) await panel.screenshot({ path: process.env.CAPRI_DEV_OVERVIEW });
+      await panel.getByRole('button', { name: 'Mind & memory', exact: true }).click();
+      expect(await panel.locator('#dev-mind').textContent()).toContain('route boundary');
+      expect(await panel.locator('#dev-mind').textContent()).toContain('A branch crosses the boundary.');
+      const source = panel.locator('#dev-mind details').first(); await source.locator('summary').click();
+      await expect.poll(() => source.getAttribute('open')).toBe('');
+      await new Promise(r => setTimeout(r, 1200)); expect(await source.getAttribute('open')).toBe('');
+      if (process.env.CAPRI_DEV_MIND) await panel.screenshot({ path: process.env.CAPRI_DEV_MIND });
+      await panel.getByRole('button', { name: 'Playground', exact: true }).click();
+      await panel.getByLabel('Search previews').fill('expression');
+      expect(await panel.getByRole('button', { name: 'Play reaction', exact: true }).isVisible()).toBe(true);
+      expect(await panel.getByLabel('Animation preview').isVisible()).toBe(false);
+      await panel.getByLabel('Search previews').fill('');
+      await panel.getByLabel('Preview duration in seconds').fill('8');
+      await panel.getByLabel('Mood preview').selectOption('annoyed'); await panel.getByRole('button', { name: 'Preview mood', exact: true }).click();
+      await expect.poll(async () => (await panel.evaluate(() => window.capri.invoke('dev:get'))).runtime.poseRenderer?.mood).toBe('annoyed');
+      await panel.getByRole('button', { name: 'Stop preview', exact: true }).click();
+      await panel.getByLabel('Phase preview').selectOption('error'); await panel.getByRole('button', { name: 'Preview phase', exact: true }).click();
+      await expect.poll(async () => (await panel.evaluate(() => window.capri.invoke('dev:get'))).runtime.poseRenderer?.phase).toBe('error');
+      await panel.getByRole('button', { name: 'Stop preview', exact: true }).click();
+      await expect.poll(async () => (await panel.evaluate(() => window.capri.invoke('dev:get'))).runtime.poseRenderer?.phase).not.toBe('error');
+      expect(mock.calls).toBe(1); expect(await app.evaluate(() => (globalThis as any).__capri.scenes.recent())).toEqual(before);
+      const width = await panel.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth })); expect(width.scroll).toBeLessThanOrEqual(width.width);
+      await app.evaluate(() => (globalThis as any).__capri.panelWin.setSize(380, 700));
+      await panel.getByRole('button', { name: 'Overview', exact: true }).click();
+      const narrow = await panel.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth })); expect(narrow.scroll).toBeLessThanOrEqual(narrow.width);
+      if (process.env.CAPRI_DEV_NARROW) await panel.screenshot({ path: process.env.CAPRI_DEV_NARROW });
+    } finally { await mock.close(); }
+  });
   it('exposes production developer controls with cancellable previews, local checks and restricted IPC', async () => {
     const model = await mockModel(() => 'No request should be made by previews.');
     try {
       const { app, char } = await launch(openaiProfile(model.url, { behavior: { quietHours: { enabled: false } } }));
       const panel = await openPanel(app, char, 'developer');
+      await panel.getByRole('button', { name: 'Playground', exact: true }).click();
       await panel.getByRole('button', { name: 'Run local checks', exact: true }).click();
       await expect.poll(() => panel.locator('#dev-status').textContent()).toMatch(/^PASSED/);
       expect(await panel.locator('#dev-log').textContent()).toContain('identity context agrees');
@@ -265,6 +362,7 @@ describe('opening and taskbar controls', () => {
     try {
       const { app, char } = await launch(openaiProfile(model.url, { behavior: { quietHours: { enabled: false } }, teleport: { effects: false } }));
       const panel = await openPanel(app, char, 'developer');
+      await panel.getByRole('button', { name: 'Playground', exact: true }).click();
       const before = await app.evaluate(({ screen }) => { const g = globalThis as any, a = g.__capri, area = screen.getPrimaryDisplay().workArea, half = Math.floor((area.width - 120) / 2);
         g.__capriDesktopOverride = { title: 'Test', process: 'test.exe' };
         g.__capriWindowsOverride = [{ handle: -198n, rect: { x: area.x + 20, y: area.y + 90, width: half, height: area.height - 110 } }, { handle: -199n, rect: { x: area.x + half + 70, y: area.y + 90, width: half, height: area.height - 110 } }];
@@ -316,9 +414,9 @@ describe('opening and taskbar controls', () => {
       const clock = Date.now, now = clock() + 20000;
       try {
         g.__capriForegroundHandle = -95n;
-        for (const dt of [0, 4000, 8000]) { Date.now = () => now + dt; a.presenceTick(); }
+        for (const dt of [0, 4000, 8000, 12000, 16000]) { Date.now = () => now + dt; a.presenceTick(); }
         const focused = { subject: a.activities.subject, activity: a.localDialogueContext()?.activity, attention: String(a.attentionHandle) };
-        g.__capriForegroundHandle = a.charWin.getNativeWindowHandle().readBigUInt64LE(); Date.now = () => now + 9000; a.presenceTick();
+        g.__capriForegroundHandle = a.charWin.getNativeWindowHandle().readBigUInt64LE(); Date.now = () => now + 17000; a.presenceTick();
         return { focused, ownWindow: { subject: a.activities.subject, activity: a.localDialogueContext()?.activity } };
       } finally { Date.now = clock; }
     });
@@ -328,7 +426,7 @@ describe('opening and taskbar controls', () => {
   it('uses real Spotify metadata for one sparse opinion and suppresses a changed track', async () => {
     let received = ''; let running: ElectronApplication | undefined;
     const mock = await mockModel(body => {
-      const request = JSON.parse(body.messages.at(-1)!.content); received = request.playingTrack?.title ?? '';
+      const request = companionRequest(body); received = request.playingTrack?.title ?? '';
       // The track changes while the model is answering; the old song must not be announced.
       void running!.evaluate(() => { (globalThis as any).__capriSpotifyTrack = null; });
       return { delayMs: 50, text: 'Circuit Bloom? Ooh, that title has an attitude. I approve.' };
@@ -347,7 +445,7 @@ describe('opening and taskbar controls', () => {
       expect(received).toBe('Circuit Bloom'); expect(state).toBe(''); expect(mock.calls).toBe(1);
     } finally { await mock.close(); }
   });
-  it('runs procedural dialogue locally, persists it and rejects generated title recitals', async () => {
+  it('retains authored local dialogue, gestures offline and rejects generated title recitals', async () => {
     const mock = await mockModel(() => 'You put me on PRIVATE Homework Notes.');
     const dir = openaiProfile(mock.url, { behavior: { quietHours: { enabled: false } }, dialogue: { localContext: false } });
     const { app } = await launch(dir);
@@ -357,17 +455,19 @@ describe('opening and taskbar controls', () => {
         a.companionDialogue.restore({ version: 1, history: [] });
         a.bubble.remark(a.companionDialogue.choose({ event: 'greeting' }, { required: true }));
         const greeting = a.bubble.state.text; a.bubble.dismiss();
-        a.pickupReaction(); const pickup = a.bubble.state.text;
+        a.settings.update({ ai: { provider: 'offline' } }); await a.pickupReaction(); const pickup = a.behavior.snapshot().journal.at(-1)?.action;
+        a.settings.update({ ai: { provider: 'openai' }, dialogue: { localContext: true } });
         const g = globalThis as any;
         g.__capriWindowsOverride = [{ handle: -78n, rect: { x: 100, y: 500, width: 800, height: 500 } }];
         g.__capriWindowInfo = { '-78': { title: 'PRIVATE Homework Notes', process: 'notepad.exe' } };
         a.bubble.dismiss(); await a.generatedRemark('placed_window', '', { target: -78n });
-        return { greeting, pickup, rejected: a.bubble.state.text, history: a.companionDialogue.snapshot(), context: a.localDialogueContext() };
+        const rejected = a.bubble.state.text; a.settings.update({ dialogue: { localContext: false } });
+        return { greeting, pickup, rejected, history: a.companionDialogue.snapshot(), context: a.localDialogueContext() };
       });
-      expect(state.greeting).not.toBe(''); expect(state.pickup).not.toBe('');
-      expect(state.rejected).not.toMatch(/PRIVATE|Homework Notes|you put me on/i); expect(state.rejected.length).toBeGreaterThan(0);
+      expect(state.greeting).not.toBe(''); expect(state.pickup).toBe('gesture');
+      expect(state.rejected).not.toMatch(/PRIVATE|Homework Notes|you put me on/i);
       expect(mock.calls).toBe(1); expect(state.context).toBeUndefined();
-      expect(state.history.history.some((h: any) => h.event === 'pickup')).toBe(true);
+      expect(state.history.history.some((h: any) => h.event === 'greeting')).toBe(true);
       expect(JSON.parse(fs.readFileSync(path.join(dir, 'dialogue-history.json'), 'utf8')).history).toHaveLength(state.history.history.length);
       await app.evaluate(() => { const a = (globalThis as any).__capri; a.bubble.begin(); a.bubble.open(); a.bubble.phase('thinking'); });
       const bubble = app.windows().find(w => w.url().includes('/bubble.html'))!;
@@ -419,7 +519,7 @@ describe('opening and taskbar controls', () => {
       const helpers = a.desktopWindows().some((w: any) => w.handle === -10n);
       g.__capriWindowsOverride = [{ handle: -12n, rect: { x: 100, y: 700, width: 1200, height: 500 } }];
       a.charWin.setBounds({ ...b, x: 500, y: Math.round(700 - b.height * .712) }); a.settleAfterDrop();
-      const revision = a.visit.begin(-12n); a.visit.arrive(revision, Date.now());
+      a.visit.begin(-12n);
       g.__capriWindowsOverride.unshift({ handle: -13n, rect: { x: 0, y: 0, width: 1920, height: 1800 }, eligible: false });
       a.presenceTick();
       return { left, right, helpers, cancelled: a.visit.phase === 'idle', fullyCovered: a.safeForTarget(a.charWin.getBounds(), -12n) };
@@ -449,7 +549,7 @@ describe('opening and taskbar controls', () => {
     await expect.poll(() => ray.isClosed(), { timeout: 3000 }).toBe(true);
     await app.evaluate(async () => { await (globalThis as any).__rayJump; });
   });
-  it('returns near the cursor after inactivity with one optional local line and no model request', async () => {
+  it('returns near the cursor after inactivity without compulsory speech or a model request', async () => {
     const mock = await mockModel(() => 'No model call needed.');
     const { app } = await launch(openaiProfile(mock.url, { behavior: { quietHours: { enabled: false } }, teleport: { auto: false, effects: false } }));
     try {
@@ -463,7 +563,7 @@ describe('opening and taskbar controls', () => {
         return { triggered, target: a.teleporter.last, line: a.bubble.state.text, twice: a.cursorReturn.move(Date.now(), false) };
       });
       expect(result.triggered).toBe(true); expect(result.target).toContain('near_cursor'); expect(result.twice).toBe(false);
-      expect(result.line).toMatch(/There you are|we're back|got curious/); expect(mock.calls).toBe(0);
+      expect(result.line).toBe(''); expect(mock.calls).toBe(0);
     } finally { await mock.close(); }
   });
   it('waits for stable cursor direction and preserves idle phase across a blink', async () => {
@@ -496,7 +596,7 @@ describe('opening and taskbar controls', () => {
         g.__capriWindowsOverride = [{ handle: -92n, rect: { x: 100, y: 500, width: 800, height: 600 } }];
         g.__capriWindowInfo = { '-92': { title: 'Engineering notes', process: 'reader.exe' } };
         const original = Date.now, base = original() + 12000;
-        try { for (const dt of [0, 4000, 8000, 14000]) { Date.now = () => base + dt; a.presenceTick(); } }
+        try { for (const dt of [0, 4000, 8000, 12000, 16000, 20000, 26000]) { Date.now = () => base + dt; a.presenceTick(); } }
         finally { Date.now = original; }
         return { idle: a.systemIdleSec(), phase: a.activities.phase, subject: a.activities.subject, line: a.bubble.state.text };
       });
@@ -548,8 +648,8 @@ describe('opening and taskbar controls', () => {
     });
     await controls.getByRole('button', { name: 'Explore', exact: true }).click();
     await app.evaluate(async () => { const a = (globalThis as any).__capri; a.setNextVisit(); await a.exploreTick(0); });
-    const state = await app.evaluate(() => { const a = (globalThis as any).__capri; return { mode: a.settings.get().behavior.mode, auto: a.settings.get().behavior.explore, target: String(a.visit.target), phase: a.visit.phase, owner: a.teleporter.d.blocked() }; });
-    expect(state).toMatchObject({ mode: 'explore', auto: false, target: '11', phase: 'study' });
+    const state = await app.evaluate(() => { const a = (globalThis as any).__capri; return { mode: a.settings.get().behavior.mode, auto: a.settings.get().behavior.explore, target: String(a.attentionHandle), phase: a.visit.phase, owner: a.teleporter.d.blocked() }; });
+    expect(state).toMatchObject({ mode: 'explore', auto: false, target: '11', phase: 'idle' });
     expect(state.owner).toBe('window exploration handles autonomous movement');
     expect(await controls.getByRole('button', { name: 'Explore', exact: true }).getAttribute('aria-pressed')).toBe('true');
   });
@@ -1068,7 +1168,7 @@ describe('persistence & reliability', () => {
     const d = await panel.evaluate(() => (window as unknown as { capri: { invoke(c: string): Promise<{ lastCrash: string | null; safeStorage: boolean; fullscreenWatcher: string }> } }).capri.invoke('diagnostics:get'));
     expect(d.lastCrash).toMatch(/startedAt/);
     expect(d.safeStorage).toBe(true);
-    expect(d.fullscreenWatcher).toBe('active');
+    expect(d.fullscreenWatcher).toBe('disabled'); // This offscreen profile explicitly disables the watcher.
   });
 
   it('recreates the character view if its renderer crashes', async () => {
@@ -1639,7 +1739,7 @@ describe('connected companion personality', () => {
     expect(await char.evaluate(() => (window.__capriDebug as any).life.mood)).toBe('annoyed');
     await char.waitForTimeout(150);
     await char.evaluate(() => window.capri.invoke('char:interaction', 'poke'));
-    await expect.poll(() => app.evaluate(() => (globalThis as any).__capri.bubble.state.text)).toMatch(/attention|Yes|noticed|Bold|persistent|challenge/);
+    await expect.poll(() => app.evaluate(() => (globalThis as any).__capri.behavior.snapshot().journal.at(-1)?.action)).toBe('gesture');
     await char.evaluate(() => { const d = window.__capriDebug as any; d.lifeEvent('pat'); d.lifeEvent('pat'); d.step(0.1); });
     expect(await char.evaluate(() => (window.__capriDebug as any).life.mood)).toBe('content');
     await char.evaluate(() => { const d = window.__capriDebug as any; d.setSurface('air'); d.step(0.1, 9); });
@@ -1651,14 +1751,15 @@ describe('connected companion personality', () => {
     await char.evaluate(() => (window.__capriDebug as any).step(0.1));
     expect(await char.evaluate(() => (window.__capriDebug as any).life)).toBeUndefined();
   });
-  it('greets a return once, respects do-not-disturb, and leaves an open composer alone', async () => {
+  it('keeps returns quiet under do-not-disturb and leaves an open composer alone', async () => {
     const { app, char } = await launch(profile({ behavior: { idleRemarks: true, doNotDisturb: true, quietHours: { enabled: false } } }));
     await app.evaluate(() => { const a = (globalThis as any).__capri; (globalThis as any).__capriIdleOverride = 240; a.presenceTick(); (globalThis as any).__capriIdleOverride = 0; a.presenceTick(); });
     await char.waitForTimeout(200);
     expect(await app.evaluate(() => (globalThis as any).__capri.bubble.state.text)).toBe('');
     await app.evaluate(() => { const a = (globalThis as any).__capri; a.settings.update({ behavior: { doNotDisturb: false } }); (globalThis as any).__capriIdleOverride = 240; a.presenceTick(); (globalThis as any).__capriIdleOverride = 0; a.presenceTick(); });
     await char.waitForTimeout(200);
-    expect(await app.evaluate(() => (globalThis as any).__capri.bubble.state.text)).not.toBe('');
+    // Returning can be silent; a later explicit interaction still works.
+    await char.evaluate(() => window.capri.invoke('char:interaction', 'poke'));
     await char.evaluate(() => window.capri.invoke('bubble:open'));
     const before = await app.evaluate(() => (globalThis as any).__capri.bubble.state.text);
     await char.evaluate(() => { const d = window.__capriDebug as any; d.lifeEvent('window'); });
@@ -1728,13 +1829,16 @@ describe('automatic personal learning', () => {
       expect(extractorCalls).toBe(0);
       await expect.poll(() => app.evaluate(() => (globalThis as any).__capri.memory.approved().map((m: any) => m.text)), { timeout: 10000 }).toContain('Lives in Austin');
       expect(await app.evaluate(() => (globalThis as any).__capri.memory.approved().map((m: any) => m.text))).toEqual(['Lives in Austin']);
+      // The background lane deliberately spaces extractions by at least a minute.
+      await app.evaluate(() => { const g = globalThis as any, clock = Date.now; g.__learningClock = clock; Date.now = () => clock() + 61000; });
       await panel.fill('textarea', 'I moved to Boston'); await panel.press('textarea', 'Enter');
       await panel.waitForFunction(() => document.body.innerText.includes('Boston it is.'));
       await expect.poll(() => app.evaluate(() => (globalThis as any).__capri.memory.approved().map((m: any) => m.text)), { timeout: 10000 }).toContain('Lives in Boston');
       expect(await app.evaluate(() => (globalThis as any).__capri.memory.approved().map((m: any) => m.text))).toEqual(['Lives in Boston']);
+      await app.evaluate(() => { const g = globalThis as any; Date.now = g.__learningClock; });
       await panel.getByRole('tab', { name: 'Memory', exact: true }).click();
       await panel.waitForSelector('.item');
-      expect(await panel.locator('.item').first().innerText()).toContain('I moved to Boston');
+      await expect.poll(() => panel.locator('.item').filter({ hasText: 'Lives in Boston' }).first().innerText()).toContain('I moved to Boston');
       await panel.getByRole('button', { name: 'Undo', exact: true }).click();
       await panel.waitForFunction(() => document.body.innerText.includes('Lives in Austin'));
       await panel.getByRole('switch', { name: 'Learn automatically', exact: true }).uncheck();
@@ -1770,7 +1874,7 @@ describe('reply priority over background learning', () => {
 });
 
 describe('arrival conversations', () => {
-  it('reacts to teleport arrivals without a model call and stays quiet in focus mode', async () => {
+  it('keeps arrival reactions optional and local and stays quiet in focus mode', async () => {
     const model = await mockModel(() => 'fail');
     try {
       const { app, char } = await launch(openaiProfile(model.url, { voice: { ttsEnabled: true, ttsEngine: 'windows', volume: 0, interactionLines: true }, behavior: { quietHours: { enabled: false }, proactiveVoice: false, idleRemarks: false } }));
@@ -1778,15 +1882,15 @@ describe('arrival conversations', () => {
       await char.evaluate(() => { (window.__capriDebug as any).speaker.enqueue = () => {}; });
       await char.evaluate(() => window.capri.invoke('teleport:now', 'left'));
       const first = await app.evaluate(() => { const a = (globalThis as any).__capri; return { text: a.bubble.state.text, count: a.speakCount }; });
-      expect(first.text.length).toBeGreaterThan(0); expect(first.count).toBe(1); expect(model.calls).toBe(0);
+      expect([0, 1]).toContain(first.count); if (first.count) expect(first.text.length).toBeGreaterThan(0); expect(model.calls).toBe(0);
       await char.waitForTimeout(2700);
       await char.evaluate(() => window.capri.invoke('teleport:now', 'right'));
       const second = await app.evaluate(() => { const a = (globalThis as any).__capri; return { text: a.bubble.state.text, count: a.speakCount }; });
-      expect(second.text).not.toBe(first.text); expect(second.count).toBe(2); expect(model.calls).toBe(0);
+      expect(second.count).toBeGreaterThanOrEqual(first.count); expect(second.count).toBeLessThanOrEqual(first.count + 1); expect(model.calls).toBe(0);
       await app.evaluate(() => (globalThis as any).__capri.applyCompanyControl({ kind: 'focus', minutes: 1 }));
       await char.waitForTimeout(2700);
       await char.evaluate(() => window.capri.invoke('teleport:now', 'left'));
-      expect(await app.evaluate(() => (globalThis as any).__capri.speakCount)).toBe(2);
+      expect(await app.evaluate(() => (globalThis as any).__capri.speakCount)).toBe(second.count);
     } finally { await model.close(); }
   });
 });
@@ -1822,34 +1926,70 @@ describe('purposeful company', () => {
       await a.convo.send('Look at this', { viaVoice: true }); await a.convo.settle();
       return { response: a.history.recent(1)[0].content, location: String(a.attentionHandle), watching: a.presenceDebug().watched };
     });
-    expect(result.response).toContain('Drawing to review'); expect(result.location).toBe('-92'); expect(result.watching).toBe('-91');
+    expect(result.response).toBe('All right. Let me have a look.'); expect(result.location).toBe('-92'); expect(result.watching).toBe('-91');
     await expect.poll(() => char.evaluate(() => (window.__capriDebug as any).anim.value.gazeX)).toBeLessThan(-0.2);
   });
 
-  it('studies and settles before considering one window-specific observation', async () => {
-    const model = await mockModel(() => 'A good view of those drawing notes.');
+  it('starts the physical outing before inspection completes and rests without a second comment cycle', async () => {
+    let requested = false;
+    const model = await mockModel(() => { requested = true; return { delayMs: 80, text: JSON.stringify(visualDecision({ line: '<quiet/>', facts: ['A green branch.'], interpretation: '', curiosity: 'Where does it go?', points: [] })) }; });
     try {
-      const { app } = await launch(openaiProfile(model.url, { behavior: { explore: true, quietHours: { enabled: false } }, teleport: { effects: false } }));
-      const phase = await app.evaluate(async () => {
+      const { app } = await launch(openaiProfile(model.url, { memory: { autoLearn: false }, behavior: { explore: true, idleRemarks: true, quietHours: { enabled: false } }, teleport: { effects: false } }));
+      const early = await app.evaluate(async () => {
         const g = globalThis as any, a = g.__capri;
         g.__capriWindowsOverride = [{ handle: -93n, rect: { x: 350, y: 400, width: 700, height: 500 } }];
         g.__capriWindowInfo = { '-93': { title: 'Drawing notes', process: 'notepad.exe' } };
-        a.setNextVisit(); await a.exploreTick(0); return a.visit.phase;
+        const random = Math.random; Math.random = () => 0;
+        a.setNextVisit(); g.__outing = a.exploreTick(0).finally(() => { Math.random = random; });
+        await new Promise(r => setTimeout(r, 100));
+        return { moving: a.teleporter.active, stage: a.tourStage, phase: a.visit.phase, watched: a.presenceDebug().watched };
       });
-      expect(phase).toBe('study'); expect(model.calls).toBe(0);
-      const advance = (seconds: number) => app.evaluate((_e, seconds) => {
-        const a = (globalThis as any).__capri, clock = Date.now, random = Math.random, now = clock();
-        Date.now = () => now + seconds * 1000; Math.random = () => 0;
-        try { a.presenceTick(); return a.visit.phase; } finally { Date.now = clock; Math.random = random; }
-      }, seconds);
-      expect(await advance(10)).toBe('settle'); expect(model.calls).toBe(0);
-      expect(await advance(13)).toBe('rest');
-      await expect.poll(() => model.calls, { timeout: 8000 }).toBe(1);
-      await expect.poll(() => app.evaluate(() => (globalThis as any).__capri.bubble.state.text)).toContain('drawing notes');
-      expect(await advance(15)).toBe('rest'); expect(model.calls).toBe(1);
+      expect(early).toMatchObject({ phase: 'approach', watched: '-93' });
+      expect(early.moving || early.stage === 'roaming').toBe(true);
+      expect(requested).toBe(true);
+      await app.evaluate(async () => { await (globalThis as any).__outing; });
+      expect(await app.evaluate(() => (globalThis as any).__capri.visit.phase)).toBe('idle');
+      expect(model.calls).toBe(1);
+      await app.evaluate(() => { (globalThis as any).__capri.presenceTick(); });
+      expect(model.calls).toBe(1);
     } finally { await model.close(); }
   });
 
+  it('does not start a second outing while a cancelled inspection is still unwinding', async () => {
+    const model = await mockModel(() => ({ delayMs: 100, text: JSON.stringify(visualDecision({ line: '<quiet/>', facts: ['A green branch.'], curiosity: 'Where does it go?', points: [] })) }));
+    try {
+      const { app } = await launch(openaiProfile(model.url, { memory: { autoLearn: false }, behavior: { explore: true, idleRemarks: true, quietHours: { enabled: false } }, teleport: { effects: false } }));
+      await app.evaluate(() => {
+        const g = globalThis as any, a = g.__capri;
+        g.__capriWindowsOverride = [{ handle: -93n, rect: { x: 350, y: 400, width: 700, height: 500 } }];
+        g.__capriWindowInfo = { '-93': { title: 'Route experiment', process: 'fixture.exe' } };
+        a.setNextVisit(); g.__firstOuting = a.exploreTick(0);
+      });
+      await expect.poll(() => app.evaluate(() => { const a = (globalThis as any).__capri; return a.tourStage === 'roaming' && !a.teleporter.active; })).toBe(true);
+      const target = await app.evaluate(() => {
+        const g = globalThis as any, a = g.__capri; a.visit.cancel(); a.setNextVisit(); g.__secondOuting = a.exploreTick(0); return a.visit.target;
+      });
+      expect(target).toBeNull();
+      await app.evaluate(async () => { const g = globalThis as any; await Promise.all([g.__firstOuting, g.__secondOuting]); });
+      expect(model.calls).toBe(1);
+    } finally { await model.close(); }
+  });
+  it('yields optional movement to a real pat without forgetting the earlier curiosity', async () => {
+    const { app, char } = await launch(profile({ behavior: { explore: true, quietHours: { enabled: false } }, teleport: { effects: false } }));
+    await app.evaluate(() => {
+      const g = globalThis as any, a = g.__capri;
+      g.__capriWindowsOverride = [{ handle: -94n, rect: { x: 400, y: 400, width: 700, height: 500 } }];
+      a.environmentalCuriosity.record('fixture', { facts: ['A green loop.'], interpretation: '', curiosity: 'Where does the loose end go?' }, Date.now());
+      a.setNextVisit(); g.__patOuting = a.exploreTick(0);
+    });
+    await expect.poll(() => app.evaluate(() => (globalThis as any).__capri.visit.phase)).toBe('approach');
+    await char.evaluate(() => window.capri.invoke('char:interaction', 'pat'));
+    await app.evaluate(async () => { await (globalThis as any).__patOuting; });
+    const result = await app.evaluate(() => {
+      const a = (globalThis as any).__capri; return { target: a.visit.target, phase: a.visit.phase, interest: a.environmentalCuriosity.context('fixture', Date.now())?.openCuriosity };
+    });
+    expect(result).toEqual({ target: null, phase: 'idle', interest: 'Where does the loose end go?' });
+  });
   it('stops an active approach when asked to stay and does not complete the old landing', async () => {
     const { app, char } = await launch(profile({ behavior: { explore: true, quietHours: { enabled: false } } }));
     await app.evaluate(() => {
@@ -1896,7 +2036,12 @@ describe('immersive presence', () => {
     const model = await mockModel(() => '<quiet/>');
     try {
       const { app, char } = await launch(openaiProfile(model.url, { behavior: { quietHours: { enabled: false } } }));
-      await app.evaluate(async () => { const a = (globalThis as any).__capri; a.bubble.remark('A comfortable spot.'); await a.generatedRemark('question'); });
+      await app.evaluate(async () => {
+        const g = globalThis as any, a = g.__capri;
+        g.__capriWindowsOverride = [{ handle: -101n, rect: { x: 100, y: 200, width: 800, height: 500 } }];
+        g.__capriWindowInfo = { '-101': { title: 'Quiet fixture', process: 'fixture.exe' } };
+        a.bubble.remark('A comfortable spot.'); await a.generatedRemark('question', '', { target: -101n });
+      });
       expect(model.calls).toBe(1);
       expect(await app.evaluate(() => (globalThis as any).__capri.bubble.state.text)).toBe('A comfortable spot.');
       await char.evaluate(() => window.capri.invoke('char:interaction', 'pat'));
@@ -2071,6 +2216,7 @@ describe('contextual companion interactions', () => {
     const { app, char } = await launch(profile({ behavior: { quietHours: { enabled: false } } }));
     await app.evaluate(() => { const g = globalThis as any; g.__capriDesktopOverride = { title: 'Test', process: 'test.exe' }; g.__capriWindowsOverride = []; });
     const panel = await openPanel(app, char, 'developer');
+      await panel.getByRole('button', { name: 'Playground', exact: true }).click();
     for (const [name, pose, reason] of [['sit_hover', null, 'primary'], ['sit_inspect', null, 'primary'], ['recline_rest', 'recline', 'lower ledge rest']] as const) {
       await panel.evaluate(name => window.capri.invoke('dev:run', { kind: 'scenario', name, seconds: 3 }), name);
       await expect.poll(() => char.evaluate(() => { const m = (window.__capriDebug as any).model; return `${m.activeSecondary}:${m.secondaryReason}`; }), { timeout: 7000 }).toBe(`${pose}:${reason}`);
@@ -2083,7 +2229,7 @@ describe('contextual companion interactions', () => {
   });
   it('comments on the focused window after a cursor trip rather than the old perch target', async () => {
     let target = '';
-    const mock = await mockModel(body => { target = JSON.parse(body.messages.at(-1)!.content).context.target.title; return 'Ooh, that little diagram. Good place to end up.'; });
+    const mock = await mockModel(body => { target = companionRequest(body).context.target.title; return 'Ooh, that little diagram. Good place to end up.'; });
     try {
       const { app } = await launch(openaiProfile(mock.url, { memory: { autoLearn: false }, behavior: { quietHours: { enabled: false } }, teleport: { effects: false } }));
       await app.evaluate(async ({ screen }) => {
@@ -2098,12 +2244,12 @@ describe('contextual companion interactions', () => {
       expect(await app.evaluate(() => (globalThis as any).__capri.bubble.state.text)).toContain('little diagram');
     } finally { await mock.close(); }
   });
-  it('delivers a bounded late-night ping without a model and clears its persisted history', async () => {
+  it('keeps a clock-only opportunity quiet without creating retired ping history', async () => {
     const ud = profile({ behavior: { quietHours: { enabled: false }, smallActivities: false }, dialogue: { contextPings: true } });
     const { app, char } = await launch(ud);
     const first = await app.evaluate(() => {
       const g = globalThis as any, a = g.__capri, NativeDate = Date;
-      const fixed = new NativeDate(2026, 9, 27, 3, 35).getTime();
+      const future = new NativeDate(); future.setDate(future.getDate() + 1); future.setHours(3, 35, 0, 0); const fixed = future.getTime();
       g.__capriDesktopOverride = { title: 'Test', process: 'test.exe' }; g.__capriWindowsOverride = []; g.__capriIdleOverride = 0;
       try {
         g.Date = class extends NativeDate { constructor() { super(fixed); } static now() { return fixed; } };
@@ -2111,12 +2257,12 @@ describe('contextual companion interactions', () => {
         return { line, second: a.bubble.state.text };
       } finally { g.Date = NativeDate; }
     });
-    expect(first.line.length).toBeGreaterThan(10); expect(first.second).toBe('cooldown sentinel');
-    expect(fs.existsSync(path.join(ud, 'context-pings.json'))).toBe(true);
+    expect(first.line).toBe(''); expect(first.second).toBe('cooldown sentinel');
+    expect(fs.existsSync(path.join(ud, 'context-pings.json'))).toBe(false);
     const panel = await openPanel(app, char, 'memory'); await panel.evaluate(() => window.capri.invoke('chat:clear'));
     expect(fs.existsSync(path.join(ud, 'context-pings.json'))).toBe(false);
   });
-  it('delivers a local window-drop fallback when offline or a generated answer is quiet', async () => {
+  it('offers an offline drop fallback and respects an explicitly quiet generated answer', async () => {
     for (const online of [false, true]) {
       const mock = online ? await mockModel(() => '<quiet/>') : null;
       try {
@@ -2128,7 +2274,8 @@ describe('contextual companion interactions', () => {
           g.__capriWindowsOverride = [{ handle: -63n, rect: { x: 300, y: 600, width: 700, height: 400 } }];
           a.charWin.setBounds({ ...b, x: 450, y: Math.round(600 - b.height * .712) }); a.settleAfterDrop();
         });
-        await expect.poll(() => app.evaluate(() => (globalThis as any).__capri.bubble.state.text), { timeout: 6000 }).not.toBe('');
+        if (mock) await expect.poll(() => app.evaluate(() => (globalThis as any).__capri.lastDialogueOutcome), { timeout: 6000 }).toContain('placed_window: chose quiet');
+        else await expect.poll(() => app.evaluate(() => (globalThis as any).__capri.bubble.state.text), { timeout: 6000 }).not.toBe('');
         expect(await app.evaluate(() => (globalThis as any).__capri.bubble.state.text)).not.toContain('<quiet');
         if (mock) expect(mock.calls).toBe(1);
       } finally { if (mock) await mock.close(); }
@@ -2140,7 +2287,8 @@ describe('contextual companion interactions', () => {
       const { app, char } = await launch(openaiProfile(mock.url, { behavior: { quietHours: { enabled: false } }, teleport: { effects: false } }));
       await app.evaluate(() => { const g = globalThis as any; g.__capriDesktopOverride = { title: 'Test', process: 'test.exe' }; g.__capriWindowsOverride = []; });
       const panel = await openPanel(app, char, 'developer');
-      expect(await panel.getByRole('button', { name: 'Live visual inspection', exact: true }).count()).toBe(1);
+      await panel.getByRole('button', { name: 'Playground', exact: true }).click();
+      expect(await panel.getByRole('button', { name: 'Live visual inspection', exact: true, includeHidden: true }).count()).toBe(1);
       expect(await panel.getByRole('button', { name: 'Cursor visit and return', exact: true }).count()).toBe(1);
       for (const name of ['sit_closed', 'recline'] as const) for (const inverted of name === 'recline' ? [false] : [false, true]) {
         await panel.evaluate(data => window.capri.invoke('dev:run', { kind: 'secondary', name: data.name, inverted: data.inverted, seconds: 3 }), { name, inverted });
@@ -2166,6 +2314,7 @@ describe('contextual companion interactions', () => {
   it('renders animated shader pixels, freezes still comparisons and reports the actual renderer state', async () => {
     const { app, char } = await launch(profile({ behavior: { quietHours: { enabled: false } }, teleport: { effects: false } }));
     const panel = await openPanel(app, char, 'developer');
+      await panel.getByRole('button', { name: 'Playground', exact: true }).click();
     expect(await panel.getByRole('button', { name: 'Compare still and animated poses', exact: true }).count()).toBe(1);
     for (const name of ['sit_closed', 'recline'] as const) {
       for (const motion of ['still', 'animated'] as const) {
@@ -2198,6 +2347,7 @@ describe('contextual companion interactions', () => {
     const { app, char } = await launch(profile({ behavior: { quietHours: { enabled: false } }, teleport: { effects: false } }));
     await app.evaluate(() => { const g = globalThis as any; g.__capriDesktopOverride = { title: 'Test', process: 'test.exe' }; g.__capriWindowsOverride = []; });
     const panel = await openPanel(app, char, 'developer');
+      await panel.getByRole('button', { name: 'Playground', exact: true }).click();
     const original = await app.evaluate(() => (globalThis as any).__capri.charWin.getBounds());
     for (const name of ['cursor_visit', 'perch_quick', 'perch_held'] as const) {
       await panel.evaluate(name => window.capri.invoke('dev:run', { kind: 'scenario', name, seconds: .5 }), name);
@@ -2210,7 +2360,7 @@ describe('contextual companion interactions', () => {
     let withImage = false;
     const mock = await mockModel(body => {
       withImage = Array.isArray((body.messages.at(-1) as any).content);
-      return JSON.stringify({ line: 'Ooh, that diagram has my attention.', points: [{ x: .5, y: .35, label: 'diagram' }, { x: 2, y: .5, label: 'invalid' }] });
+      return JSON.stringify(visualDecision({ line: 'Ooh, that diagram has my attention.', points: [{ x: .5, y: .35, label: 'diagram' }, { x: 2, y: .5, label: 'invalid' }] }));
     });
     try {
       const { app, char } = await launch(openaiProfile(mock.url, { behavior: { quietHours: { enabled: false } } }));
@@ -2218,14 +2368,126 @@ describe('contextual companion interactions', () => {
         const g = globalThis as any;
         g.__capriDesktopOverride = { title: 'Test', process: 'test.exe' };
         g.__capriWindowsOverride = [{ handle: -64n, rect: { x: 200, y: 200, width: 1000, height: 800 } }];
-        g.__capriObservationOverride = { jpegBase64: 'fixture', region: { x: 200, y: 200, width: 1000, height: 800 } };
+        g.__capriObservationOverride = { jpegBase64: 'fixture', region: { x: 200, y: 200, width: 1000, height: 800 }, window: { x: 200, y: 200, width: 1000, height: 800 } };
       });
       const panel = await openPanel(app, char, 'developer');
+      await panel.getByRole('button', { name: 'Playground', exact: true }).click();
       await panel.evaluate(() => window.capri.invoke('dev:run', { kind: 'live', name: 'inspect' }));
       await expect.poll(async () => (await panel.evaluate(() => window.capri.invoke('dev:get'))).job.active, { timeout: 10000 }).toBe(false);
       const state = await panel.evaluate(() => window.capri.invoke('dev:get'));
       expect(state.job.result).toBe('passed'); expect(state.runtime.inspectionPoints).toBe(1); expect(withImage).toBe(true); expect(mock.calls).toBe(1);
       expect(state.runtime.sharedScenes).toBe(0);
+    } finally { await mock.close(); }
+  });
+  it('keeps quiet visual curiosity without speaking and shares it with direct conversation', async () => {
+    let requests: any[] = [];
+    const mock = await mockModel(body => {
+      requests.push(body);
+      return requests.length === 1 ? JSON.stringify(visualDecision({ line: '<quiet/>', facts: ['A green loop ends outside the border.'], interpretation: 'Maybe an escape route.', curiosity: 'Does the loose end reconnect?', points: [{ x: .5, y: .4, label: 'loose green end' }] })) : 'I still want to know where that loose end goes.';
+    });
+    try {
+      const { app } = await launch(openaiProfile(mock.url, { behavior: { quietHours: { enabled: false }, idleRemarks: false } }));
+      const result = await app.evaluate(async () => {
+        const g = globalThis as any, a = g.__capri;
+        g.__capriDesktopOverride = { title: 'Loop experiment', process: 'test.exe' };
+        g.__capriWindowInfo = { '-64': { ...g.__capriDesktopOverride } };
+        g.__capriForegroundHandle = -64n;
+        const rect = { x: 200, y: 200, width: 1000, height: 800 };
+        g.__capriWindowsOverride = [{ handle: -64n, rect }];
+        g.__capriObservationOverride = { jpegBase64: 'fixture', region: rect, window: rect };
+        const before = a.speakCount;
+        await a.generatedRemark('inspect', 'One unfamiliar visible detail.', { target: -64n });
+        const quiet = { outcome: a.lastDialogueOutcome, points: a.lastInspection?.points.length, scenes: a.scenes.recent(96).length, spoken: a.speakCount - before };
+        await a.convo.send('What caught your attention?'); await a.convo.settle();
+        return quiet;
+      });
+      expect(result).toMatchObject({ outcome: expect.stringContaining('inspect: chose quiet'), points: 1, scenes: 0, spoken: 0 });
+      expect(requests).toHaveLength(2);
+      expect(requests[1].messages[0].content).toContain('Does the loose end reconnect?');
+      expect(requests[1].messages[0].content).toContain('Maybe an escape route.');
+      expect(requests[1].messages[0].content).toContain('model-described');
+    } finally { await mock.close(); }
+  });
+  it.each(['title', 'geometry', 'occlusion'])('discards visual interest when target %s changes during the request', async change => {
+    let called = false;
+    const mock = await mockModel(() => { called = true; return { delayMs: 800, text: JSON.stringify(visualDecision({ line: 'That loose end is interesting.', facts: ['A green line.'], curiosity: 'Where does it go?', points: [{ x: .5, y: .4, label: 'line' }] })) }; });
+    try {
+      const { app } = await launch(openaiProfile(mock.url, { behavior: { quietHours: { enabled: false }, idleRemarks: false } }));
+      await app.evaluate(() => {
+        const g = globalThis as any, rect = { x: 200, y: 200, width: 1000, height: 800 };
+        g.__capriDesktopOverride = { title: 'Before', process: 'test.exe' }; g.__capriWindowsOverride = [{ handle: -64n, rect }];
+        g.__capriWindowInfo = { '-64': { ...g.__capriDesktopOverride } };
+        g.__capriObservationOverride = { jpegBase64: 'fixture', region: rect, window: rect };
+        g.__stage3Pending = g.__capri.generatedRemark('inspect', '', { target: -64n });
+      });
+      await expect.poll(() => called).toBe(true);
+      const result = await app.evaluate(async (_e, change) => {
+        const g = globalThis as any;
+        if (change === 'title') g.__capriWindowInfo['-64'] = { title: 'After', process: 'test.exe' };
+        if (change === 'geometry') g.__capriWindowsOverride = [{ handle: -64n, rect: { x: 240, y: 200, width: 1000, height: 800 } }];
+        if (change === 'occlusion') g.__capriWindowsOverride = [{ handle: -65n, rect: { x: 300, y: 300, width: 500, height: 400 } }, ...g.__capriWindowsOverride];
+        await g.__stage3Pending;
+        return { inspection: g.__capri.lastInspection, scenes: g.__capri.scenes.recent(96).length };
+      }, change);
+      expect(result).toEqual({ inspection: null, scenes: 0 });
+    } finally { await mock.close(); }
+  });
+  it('denies an exhausted inspection budget before capturing a screenshot or calling the model', async () => {
+    const mock = await mockModel(() => 'This request should not happen.');
+    try {
+      const { app } = await launch(openaiProfile(mock.url, { behavior: { quietHours: { enabled: false } } }));
+      const result = await app.evaluate(async () => {
+        const g = globalThis as any, a = g.__capri; let captures = 0;
+        g.__capriWindowInfo = { '-64': { title: 'Routing fixture', process: 'fixture.exe' } };
+        const rect = { x: 200, y: 200, width: 1000, height: 800 };
+        g.__capriWindowsOverride = [{ handle: -64n, rect }];
+        Object.defineProperty(g, '__capriObservationOverride', { configurable: true, get: () => { captures++; return { jpegBase64: 'fixture', region: rect, window: rect }; } });
+        const reserved = a.behavior.reserve('ambient');
+        await a.generatedRemark('inspect', '', { target: -64n });
+        return { reserved, captures, busy: a.behavior.busy };
+      });
+      expect(result).toEqual({ reserved: true, captures: 0, busy: false }); expect(mock.calls).toBe(0);
+    } finally { await mock.close(); }
+  });
+  it('records invisible voice-only remarks only after completed audio and never after cancellation', async () => {
+    const { app, char } = await launch(profile({ character: { speechBubbles: false }, voice: { ttsEnabled: true }, behavior: { quietHours: { enabled: false } } }));
+    await char.evaluate(() => {
+      const w = window as any; w.__receiptIds = [];
+      w.__capriDebug.speaker.enqueue = (id: string) => w.__receiptIds.push(id);
+    });
+    await app.evaluate(() => (globalThis as any).__capri.presentRemark('This was only queued.', true, false));
+    expect(await app.evaluate(() => (globalThis as any).__capri.scenes.recent(96))).toEqual([]);
+    await char.evaluate(async () => {
+      const w = window as any, utteranceId = w.__receiptIds.at(-1);
+      for (const state of ['start', 'cancel', 'end'] as const) await w.capri.invoke('char:speechState', { utteranceId, state });
+    });
+    expect(await app.evaluate(() => (globalThis as any).__capri.scenes.recent(96))).toEqual([]);
+    await app.evaluate(() => (globalThis as any).__capri.presentRemark('This finished playing.', true, false));
+    await char.evaluate(async () => {
+      const w = window as any, utteranceId = w.__receiptIds.at(-1);
+      await w.capri.invoke('char:speechState', { utteranceId, state: 'start' });
+      await w.capri.invoke('char:speechState', { utteranceId, state: 'end' });
+    });
+    expect(await app.evaluate(() => (globalThis as any).__capri.scenes.recent(96).map((s: any) => s.text))).toEqual(['This finished playing.']);
+    await app.evaluate(() => { const a = (globalThis as any).__capri; a.settings.update({ voice: { ttsEnabled: false } }); a.presentRemark('Neither displayed nor spoken.', true, false); });
+    expect(await app.evaluate(() => (globalThis as any).__capri.scenes.recent(96))).toHaveLength(1);
+  });
+  it('marks an episodic question asked only when unified-core voice-only audio completes', async () => {
+    const mock = await mockModel(() => JSON.stringify({ interpretation: 'Continue the earlier connection interest.', interest: null,
+      action: 'speak', line: 'How do those branching connections route the signal?', gesture: 'none', reason: 'A relevant follow-up.' }));
+    try {
+      const { app, char } = await launch(openaiProfile(mock.url, { character: { speechBubbles: false }, memory: { autoLearn: true }, voice: { ttsEnabled: true }, behavior: { quietHours: { enabled: false } } }));
+      await char.evaluate(() => { const w = window as any; w.__receiptIds = []; w.__capriDebug.speaker.enqueue = (id: string) => w.__receiptIds.push(id); });
+      await app.evaluate(async () => {
+        const a = (globalThis as any).__capri, at = Date.now();
+        const source = { id: 'prior-graph', at, role: 'observation', text: 'A branching connection graph is visible.', reliability: 'visual-interpretation', process: 'synth.exe' };
+        a.scenes.remember({ topic: 'branching connections', sourceId: source.id, evidence: source.text, interpretation: 'The routing is unresolved.' }, [source], a.scenes.checkpoint(), 'Understand the branching connections.');
+        await a.generatedRemark('pat', 'Continue the branching connections interest.');
+      });
+      expect(mock.calls).toBe(1);
+      expect(await app.evaluate(() => (globalThis as any).__capri.scenes.experiences()[0].want.askedAt)).toBeUndefined();
+      await char.evaluate(async () => { const w = window as any, utteranceId = w.__receiptIds.at(-1); for (const state of ['start', 'end'] as const) await w.capri.invoke('char:speechState', { utteranceId, state }); });
+      expect(await app.evaluate(() => (globalThis as any).__capri.scenes.experiences()[0].want.askedAt)).toEqual(expect.any(Number));
     } finally { await mock.close(); }
   });
   it('keeps disabled-history scenes in the session only and removes their saved file', async () => {
@@ -2260,12 +2522,13 @@ describe('contextual companion interactions', () => {
         const g = globalThis as any, a = g.__capri;
         g.__capriWindowsOverride = [{ handle: -61n, rect: { x: 300, y: 300, width: 1000, height: 700 } }];
         g.__capriWindowInfo = { '-61': { title: 'Music collection', process: 'music.exe' } };
-        await a.generatedRemark('inspect', '', { target: -61n });
+        await a.generatedRemark('pat', '', { target: -61n });
       });
       expect(model.calls).toBe(2);
-      const asideRequest = JSON.parse(requests[1].messages.at(-1)!.content);
-      expect(asideRequest.recentConversation).toContainEqual({ role: 'assistant', text: 'I said trouble. That was a compliment.' });
-      expect(asideRequest.sharedScenes.some((x: any) => x.text === 'That bassline is trouble.' && x.kind === 'said')).toBe(true);
+      const asideRequest = companionRequest(requests[1]);
+      expect(requests[1].messages[0].content).toContain('I said trouble. That was a compliment.');
+      expect(asideRequest.sharedActions.every((x: any) => x.kind === 'action')).toBe(true);
+      expect(requests[1].messages[0].content).toContain('That bassline is trouble.');
       const aside = await app.evaluate(() => (globalThis as any).__capri.bubble.state.text);
       await char.evaluate(() => window.capri.invoke('bubble:open'));
       expect(await app.evaluate(() => (globalThis as any).__capri.bubble.state.text)).toBe(aside);
@@ -2364,7 +2627,7 @@ describe('contextual companion interactions', () => {
   });
   it('debounces ordinary window placements into one contextual request', async () => {
     let request: any;
-    const model = await mockModel(body => { request = JSON.parse(body.messages.at(-1)!.content); return 'Blank page. Dangerous amount of room for ideas.'; });
+    const model = await mockModel(body => { request = companionRequest(body); return 'Blank page. Dangerous amount of room for ideas.'; });
     try {
       const { app } = await launch(openaiProfile(model.url, { behavior: { quietHours: { enabled: false } } }));
       await app.evaluate(() => {
@@ -2413,7 +2676,7 @@ describe('contextual companion interactions', () => {
   });
   it('keeps placement quiet initially and considers the actual perch target after settling', async () => {
     let target = '';
-    const model = await mockModel(body => { target = JSON.parse(body.messages.at(-1)!.content).context.target.title; return 'Ooh, let me poke around. Just looking.'; });
+    const model = await mockModel(body => { target = companionRequest(body).context.target.title; return 'Ooh, let me poke around. Just looking.'; });
     try {
       const { app } = await launch(openaiProfile(model.url, { behavior: { quietHours: { enabled: false } } }));
       const initial = await app.evaluate(() => {
@@ -2449,7 +2712,9 @@ describe('contextual companion interactions', () => {
     expect(result.history.outing).toBeNull();
   });
   it('discards a delayed observation when the user places her somewhere else', async () => {
-    const model = await mockModel(() => ({ text: 'OLD WINDOW should never appear after moving.', delayMs: 200 }));
+    const model = await mockModel(body => companionRequest(body).event === 'placed_window'
+      ? { text: 'OLD WINDOW should never appear after moving.', delayMs: 200 }
+      : { text: '<quiet/>', delayMs: 5 });
     try {
       const { app } = await launch(openaiProfile(model.url, { behavior: { quietHours: { enabled: false } } }));
       await app.evaluate(() => {
@@ -2499,16 +2764,17 @@ describe('contextual companion interactions', () => {
       expect(await app.evaluate(() => (globalThis as any).__capri.speakCount)).toBe(0);
     } finally { await model.close(); }
   });
-  it('continues visiting an exposed window when it gains focus', async () => {
+  it('keeps the completed outing perch when its exposed window gains focus', async () => {
     const { app } = await launch(profile({ behavior: { explore: true, quietHours: { enabled: false } }, teleport: { effects: false, auto: false } }));
     await app.evaluate(async () => {
       const g = globalThis as any, a = g.__capri;
       g.__capriWindowsOverride = [{ handle: -22n, rect: { x: 120, y: 350, width: 700, height: 400 } }];
       a.setNextVisit(); await a.exploreTick(0);
     });
-    expect(await app.evaluate(() => String((globalThis as any).__capri.exploringHandle))).toBe('-22');
+    expect(await app.evaluate(() => String((globalThis as any).__capri.attentionHandle))).toBe('-22');
+    expect(await app.evaluate(() => (globalThis as any).__capri.exploringHandle)).toBeNull();
     await app.evaluate(() => { const g = globalThis as any; g.__capriForegroundHandle = -22n; g.__capri.raiseTick(); });
-    expect(await app.evaluate(() => String((globalThis as any).__capri.exploringHandle))).toBe('-22');
+    expect(await app.evaluate(() => String((globalThis as any).__capri.attentionHandle))).toBe('-22');
     await expect.poll(() => app.evaluate(() => (globalThis as any).__capri.teleporter.active)).toBe(false);
   });
 });

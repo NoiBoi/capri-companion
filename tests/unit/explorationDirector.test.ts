@@ -43,6 +43,13 @@ describe('bounded purposeful outings', () => {
     expect(d.snapshot().visits.length).toBeLessThanOrEqual(32);
     expect(d.snapshot().recentGoals.length).toBeLessThanOrEqual(3);
   });
+  it('lets an unresolved visual interest influence the next safe outing without bypassing rest', () => {
+    const d = new ExplorationDirector(() => 0), now = 1000000;
+    const pick = d.choose([{ key: 'ordinary' }, { key: 'unfinished-diagram', interest: 12 }], now)!;
+    expect(pick.key).toBe('unfinished-diagram');
+    d.complete(pick.key, now);
+    expect(d.choose([{ key: 'unfinished-diagram', interest: 12 }], now + 1000)).toBeNull();
+  });
 });
 describe('sparse Spotify opinions', () => {
   const raw = JSON.stringify({ title: 'Track', artist: 'Artist', playing: true, source: 'Spotify.exe' });

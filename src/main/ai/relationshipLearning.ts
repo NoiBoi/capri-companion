@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import { SceneReadingSchema } from '../store/conversationScene';
+import { ExperienceChangeSchema } from '../store/companionScenes';
 const id = z.string().max(100).optional().transform(x => x || undefined);
 export const RelationshipLearning = z.object({
+  episodes: z.array(ExperienceChangeSchema).max(2).optional().default([]),
   scene: SceneReadingSchema.nullable().optional().default(null),
   tastes: z.array(z.object({ op: z.enum(['add', 'update']), id, topic: z.string().min(1).max(70), text: z.string().min(1).max(300), evidence: z.string().min(3).max(500) })).max(3).optional().default([]),
   threads: z.array(z.object({ op: z.enum(['add', 'update', 'forget']), id, title: z.string().min(1).max(80), summary: z.string().min(1).max(300), status: z.enum(['active', 'paused', 'done', 'dismissed']), evidence: z.string().min(3).max(500), followUpAt: z.string().max(40).nullable().optional() })).max(3).optional().default([]),
@@ -11,6 +13,7 @@ const object = (properties: Record<string, unknown>, required = Object.keys(prop
 const str = { type: 'string' };
 /** One extraction request handles all three stores, preserving the shared background budget. */
 export const MEMORY_OUTPUT_SCHEMA = object({
+  episodes: { type: 'array', items: object({ id: str, topic: str, sourceId: str, evidence: str, interpretation: str, question: str, tags: { type: 'array', items: str }, status: { type: 'string', enum: ['current','resolved'] } }) },
   scene: { anyOf: [{ type: 'null' }, object({ topic: str, position: str, intention: str, openQuestion: str, tone: { type: 'string', enum: ['ordinary', 'playful', 'quiet', 'serious'] }, evidence: str, sourceId: str })] },
   changes: { type: 'array', items: object({ op: { type: 'string', enum: ['add', 'update', 'forget'] }, id: str, text: str, kind: { type: 'string', enum: ['fact', 'preference'] }, evidence: str }) },
   tastes: { type: 'array', items: object({ op: { type: 'string', enum: ['add', 'update'] }, id: str, topic: str, text: str, evidence: str }) },
@@ -23,3 +26,5 @@ THREADS: Only the user's explicit ongoing projects, meaningful plans, progress o
 Return empty arrays when no supported change exists. Never put Capri's tastes in changes (the user's memory), or the user's projects/preferences in tastes. Evidence stays in its original source. No secrets in any store.`;
 
 
+
+export const EPISODIC_EXTRACTION = `In that SAME response, also return episodes: [], at most two meaningful shared developments. Do not create episodes for routine contact, greetings, fleeting emotions, trivia, or every user message. A memorable disagreement, explicitly stated opinion, discovery or clarification may qualify. Use {id: existing id or empty, topic, sourceId: supplied message/entry id, evidence: exact source substring, interpretation: tentative meaning, question: actual unresolved question or empty, tags: up to six short retrieval hints, status: current|resolved}. Only source_messages and current_scene provide evidence; never fabricate user facts, feelings, relationships, achievements, promises or offline activity. User statements remain reports, not verified external facts. Reuse an existing episode id for a genuine development. Source timestamps control chronology. Current explicit corrections and dismissed questions outrank all earlier summaries. An unresolved question is optional context, never a scheduled reminder. Return [] when there is nothing worth retaining. Retrieval hints are labels, not new facts.`;

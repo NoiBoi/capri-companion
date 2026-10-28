@@ -1,5 +1,5 @@
 export interface RelationshipSource { messageId: string; evidence: string; role: 'user' | 'assistant'; at: number }
-export interface CapriTaste { id: string; topic: string; text: string; updatedAt: number; source: RelationshipSource }
+export interface CapriTaste { id: string; topic: string; text: string; updatedAt: number; source: RelationshipSource; support?: RelationshipSource[] }
 export type ThreadStatus = 'active' | 'paused' | 'done' | 'dismissed';
 export interface ProjectThread {
   id: string; title: string; summary: string; status: ThreadStatus; updatedAt: number;

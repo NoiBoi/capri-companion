@@ -32,7 +32,7 @@ describe('shared companion scene history', () => {
     const scenes = new CompanionScenes(d, () => enabled, () => 1, () => now);
     expect(scenes.context()).toEqual([]);
     for (let i = 0; i < 120; i++) { now++; scenes.record('said', `Real line ${i}`); }
-    expect(JSON.parse(fs.readFileSync(path.join(d, 'companion-scenes.json'), 'utf8'))).toHaveLength(96);
+    expect(JSON.parse(fs.readFileSync(path.join(d, 'companion-scenes.json'), 'utf8')).recent).toHaveLength(96);
     now += 86400001; expect(scenes.context()).toEqual([]);
     scenes.record('said', 'New day'); enabled = false; scenes.privacyChanged();
     expect(fs.existsSync(path.join(d, 'companion-scenes.json'))).toBe(false);

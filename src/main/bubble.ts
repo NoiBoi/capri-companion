@@ -54,6 +54,7 @@ export class BuddyBubble {
   private height = 170;
   private lastBounds: Rectangle | null = null;
   constructor(private d: { anchor(): Rectangle | null; head?(): { x: number; y: number }; body?(): Rectangle | undefined; inverted?(): boolean; enabled(): boolean; filterText?(text: string): string; preload: string; log: Logger }) {}
+  get hasVisibleText() { return this.visible && !!this.state.text; }
   private ensure() {
     if (this.window && !this.window.isDestroyed()) return this.window;
     const win = (this.window = createBubbleWindow(this.d.preload, this.d.log));
@@ -65,12 +66,13 @@ export class BuddyBubble {
   private send() { if (this.window && !this.window.isDestroyed() && !this.window.webContents.isLoading()) this.window.webContents.send('bubble:state', this.state); }
   private focusInput() { const w = this.window; if (!w || w.isDestroyed() || w.webContents.isLoading()) return; if (!OFFSCREEN) { w.focus(); w.webContents.focus(); } w.webContents.send('bubble:focus', null); }
   private show(focus = false) {
-    if (this.disposed || this.dismissed || (!this.d.enabled() && !this.state.composer)) return;
+    if (this.disposed || this.dismissed || (!this.d.enabled() && !this.state.composer)) return false;
     this.visible = true;
     const win = this.ensure(); this.reposition(); this.send();
     // showInactive keeps asides quiet; a real click can activate their reply/settings buttons.
     win.setFocusable(true);
     if (!win.webContents.isLoading()) { reveal(win, focus); if (focus && !OFFSCREEN) win.focus(); }
+    return true;
   }
   private expire() {
     if (this.disposed) return;
@@ -87,8 +89,8 @@ export class BuddyBubble {
   begin() { this.id = ''; this.state.text = ''; this.state.delivery = 'reply'; this.state.startedAt = Date.now(); this.dismissed = false; if (this.timer) clearTimeout(this.timer); }
   phase(p: AssistantPhase) { if (p === 'thinking' && !this.state.startedAt) this.state.startedAt = Date.now(); this.state.phase = p; if (p === 'thinking' || p === 'listening' || p === 'transcribing') this.show(); else this.send(); }
   delta(id: string, text: string) { if (this.id !== id) { this.id = id; this.state.text = ''; } this.state.text = (this.state.text + text).slice(-20000); this.show(); }
-  done(message: ChatMessage) { this.id = message.id; this.state.delivery = 'reply'; this.state.text = this.d.filterText?.(message.content) ?? message.content; this.state.phase = message.meta?.error ? 'error' : 'idle'; this.state.startedAt = undefined; if (this.state.text) this.show(); this.expire(); }
-  remark(text: string) { text = this.d.filterText?.(text) ?? text; if (this.state.composer || !text.trim()) return; this.dismissed = false; this.state.delivery = 'aside'; this.state.startedAt = undefined; this.state.text = text; this.state.phase = 'idle'; this.show(); this.expire(); }
+  done(message: ChatMessage) { this.id = message.id; this.state.delivery = 'reply'; this.state.text = this.d.filterText?.(message.content) ?? message.content; this.state.phase = message.meta?.error ? 'error' : 'idle'; this.state.startedAt = undefined; const shown = !!this.state.text && this.show(); this.expire(); return shown; }
+  remark(text: string) { text = this.d.filterText?.(text) ?? text; if (this.state.composer || !text.trim()) return false; this.dismissed = false; this.state.delivery = 'aside'; this.state.startedAt = undefined; this.state.text = text; this.state.phase = 'idle'; const shown = this.show(); this.expire(); return shown; }
   resize(height: number) {
     if (!this.window || this.window.isDestroyed()) return;
     const h = Math.min(360, Math.max(76, Math.ceil(height / 2) * 2));

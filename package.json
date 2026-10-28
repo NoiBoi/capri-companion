@@ -1,6 +1,6 @@
 {
   "name": "capri-buddy",
-  "version": "0.2.45",
+  "version": "0.2.49",
   "main": "dist/main/index.js",
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -11,7 +11,9 @@
     "test:e2e": "node scripts/build.mjs && vitest run tests/e2e --no-file-parallelism --testTimeout=60000 --hookTimeout=60000",
     "icons": "node scripts/build.mjs && node scripts/make-icons.mjs",
     "dist": "node scripts/dist.mjs",
-    "verify:package": "node scripts/verify-package.mjs"
+    "verify:package": "node scripts/verify-package.mjs",
+    "behavior:replay": "node scripts/behavior-stage0.mjs",
+    "continuity:recall": "node scripts/continuity-recall.mjs"
   },
   "author": "Capri Companion contributors",
   "license": "MIT",
@@ -64,6 +66,13 @@
       {
         "from": "build/icon.png",
         "to": "icon.png"
+      },
+      {
+        "from": "node_modules/@koromix/koffi-win32-x64/win32_x64",
+        "to": "koffi/win32_x64",
+        "filter": [
+          "*.node"
+        ]
       }
     ],
     "win": {
