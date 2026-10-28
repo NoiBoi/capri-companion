@@ -1,5 +1,10 @@
 # Personal-context prototype
 
+Historical prototype report. The native features described here are now shipped
+and installed in 0.3.1; see `../RELEASE_0.3.1.md` for the current release status.
+The later real local Honcho comparison is separate from the initial interface
+checks recorded below.
+
 Implemented separately from the installed 0.3.0 release on `experiment/personal-context`.
 The baseline is release commit `71ce364`, which is pushed to
 `origin/capri-lachy-integration` and tagged `v0.3.0`.

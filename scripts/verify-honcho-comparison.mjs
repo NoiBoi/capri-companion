@@ -5,6 +5,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import { HonchoComparison, loadHonchoSDK } from './honcho-comparison.mjs';
 const requests = [], at = Date.now() - 600000;
+let sessionActive = true;
 const server = http.createServer((req,res) => {
   let raw=''; req.on('data',c=>raw+=c); req.on('end',()=>{
     const body = raw ? JSON.parse(raw) : undefined; requests.push({method:req.method,url:req.url,body});
@@ -12,7 +13,11 @@ const server = http.createServer((req,res) => {
     if (req.url.endsWith('/messages')) result = body.messages.map((m,i)=>({id:`stored-${i}`,content:m.content,peer_id:m.peer_id,session_id:'fixture-session',workspace_id:'capri-contract-fixture',metadata:m.metadata,created_at:m.created_at,token_count:10}));
     if (req.url.includes('/queue/status')) result={total_work_units:2,completed_work_units:2,pending_work_units:0,in_progress_work_units:0};
     if (req.url.endsWith('/chat')) result={content:'Fixture response only.',evidence:{conclusions:[],messages:[{id:'stored-0',session_id:'fixture-session',peer_id:'fixture-user',created_at:new Date(at).toISOString()}],tool_calls:[],reasoning_trace_id:null}};
-    if (req.method==='DELETE') {res.writeHead(204);res.end();return;}
+    if (req.method==='DELETE') {
+      if(req.url.endsWith('/sessions/fixture-session'))sessionActive=false;
+      else if(sessionActive){res.writeHead(409,{'content-type':'application/json'});res.end(JSON.stringify({detail:'Active sessions remain.'}));return;}
+      res.writeHead(204);res.end();return;
+    }
     res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify(result));
   });
 });

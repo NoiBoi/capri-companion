@@ -8,14 +8,14 @@ export function loadHonchoSDK(sdkPath = process.env.CAPRI_HONCHO_SDK) {
   return sdkPath ? require(path.resolve(sdkPath)) : require('@honcho-ai/sdk');
 }
 export class HonchoComparison {
-  constructor(Honcho, { baseURL, apiKey, workspaceId = `capri-synthetic-${Date.now()}` }) {
+  constructor(Honcho, { baseURL, apiKey, workspaceId = `capri-synthetic-${Date.now()}`, timeoutMs = 90000 }) {
     if (!baseURL) throw new Error('Supply HONCHO_URL explicitly. This experiment never selects a hosted service automatically.');
     const url = new URL(baseURL);
     if (!['http:','https:'].includes(url.protocol) || url.username || url.password) throw new Error('Invalid Honcho URL.');
     this.workspaceId = workspaceId;
     // SDK 2.7.0 environment:'local' overrides even an explicit URL with localhost:8000.
     // Leave environment unset so custom local ports and user-selected servers are honored.
-    this.client = new Honcho({ workspaceId, baseURL, apiKey, timeout: 15000, maxRetries: 0 });
+    this.client = new Honcho({ workspaceId, baseURL, apiKey, timeout: timeoutMs, maxRetries: 0 });
   }
   async ingestSynthetic(messages) {
     if (!Array.isArray(messages) || messages.some(m => m.synthetic !== true || !['user','assistant'].includes(m.role))) throw new Error('This adapter accepts explicitly synthetic user/assistant fixtures only.');
@@ -23,7 +23,7 @@ export class HonchoComparison {
     this.capri = await this.client.peer('capri');
     this.session = await this.client.session('fixture-session');
     await this.session.setPeers([[this.user.id, { observeMe: true, observeOthers: false }], [this.capri.id, { observeMe: true, observeOthers: true }]]);
-    await this.session.addMessages(messages.map(m => (m.role === 'user' ? this.user : this.capri).message(m.text, { createdAt: new Date(m.at).toISOString(), metadata: { synthetic: true, source_id: m.id } })));
+    this.ingested = await this.session.addMessages(messages.map(m => (m.role === 'user' ? this.user : this.capri).message(m.text, { createdAt: new Date(m.at).toISOString(), metadata: { synthetic: true, source_id: m.id } })));
   }
   async ready() {
     if (!this.session) throw new Error('Load synthetic fixtures first.');
@@ -32,8 +32,13 @@ export class HonchoComparison {
   }
   async recall(query) {
     if (!this.session) throw new Error('Load synthetic fixtures first.');
-    const result = await this.capri.chat(query, { target: this.user, session: this.session, includeEvidence: true });
+    const result = await this.capri.chat(query, { target: this.user, session: this.session, includeEvidence: true, reasoningLevel: 'low' });
     return { content: result.content, evidence: result.evidence, classification: 'external interpretation; not an approved Capri fact' };
   }
-  async cleanup() { await this.client.deleteWorkspace(this.workspaceId); }
+  async cleanup() {
+    // Honcho 3.4.1 refuses workspace deletion while a session is active.
+    // Session deletion marks it inactive immediately and queues its data removal.
+    if (this.session) await this.session.delete();
+    await this.client.deleteWorkspace(this.workspaceId);
+  }
 }

@@ -47,6 +47,10 @@
     },
     {
       "method": "DELETE",
+      "url": "/v3/workspaces/capri-contract-fixture/sessions/fixture-session"
+    },
+    {
+      "method": "DELETE",
       "url": "/v3/workspaces/capri-contract-fixture"
     }
   ]
