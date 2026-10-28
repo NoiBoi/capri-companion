@@ -37,6 +37,7 @@ import { CompanionScenes } from './store/companionScenes';
 import { dropLine } from '../shared/dropDialogue';
 import { pingLine } from '../shared/contextPings';
 import { parseInspection, inspectionSpots, explorationBeat, type InterestPoint, type WindowObservation } from './desktop/inspection';
+import { videoWindow, videoCenter as videoCenterFor, resolveWindow } from './desktop/movementPolicy';
 import { CursorReturn } from '../shared/cursorReturn';
 import { ActivityContext, appKind, dialogueSurface } from '../shared/dialogueContext';
 import { batteryContext, WeatherContext } from './dialogueContext';
@@ -49,11 +50,12 @@ import { quietGame } from '../shared/desktopContext';
 import { CAPRI_DIALOGUE_REGISTER } from '../shared/capriVoice';
 import { windowInfo } from './desktop/win32';
 import { nextExploreDelay } from './desktop/exploration';
-import { helperWindow, exposedRegions, exposedBody, tourPlan, lowerWindowRest, intersects } from './desktop/exposure';
+import { bodyFootprint as bodyFootprintFor, helperWindow, exposedRegions, exposedBody, tourPlan, lowerWindowRest, intersects } from './desktop/exposure';
 import { mayInterrupt } from '../shared/behaviorRules';
 import { speechAllowed, type SpeechReason } from '../shared/speechPolicy';
 import { Logger } from './log';
 import { SettingsStore } from './store/settingsStore';
+import { profileDirectory, legacyProfiles, initializeProfile } from './store/profileLocation';
 import { SecretStore, type Cipher } from './store/secrets';
 import { HistoryStore, MemoryStore, NotesStore, ReminderStore } from './store/dataStores';
 import { InteractionProfile } from './store/interactionProfile';
@@ -85,7 +87,10 @@ import { probeWindowsRecognizer, transcribeOpenAI, transcribeWindows, WakeWordLi
 
 const T0 = performance.timeOrigin;
 const TEST = process.env.CAPRI_TEST === '1';
-if (process.env.CAPRI_USER_DATA) app.setPath('userData', path.resolve(process.env.CAPRI_USER_DATA));
+const profilePath = profileDirectory(app.getPath('home'), process.env.CAPRI_USER_DATA);
+if (!process.env.CAPRI_USER_DATA) initializeProfile(profilePath, legacyProfiles(app.getPath('home'), app.getPath('appData')));
+app.setPath('userData', profilePath);
+app.setPath('sessionData', profilePath);
 // test/capture only: render at a fixed device scale (crisp high-res frames for the trailer harness)
 if (process.env.CAPRI_TEST === '1' && process.env.CAPRI_DPR) app.commandLine.appendSwitch('force-device-scale-factor', process.env.CAPRI_DPR);
 app.setAppUserModelId('dev.capri.buddy');
@@ -298,13 +303,27 @@ function windowsForPlacement(): PerchWindow[] {
     placementCacheSource = all;
     placementCache = all.filter((w, i) => w.eligible !== false && exposedRegions(w.rect, all.slice(0, i).map(b => b.rect)).some(r => r.width >= 100 && r.height >= 80));
   }
-  return placementCache;
+  return placementCache.filter(w => !company.avoiding(String(w.handle)));
 }
 let placementCacheSource: typeof desktopCache | undefined;
 let placementCache: PerchWindow[] = [];
 function safeForTarget(bounds: DRect, handle: bigint) {
   const w = desktopWindows().find(w => w.handle === handle && w.eligible !== false);
-  return !!w && exposedBody(bounds, blockersFor(handle), displayFor(w.rect, displaysNow()).workArea);
+  return !!w && !company.avoiding(String(handle)) && movementClear(bounds) && exposedBody(bounds, blockersFor(handle), displayFor(w.rect, displaysNow()).workArea);
+}
+function movementClear(bounds: DRect) {
+  const all = desktopWindows();
+  return all.every((w, i) => {
+    const protectedArea = company.avoiding(String(w.handle)) ? w.rect : videoWindow(observedWindow(w.handle)) ? videoCenterFor(w.rect) : null;
+    return !protectedArea || !exposedRegions(protectedArea, all.slice(0, i).map(b => b.rect)).some(r => intersects(bodyFootprintFor(bounds), r));
+  });
+}
+function pointerProtected(point = screen.getCursorScreenPoint()) {
+  const w = desktopWindows().find(w => point.x >= w.rect.x && point.x <= w.rect.x+w.rect.width && point.y >= w.rect.y && point.y <= w.rect.y+w.rect.height);
+  return !!w && (company.avoiding(String(w.handle)) || videoWindow(observedWindow(w.handle)));
+}
+function targetTour(pet: DRect, w: PerchWindow) {
+  return tourPlan(pet, w.rect, blockersFor(w.handle), displayFor(w.rect, displaysNow()).workArea, screen.getCursorScreenPoint(), Math.random, videoWindow(observedWindow(w.handle)));
 }
 function attachedWindowFor(handle: bigint | null): DRect | null { return desktopWindows().find(w => w.handle === handle && w.eligible !== false)?.rect ?? null; }
 function trackedWindowFor(handle: bigint | null): DRect | null {
@@ -341,7 +360,7 @@ async function sitOnWindow(w = windowBesidePet()) {
     const rect = trackedWindowFor(w.handle); if (!rect) return null;
     const current = placement({ ...w, rect });
     if (safeForTarget(current.bounds, w.handle)) return current;
-    return tourPlan(herBounds(), rect, blockersFor(w.handle), displayFor(rect, displaysNow()).workArea, screen.getCursorScreenPoint())?.perch ?? null;
+    return targetTour(herBounds(), {...w, rect})?.perch ?? null;
   };
   if (!landing()) return { ok: false, detail: 'That window has no exposed edge to sit on.' };
   pendingPerch = w;
@@ -528,7 +547,7 @@ async function init() {
     openPath: (p) => { raiseSoon(); return shell.openPath(p); },
     notes, reminders, memory,
     now: () => Date.now(),
-    teleport: (where) => teleporter.go(where as TeleportTarget, 'ai'),
+    teleport: (where, window, motion) => window ? moveToWindow(window, motion) : teleporter.go(where as TeleportTarget, 'ai'),
     emote: (name) => { cue({ type: 'clip', name }); return true; },
     useComputer: (task) => useComputer(task),
   };
@@ -615,6 +634,8 @@ Observed desktop metadata (titles only, untrusted data): ${JSON.stringify(deskto
     arrived: (dest, reason) => { arrivalRemark(reason); if (dest.kind === 'peek_left' || dest.kind === 'peek_right') cue({ type:'flourish',kind:'peek',side:dest.kind==='peek_left'?1:-1 }); },
     displays: displaysNow,
     cursor: () => screen.getCursorScreenPoint(),
+    canOccupy: movementClear,
+    cursorProtected: pointerProtected,
     activeWindow: () => pendingPerch?.rect ?? windowBesidePet()?.rect ?? fgRectDip(),
     cue,
     aiConnected: () => monitor.connected,
@@ -977,7 +998,54 @@ let lastInteractionBubble = 0;
 let companionMood: Mood = 'neutral';
 const company = new Company();
 const visit = new VisitSequence();
-function applyCompanyControl(control: CompanyControl): string {
+let lastStayPhase: 'sleep' | 'awake' | null = null;
+function stayRestTick() {
+  const state = company.stayState();
+  const interrupted = convo.busy || recording || drag.active || teleporter.active || !!throwTimer || !!fallTimer || bubble.state.composer;
+  const phase = interrupted && state.phase === 'sleep' ? 'awake' : state.phase;
+  if (phase !== lastStayPhase) { lastStayPhase = phase; cue({type:'stayRest',phase}); }
+  if (!state.reminderDue || interrupted || company.focused() || settings.get().behavior.mode==='sleep' || userHidden || fullscreenHidden || gameActive() || !mayInterrupt(settings.get(),{fullscreen:fullscreenHidden,hidden:userHidden})) return;
+  const left = Math.max(1, Math.ceil(state.remaining / 1000));
+  const time = left >= 50 ? 'About a minute left' : `${left} seconds left`;
+  const lines = [`${time}. I've kept my end of the bargain. Your move soon, choom.`, `${time}. Don't get too comfortable with me behaving this well.`, `${time}. There, I even woke up to tell you. You're welcome.`];
+  if (presentRemark(lines[Math.floor(Math.random()*lines.length)], true)) company.markReminded();
+}
+async function moveToWindow(query: string, motion: 'teleport' | 'glide' = 'teleport') {
+  const all = desktopWindows().filter(w => w.eligible !== false).map(w => ({...w, ...observedWindow(w.handle), handle:w.handle}));
+  const fg=TEST?(globalThis as any).__capriForegroundHandle:foregroundHandle();
+  const w = resolveWindow(query, all, fg && !ownHandles().includes(fg) ? fg : lastDesktopHandle || attentionHandle);
+  if (!w) return {ok:false, detail:'Bring the window into view and use its title or app name. More than one match needs a more specific title.'};
+  if (company.avoiding(String(w.handle))) return {ok:false, detail:"I'm keeping clear of that window. Tell me I can visit it first."};
+  const plan = targetTour(herBounds(), w);
+  if (!plan || !safeForTarget(plan.perch.bounds, w.handle)) return {ok:false, detail:'That window needs an exposed side or ledge with room for me.'};
+  visit.cancel(); placementRevision++; cancelBehavior(); teleporter.cancel();
+  const revision = placementRevision;
+  for (let i=0;i<40 && teleporter.active;i++) await new Promise(r=>setTimeout(r,50));
+  if (teleporter.active || revision !== placementRevision) return {ok:false,detail:'Movement interrupted. Call me over again.'};
+  const landing = () => { const rect=trackedWindowFor(w.handle); return rect ? targetTour(herBounds(), {...w,rect})?.perch : null; };
+  const valid = () => revision === placementRevision && !!landing();
+  try {
+    pendingPerch=w; pendingPerchFraction=plan.perch.fraction; pendingPerchMode=plan.perch.mode;
+    const dest={...plan.perch.bounds,kind:'perch' as const};
+    const flew=motion==='glide' && await teleporter.flyTo(dest,{silent:true,cancelled:()=>!valid(),canOccupy:r=>safeForTarget(r,w.handle)});
+    if(!flew && valid()) await teleporter.jumpTo(()=>{const p=landing()!;pendingPerch={...w,rect:trackedWindowFor(w.handle)!};pendingPerchFraction=p.fraction;pendingPerchMode=p.mode;return {...p.bounds,kind:'perch' as const};},undefined,()=>!valid());
+    return {ok:perchHandle===w.handle,detail:perchHandle===w.handle ? `There. This edge of ${observedWindow(w.handle).title} is mine.` : 'That landing stopped being clear.'};
+  } finally {pendingPerch=null;pendingPerchFraction=undefined;pendingPerchMode=undefined;}
+}
+async function applyCompanyControl(control: CompanyControl): Promise<string> {
+  if(control.kind==='stay' && control.target){const moved=await moveToWindow(control.target);if(!moved.ok)return moved.detail;}
+  if(control.kind==='move_window') return (await moveToWindow(control.target,control.motion)).detail;
+  if(control.kind==='avoid'||control.kind==='allow_window') {
+    const all=desktopWindows().filter(w=>w.eligible!==false).map(w=>({...w,...observedWindow(w.handle),handle:w.handle}));
+    const fg=TEST?(globalThis as any).__capriForegroundHandle:foregroundHandle();
+    const w=resolveWindow(control.target,all,fg&&!ownHandles().includes(fg)?fg:lastDesktopHandle);
+    if(!w)return 'Which window? Use its title or bring it to the front and say this window.';
+    if(control.kind==='allow_window'){company.allow(String(w.handle));return 'All right. That window is back on my map.';}
+    company.avoid(String(w.handle),control.minutes);visit.cancel();placementRevision++;cancelBehavior();teleporter.cancel();
+    for(let i=0;i<40&&teleporter.active;i++)await new Promise(r=>setTimeout(r,50));
+    if(!movementClear(herBounds())) {detachPerch();await teleporter.go('corner','manual');}
+    return movementClear(herBounds()) ? `Fine. I'll keep off ${w.title}${control.minutes ? ` for ${control.minutes} minutes` : ' until you say otherwise'}.` : 'I have marked that window off limits, but I need an exposed desktop edge or another monitor to move clear of it.';
+  }
   if (['focus', 'sleep', 'stay'].includes(control.kind)) behavior?.userInput('Quiet focus; defer the previous interest.');
   if (['explore', 'resume', 'release', 'focus_end'].includes(control.kind)) behavior?.resumeInitiative();
   if (control.kind === 'sleep' || control.kind === 'explore' || control.kind === 'resume') {
@@ -987,7 +1055,7 @@ function applyCompanyControl(control: CompanyControl): string {
   }
   const fg = TEST && (globalThis as any).__capriForegroundHandle !== undefined ? (globalThis as any).__capriForegroundHandle as bigint : foregroundHandle();
   const target = [fg, lastDesktopHandle, attentionHandle].find(h => h && !ownHandles().includes(h) && trackedWindowFor(h));
-  company.apply(control); visit.cancel(); placementRevision++;
+  company.apply(control); visit.cancel(); placementRevision++; teleporter.cancel();
   cancelBehavior();
   if (placementTimer) clearTimeout(placementTimer); placementTimer = null;
   watchedHandle = null; cue({ type: 'attention', point: null, seconds: 0 });
@@ -1000,7 +1068,13 @@ function applyCompanyControl(control: CompanyControl): string {
     return "All right. Let me have a look.";
   }
   if (control.kind === 'focus') return `I'll keep you quiet company for ${control.minutes} minutes. You can still talk to me.`;
-  if (control.kind === 'stay') return "Here, then. I'll stay until you tell me I can wander again.";
+  if (control.kind === 'stay') {
+    if(!perchHandle && !lowerAnchor) {
+      const b=herBounds(),here=windowsForPlacement().find(w=>b.x+b.width/2>=w.rect.x&&b.x+b.width/2<=w.rect.x+w.rect.width&&b.y+b.height/2>=w.rect.y&&b.y+b.height/2<=w.rect.y+w.rect.height);
+      if(here)await moveToWindow(observedWindow(here.handle).title);
+    }
+    return control.minutes ? `Fine. This spot is mine for ${control.minutes} minutes. I'll give you a nudge before time's up.` : "Here, then. I'll stay until you tell me I can wander again.";
+  }
   if (control.kind === 'release') return company.focused() ? "No need to hold this spot. I'll keep you quiet company until focus time is over." : 'A little room to wander again. Got it.';
   if (control.kind === 'focus_end') return company.staying ? "Focus time's over. I'm still keeping this spot for you." : "Welcome back. I'll loosen up a little.";
   return "Back to normal. I'll find something worth watching.";
@@ -1181,26 +1255,28 @@ async function curiosityDetour(text: string, tourValid?: () => boolean, develope
   const revision = placementRevision, interaction = lastInteraction, home = herBounds();
   const saved = perchHandle ? { handle: perchHandle, mode: perchMode, fraction: perchFraction, pinned: perchPinned } : null;
   const attention = attentionHandle;
-  const valid = () => revision === placementRevision && lastInteraction === interaction && !quitting && !developerSignal?.aborted && !ambientBlocked(!!developerSignal) && !company.blocked() && !bubble.state.composer && !returningToCursor && (!tourValid || tourValid());
+  const valid = () => revision === placementRevision && lastInteraction === interaction && !quitting && !developerSignal?.aborted && !ambientBlocked(!!developerSignal) && !company.blocked() && !bubble.state.composer && !returningToCursor && (!tourValid || tourValid()) && !pointerProtected(cursorNow());
   const cursorNow = () => TEST && (globalThis as any).__capriCuriosityCursor ? (globalThis as any).__capriCuriosityCursor as {x:number;y:number} : screen.getCursorScreenPoint();
   const point = cursorNow();
+  if(pointerProtected(point))return false;
   const area = displayFor({ ...point, width: 1, height: 1 }, displaysNow()).workArea;
   const dest = { ...besideCursor(point, home, area), kind: 'spot' as const };
   curiosityActive = true; if (!developerSignal) lastCuriosityAt = Date.now();
   if (!tourValid) visit.cancel();
   detachPerch(); sendSurface(true);
   try {
-    if (autonomous) await teleporter.jumpTo(dest, undefined, () => !valid());
-    else if (!await teleporter.flyTo(dest, { silent: true, cancelled: () => !valid() })) return false;
+    const tracking = !autonomous || Math.random()<.6;
+    const arrived = tracking && await teleporter.flyTo(dest, { silent: true, cancelled: () => !valid(), curve:(Math.random()-.5)*100, pace:.65+Math.random()*.5 });
+    if(!arrived && valid())await teleporter.jumpTo(dest, undefined, () => !valid() || !movementClear(dest));
     if (!valid()) return false;
     rememberScene('action', 'Finished floating beside the cursor for a closer look. Lingering here briefly.', 'cursor');
     attentionHandle = attention;
     lookAtPoint(point, 5); cue({ type: 'activity', kind: 'notice' });
-    let lastPoint = point, lastFollow = 0;
-    const lingerUntil=Date.now()+(developerSignal?1300:autonomous?6500:3500);
+    let lastPoint = point, lastFollow = 0; const follows = Math.random()<.8, followThreshold=35+Math.random()*90, lingerMs=3500+Math.random()*5500;
+    const lingerUntil=Date.now()+(developerSignal?1300:autonomous?lingerMs:3500);
     while(Date.now()<lingerUntil&&valid()) {
       const latest = cursorNow();
-      if (autonomous && Date.now()-lastFollow>650 && Math.hypot(latest.x-lastPoint.x,latest.y-lastPoint.y)>90) {
+      if (autonomous && follows && Date.now()-lastFollow>300 && Math.hypot(latest.x-lastPoint.x,latest.y-lastPoint.y)>followThreshold) {
         const work=displayFor({...latest,width:1,height:1},displaysNow()).workArea;
         const follow={...besideCursor(latest,herBounds(),work),kind:'spot' as const};
         await teleporter.flyTo(follow,{silent:true,cancelled:()=>!valid(),pace:.6});
@@ -1315,6 +1391,7 @@ function behaviorAllowed(event?: BehaviorEvent) {
   if (!settings || !bubble || !convo || developer.active && !(event?.kind === 'trigger' && event.context && (event.context as { developer?: boolean }).developer) || devAbsence) return false;
   const direct = event?.kind === 'trigger' ? event.direct : event?.kind === 'interact';
   return !convo.busy && !recording && !gameActive() && !userHidden && !fullscreenHidden && !company.focused()
+    && (direct || company.stayState().phase !== 'sleep')
     && settings.get().behavior.mode !== 'sleep'
     && mayInterrupt(settings.get(), { fullscreen: fullscreenHidden, hidden: userHidden })
     && (direct || systemIdleSec() < 120 && !ambientBlocked(!!(event?.kind === 'trigger' && (event.context as { developer?: boolean })?.developer)) && !bubble.state.composer);
@@ -1821,7 +1898,7 @@ function announceReturn(from:'idle'|'sleep'){
 }
 async function returnToCursor(from: 'idle' | 'sleep' = lastAbsenceWasSleep ? 'sleep' : 'idle') {
   if (returningToCursor) return;
-  if(loungeHeld()||company.staying){cue({type:'presence',idleSec:0,quiet:false});cue({type:'userReturn',from});announceReturn(from);lastAbsenceWasSleep=false;return;}
+  if(loungeHeld()||company.staying||pointerProtected()){cue({type:'presence',idleSec:0,quiet:false});cue({type:'userReturn',from});announceReturn(from);lastAbsenceWasSleep=false;return;}
   returningToCursor = true; visit.cancel(); detachPerch(); placementRevision++; cancelBehavior();
   try {
     cue({ type: 'presence', idleSec: 0, quiet: false }); cue({ type: 'userReturn', from });
@@ -2037,10 +2114,9 @@ async function exploreTick(idleSec: number, developerSignal?: AbortSignal, trial
   nextWindowVisit = Math.max(nextWindowVisit, 0);
   if (!developerSignal && !requestedTarget && (Date.now() < nextWindowVisit || !behavior.canInitiate())) return;
   nextWindowVisit = Date.now() + nextExploreDelay(Math.random, s.behavior.mode);
-  const cursor = screen.getCursorScreenPoint();
   const windows = windowsForPlacement();
   const candidates = windows.map(w => { const info = observedWindow(w.handle); return { w, key: developerSignal ? `window_${String(w.handle)}` : explorationKey(info), surface: dialogueSurface(info), favorite: favoriteSpots.get(w.handle) ?? 0, interest: s.dialogue.localContext ? environmentalCuriosity.priority(explorationKey(info), Date.now()) : 0, interestAt: s.dialogue.localContext ? environmentalCuriosity.readAt(explorationKey(info)) : undefined,
-    plan: tourPlan(herBounds(), w.rect, blockersFor(w.handle), displayFor(w.rect, displaysNow()).workArea, cursor) }; }).filter(x => x.plan);
+    plan: targetTour(herBounds(), w) }; }).filter(x => x.plan);
   const director = developerSignal ? trialDirector ?? new ExplorationDirector() : outings;
   const preferred = requestedTarget ? String(requestedTarget) : behavior.preferredTarget();
   const relevant = preferred ? candidates.filter(c => String(c.w.handle) === preferred) : [];
@@ -2049,6 +2125,7 @@ async function exploreTick(idleSec: number, developerSignal?: AbortSignal, trial
   if (!outing) { nextWindowVisit = Math.max(nextWindowVisit, outings.snapshot().restUntil); return; }
   const candidate = candidates.find(c => c.key === outing.key)!;
   const { w } = candidate;
+  const videoVisit=videoWindow(observedWindow(w.handle));
   const settleDirect=outing.manner==='settle'||outing.manner==='lounge';
   let completed = false;
   const intention = visit.begin(w.handle), revision = placementRevision;
@@ -2060,7 +2137,7 @@ async function exploreTick(idleSec: number, developerSignal?: AbortSignal, trial
     const blockers = blockersFor(w.handle), signature = JSON.stringify([rect, blockers]);
     // Keep a chosen route coherent. Replan for changed geometry, not on every safety check.
     if (signature !== planSignature) {
-      currentPlan = tourPlan(herBounds(), rect, blockers, displayFor(rect, displaysNow()).workArea, screen.getCursorScreenPoint());
+      currentPlan = targetTour(herBounds(), {...w,rect});
       planSignature = signature;
     }
     return currentPlan;
@@ -2071,7 +2148,7 @@ async function exploreTick(idleSec: number, developerSignal?: AbortSignal, trial
   };
   const restNow=()=>{
     const plan=planNow(),rect=trackedWindowFor(w.handle);if(!plan||!rect)return null;
-    const lower=outing.manner==='lounge'?lowerWindowRest(herBounds(),rect,blockersFor(w.handle),displayFor(rect,displaysNow()).workArea,screen.getCursorScreenPoint()):null;
+    const lower=!videoVisit&&outing.manner==='lounge'?lowerWindowRest(herBounds(),rect,blockersFor(w.handle),displayFor(rect,displaysNow()).workArea,screen.getCursorScreenPoint()):null;
     return lower?{...lower,mode:'lower' as const}:plan.perch;
   };
   const pause = async (ms: number) => { for (let left = ms; left > 0 && valid(); left -= 100) await new Promise(r => setTimeout(r, Math.min(100, left))); };
@@ -2097,11 +2174,11 @@ async function exploreTick(idleSec: number, developerSignal?: AbortSignal, trial
     // Observation runs beside movement; provider latency must not freeze her in mid-outing.
     if (!valid()) return;
     encounters.visit(observedWindow(w.handle), Date.now());
-    for (let hop = 1; hop <= (settleDirect ? 0 : outing.hops) && valid(); hop++) {
+    for (let hop = 1; hop <= (settleDirect || newlyOpened || videoVisit ? 0 : outing.hops) && valid(); hop++) {
       const plan = planNow(); if (!plan) return;
       const nowRect = trackedWindowFor(w.handle);
       const observed = lastInspection && lastInspection.handle === w.handle && lastInspection.title === observedWindow(w.handle).title && Date.now() - lastInspection.at < 60000 && (!lastInspection.bounds || nowRect && (['x', 'y', 'width', 'height'] as const).every(k => Math.abs(nowRect[k] - lastInspection!.bounds![k]) < 2)) ? lastInspection : null;
-      const detailSpots = observed ? inspectionSpots(observed.points, herBounds(), displayFor(w.rect, displaysNow()).workArea, canOccupy) : [];
+      const detailSpots = observed && !videoVisit ? inspectionSpots(observed.points, herBounds(), displayFor(w.rect, displaysNow()).workArea, canOccupy) : [];
       const inspecting = detailSpots.length > 0 && hop <= detailSpots.length;
       const beat = explorationBeat(hop, inspecting, Math.random, !!developerSignal);
       await pause(beat.pauseMs);
@@ -2135,8 +2212,18 @@ async function exploreTick(idleSec: number, developerSignal?: AbortSignal, trial
     if(inspectAfterLanding&&!developerSignal&&s.dialogue.localContext&&s.behavior.idleRemarks&&s.voice.interactionLines){
       // Let the renderer confirm its supported rest pose before a grounded speech checkpoint.
       await pause(450);if(!valid())return;
-      await generatedRemark('inspect','Capri has arrived at the newly chosen window spot. The movement is complete; react to this particular subject from here. For YouTube, prefer creator then title, with visible details only as a fallback.',{target:w.handle});
+      const reading=generatedRemark('inspect','Capri has arrived at the newly chosen window spot. The movement is complete; react to this particular subject from here. For YouTube, prefer creator then title, with visible details only as a fallback.',{target:w.handle}).catch(error=>log.debug('window reading unavailable',{error}));
+      if(!newlyOpened&&!videoVisit)await reading;
       if(!valid())return;
+    }
+    if(newlyOpened||videoVisit){
+      await pause(developerSignal?350:2500+Math.random()*3500);
+      if(!valid())return;
+      const other=windowsForPlacement().filter(other=>other.handle!==w.handle).map(other=>({w:other,p:targetTour(herBounds(),other)})).find(other=>other.p&&safeForTarget(other.p.perch.bounds,other.w.handle));
+      if(other?.p){pendingPerch=other.w;pendingPerchFraction=other.p.perch.fraction;pendingPerchMode=other.p.perch.mode;await teleporter.jumpTo({...other.p.perch.bounds,kind:'perch'},undefined,()=>!valid()||!safeForTarget(other.p!.perch.bounds,other.w.handle));}
+      else await teleporter.go('corner','manual');
+      if(!valid())return;
+      rememberScene('action','Finished a brief edge visit, then moved clear to give the window back.','desktop');
     }
     const restMs = director.complete(outing.key, Date.now()); completed = true;
     nextWindowVisit = Math.max(nextWindowVisit, Date.now() + restMs);
@@ -2173,8 +2260,8 @@ async function taskbarVisit(kind:'clock'|'battery'|'rest',active:bigint|null){
 async function adjustWithinWindow(handle:bigint,reason:string){
   if(localVisitActive||teleporter.active||tourRunning||curiosityActive||ambientBlocked()||company.blocked()||bubble.state.composer)return false;
   const rect=trackedWindowFor(handle);if(!rect)return false;
-  const b=herBounds(),revision=placementRevision,cursor=screen.getCursorScreenPoint();
-  const plan=tourPlan(b,rect,blockersFor(handle),displayFor(rect,displaysNow()).workArea,cursor);
+  const b=herBounds(),revision=placementRevision;
+  const plan=targetTour(b,{handle,rect});
   const dest=plan?.points.find(p=>Math.hypot(p.x-b.x,p.y-b.y)>80);if(!dest)return false;
   const valid=()=>revision===placementRevision&&!!trackedWindowFor(handle)&&!ambientBlocked()&&!company.blocked()&&!bubble.state.composer;
   localVisitActive=true;
@@ -2188,6 +2275,8 @@ async function adjustWithinWindow(handle:bigint,reason:string){
 let previousUserIdle = 0;
 const activities = new ActivityDirector();
 function presenceTick() {
+  company.pruneWindows(new Set(desktopWindows().map(w=>String(w.handle))));
+  stayRestTick();
   sendSurface();
   const mode = settings.get().behavior.mode;
   const companyLabel = [mode === 'normal' ? '' : mode === 'sleep' ? 'Sleeping' : 'Exploring', company.label()].filter(Boolean).join(' · '), companyChanged = bubble.state.company !== companyLabel;
@@ -2244,7 +2333,7 @@ function presenceTick() {
   const movementBlocked=TEST&&!(globalThis as any).__capriAutoVisits||!s.behavior.smallActivities||quiet||ambientBlocked()||company.blocked()||tourRunning||localVisitActive||curiosityActive||returningToCursor||perchMoving||teleporter.active||bubble.state.composer||idleSec>=120||Date.now()-lastInteraction<12000||!behavior.canInitiate()||loungeHeld()&&!lowerAnchor;
   const newTarget=desktopVisits.window(environmentalNow,movementBlocked||!s.behavior.newWindowVisits);
   if(newTarget)void exploreTick(idleSec,undefined,undefined,BigInt(newTarget),true).catch(error=>log.debug('new-window visit unavailable',{error}));
-  else if(desktopVisits.cursor(environmentalNow,movementBlocked||!s.behavior.cursorVisits||behaviorCollecting))void curiosityDetour('',undefined,undefined,true).catch(error=>log.debug('cursor visit unavailable',{error}));
+  else if(desktopVisits.cursor(environmentalNow,movementBlocked||!s.behavior.cursorVisits||behaviorCollecting||pointerProtected()))void curiosityDetour('',undefined,undefined,true).catch(error=>log.debug('cursor visit unavailable',{error}));
   else {
     const local=localDialogueContext(),late=local&&(local.hour>=23||local.hour<5),date=new Date().toLocaleDateString('en-CA');
     const low=local?.battery&&local.battery.percent<=20&&!local.battery.charging;
@@ -2423,7 +2512,7 @@ function summonNearCursor() {
   if (!b || company.blocked() || teleporter.active || !shown(charWin)) return;
   const c = screen.getCursorScreenPoint();
   const far = Math.hypot(c.x - (b.x + b.width / 2), c.y - (b.y + b.height / 2)) > 1100 || screen.getDisplayNearestPoint(c).id !== screen.getDisplayMatching(b).id;
-  if (far) void teleporter.go('near_cursor', 'manual');
+  if (far && !pointerProtected(c)) void teleporter.go('near_cursor', 'manual');
 }
 const shortcutStatus: Record<string, string> = {'Jump to chat':'Ctrl+Space+C'};
 function registerShortcuts() {

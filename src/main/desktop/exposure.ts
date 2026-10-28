@@ -41,7 +41,9 @@ export function lowerWindowRest(pet: Rect, window: Rect, blockers: Rect[], area:
   }
   return null;
 }
-export function tourPlan(pet: Rect, window: Rect, blockers: Rect[], area: Rect, cursor: { x: number; y: number }, random = Math.random) {
+export function tourPlan(pet: Rect, window: Rect, blockers: Rect[], area: Rect, cursor: { x: number; y: number }, random = Math.random, sidesOnly = false) {
+  // Treat the viewing center as occupied, so routing, inspection and landing share one rule.
+  if (sidesOnly) blockers = [...blockers, { x: window.x + window.width * .25, y: window.y + window.height * .12, width: window.width * .50, height: window.height * .78 }];
   const regions = exposedRegions(window, blockers).map(r => intersection(r, area)).filter((r): r is Rect => !!r).sort((a, b) => b.width * b.height - a.width * a.height);
   const points: Rect[] = [];
   for (const r of regions) {
@@ -58,7 +60,7 @@ export function tourPlan(pet: Rect, window: Rect, blockers: Rect[], area: Rect, 
     }
     if (points.length) break; // One convex exposed region keeps the flight between its points clear.
   }
-  const fractions = [.18, .38, .62, .82].sort((a, b) => Math.abs(window.x + b * window.width - cursor.x) - Math.abs(window.x + a * window.width - cursor.x));
+  const fractions = (sidesOnly ? [.08, .92] : [.18, .38, .62, .82]).sort((a, b) => Math.abs(window.x + b * window.width - cursor.x) - Math.abs(window.x + a * window.width - cursor.x));
   for (const fraction of fractions) {
     const perch = windowAttachment(pet, window, SEAT_RATIO, area.y, fraction);
     const seat = { x: perch.bounds.x + pet.width * .4, y: window.y + 2, width: pet.width * .2, height: 6 };

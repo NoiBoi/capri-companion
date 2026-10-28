@@ -50,6 +50,7 @@ export type CharacterCue =
   | { type: 'theatre'; kind: import('./theatrics').SceneKind | null; target?: { x: number; y: number }; stand?: boolean }
   | { type: 'cutin'; kind: 'grin' | 'laugh' | 'look' | 'eyes' | 'many'; preview?: boolean }
   | { type: 'userReturn'; from: 'idle' | 'sleep' }
+  | { type: 'stayRest'; phase: 'sleep' | 'awake' | null }
   | { type: 'perchMotion'; phase: 'dangle' | 'stand' | null }
   | { type: 'devPreview'; preview: import('./developer').DevPreview | null }
   | { type: 'entrance' }

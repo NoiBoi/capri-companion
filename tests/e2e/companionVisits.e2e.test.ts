@@ -15,6 +15,32 @@ async function boot(online=false,nativeFocus=false){
   await new Promise(r=>setTimeout(r,1200));
   return {a:app,char,requests};
 }
+it('honors timed stays, sleeps in place, wakes and delivers exactly one near-end warning',async()=>{
+  const {a,char}=await boot();
+  const reply=await a.evaluate(async()=>{const a=(globalThis as any).__capri;await a.convo.send('stay here for 5 minutes');await a.convo.settle();return a.history.recent(1)[0];});
+  expect(reply.content).toContain('5 minutes');expect(reply.meta.provider).toBe('companion');
+  await a.evaluate(()=>{const a=(globalThis as any).__capri;a.company.apply({kind:'stay',minutes:5},Date.now()-150000);a.presenceTick();});
+  await expect.poll(()=>char.evaluate(()=>(window as any).__capriDebug.behavior.state)).toBe('sleeping');
+  const pos=await a.evaluate(()=>{const a=(globalThis as any).__capri;return a.charWin.getBounds();});
+  await a.evaluate(()=>{const a=(globalThis as any).__capri;a.company.apply({kind:'stay',minutes:5},Date.now()-245000);a.presenceTick();a.presenceTick();});
+  await expect.poll(()=>char.evaluate(()=>(window as any).__capriDebug.behavior.state)).not.toBe('sleeping');
+  const result=await a.evaluate(()=>{const a=(globalThis as any).__capri;return {bounds:a.charWin.getBounds(),lines:a.scenes.recent().filter((s:any)=>s.kind==='said'&&s.text.includes('minute left')),staying:a.company.staying};});
+  expect(result.lines).toHaveLength(1);expect(result.bounds).toEqual(pos);expect(result.staying).toBe(true);
+});
+it('moves to a named window locally and enforces its avoidance until released',async()=>{
+  const {a}=await boot();
+  const result=await a.evaluate(async()=>{const g=globalThis as any,a=g.__capri;await a.convo.send('teleport to the Capri code in Codex window');await a.convo.settle();const arrival=a.history.recent(1)[0];const attached=a.attentionHandle;const avoided=await a.applyCompanyControl({kind:'avoid',target:'this window'});const blocked=await a.applyCompanyControl({kind:'move_window',target:'this window',motion:'teleport'});const denied=a.company.avoiding('17');await a.applyCompanyControl({kind:'allow_window',target:'this window'});return {arrival,attached,avoided,blocked,denied,allowed:!a.company.avoiding('17')};});
+  expect(result.arrival.meta.provider).toBe('companion');expect(result.arrival.content).toContain('mine');expect(result.attached).toBe(17n);
+  expect(result.denied).toBe(true);expect(result.blocked).toContain('keeping clear');expect(result.allowed).toBe(true);
+});
+it('blocks cursor visits over a video and makes video curiosity a brief edge visit with departure',async()=>{
+  const {a}=await boot();
+  const result=await a.evaluate(async()=>{const g=globalThis as any,a=g.__capri,w=g.__capriWindowsOverride[0];g.__capriWindowInfo['17']={title:'A lesson - YouTube',process:'chrome.exe'};g.__capriCuriosityCursor={x:w.rect.x+w.rect.width/2,y:w.rect.y+w.rect.height/2};const before=a.charWin.getBounds();const cursor=await a.curiosityDetour('',undefined,undefined,true);const unchanged=JSON.stringify(before)===JSON.stringify(a.charWin.getBounds());const native=a.charWin.setBounds.bind(a.charWin),positions:any[]=[];a.charWin.setBounds=(r:any,...rest:any[])=>{positions.push({...r});return native(r,...rest);};let done;try{done=await a.exploreTick(0,new AbortController().signal,new a.outings.constructor(()=>0),17n,true);}finally{a.charWin.setBounds=native;}return {before,cursor,unchanged,done,positions,window:w.rect,scenes:a.scenes.recent()};});
+  expect(result.cursor).toBe(false);expect(result.unchanged).toBe(true);expect(result.done,JSON.stringify(result)).toBe(true);expect(result.positions.length).toBeGreaterThan(0);
+  const w=result.window,center={x:w.x+w.width*.25,y:w.y+w.height*.12,width:w.width*.50,height:w.height*.78};
+  for(const p of result.positions){const b={x:p.x+p.width*.02,y:p.y+p.height*.10,width:p.width*.96,height:p.height*.78};expect(b.x<center.x+center.width&&b.x+b.width>center.x&&b.y<center.y+center.height&&b.y+b.height>center.y).toBe(false);}
+  expect(result.scenes.some((s:any)=>s.text.includes('moved clear to give the window back'))).toBe(true);
+});
 it('delivers an instant pat line and then a generated continuation with the lasting guide',async()=>{
   const {a,requests}=await boot(true);
   const first=await a.evaluate(()=>{const a=(globalThis as any).__capri;a.conversationScene.record({id:'u',role:'user',text:'I prefer blue.',at:Date.now()});a.conversationScene.record({id:'a',role:'assistant',text:'I vote for sharper red.',at:Date.now()});const native=Math.random;Math.random=()=>.1;try{a.interaction('pat');return a.scenes.recent().filter((s:any)=>s.kind==='said').map((s:any)=>s.text);}finally{Math.random=native;}});

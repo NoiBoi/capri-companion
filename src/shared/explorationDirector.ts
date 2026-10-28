@@ -65,7 +65,7 @@ export class ExplorationDirector {
     candidates.sort((a, b) => score(b) - score(a));
     const place = candidates[Math.floor(unit(this.random) * Math.min(2, candidates.length))];
     const manners = goal === 'somewhere to settle' ? ['settle', 'lounge'] as const
-      : (place.interest ?? 0) > 0 ? ['inspect', 'settle', 'lounge'] as const : ['peek', 'drift', 'survey', 'settle', 'lounge'] as const;
+      : (place.interest ?? 0) > 0 ? ['inspect', 'settle', 'settle', 'lounge'] as const : ['peek', 'drift', 'survey', 'settle', 'settle', 'settle', 'lounge'] as const;
     const freshManners = manners.filter(m => m !== this.previousManner);
     const choices = freshManners.length ? freshManners : manners;
     const manner = choices[Math.floor(unit(this.random) * choices.length)];

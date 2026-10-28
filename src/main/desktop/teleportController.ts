@@ -11,6 +11,8 @@ export interface TeleportDeps {
   displays(): DisplayLike[];
   cursor(): { x: number; y: number };
   activeWindow(): Rect | null; // DIP rect of the foreground app
+  canOccupy?(r: Rect): boolean;
+  cursorProtected?(): boolean;
   cue(c: CharacterCue): void;
   aiConnected(): boolean;
   /** Reason autonomous behaviour must not run right now, or null. */
@@ -31,6 +33,8 @@ export interface TeleportDeps {
  */
 export class TeleportController {
   private seq = 0;
+  private revision = 0;
+  cancel() { this.revision++; }
   private waiting = new Map<string, () => void>();
   private busy = false;
   private autoTimer: NodeJS.Timeout | null = null;
@@ -64,16 +68,17 @@ export class TeleportController {
   async jumpTo(dest: Destination | (() => Destination), animation?: 'perch_glitch', cancelled?: () => boolean) {
     if (this.busy) return;
     this.busy = true;
+    const revision = this.revision;
     const id = ++this.seq, fx = this.d.settings().teleport.effects;
     try {
       const departure = this.waitAck(id, 'out', fx ? 1500 : 400);
       this.d.cue({ type: 'teleport', phase: 'out', id, effects: fx, animation });
       await departure;
       let target: Destination | undefined;
-      if (!cancelled?.()) {
+      if (revision === this.revision && !cancelled?.()) {
         target = typeof dest === 'function' ? dest() : dest;
-        this.d.move(target, 'teleport');
-        this.d.moved?.(target, 'teleport');
+        if (this.d.canOccupy?.(target) === false) target = undefined;
+        if (target) { this.d.move(target, 'teleport'); this.d.moved?.(target, 'teleport'); }
       }
       const arrival = this.waitAck(id, 'in', fx ? 1800 : 400);
       this.d.cue({ type: 'teleport', phase: 'in', id, effects: fx, animation });
@@ -85,7 +90,8 @@ export class TeleportController {
   async flyTo(dest: Destination, options: { gentle?: boolean; cancelled?: () => boolean; canOccupy?: (r: Rect) => boolean; silent?: boolean; curve?: number; pace?: number } = {}) {
     if (this.busy) return false;
     this.busy = true;
-    try { const complete = await this.glide(dest, options); if (complete) { this.d.moved?.(dest, 'glide'); if (!options.silent) this.d.arrived?.(dest, 'direct'); } return complete; } finally { this.busy = false; }
+    const revision=this.revision;
+    try { const complete = await this.glide(dest, {...options,cancelled:()=>revision!==this.revision||!!options.cancelled?.()}); if (complete) { this.d.moved?.(dest, 'glide'); if (!options.silent) this.d.arrived?.(dest, 'direct'); } return complete; } finally { this.busy = false; }
   }
 
   /** Glide across the desktop (B 4:03 dash): the window slides, hair streams behind her. */
@@ -106,7 +112,7 @@ export class TeleportController {
         const e = u < 0.5 ? 4 * u * u * u : 1 - (-2 * u + 2) ** 3 / 2; // ease in-out
         const bend = Math.sin(Math.PI * e) * (options.curve ?? 0), length = Math.max(1, Math.hypot(dx, dy));
         const step = { ...dest, x: Math.round(cur.x + dx * e - dy / length * bend), y: Math.round(cur.y + dy * e + dx / length * bend) };
-        if (options.canOccupy && !options.canOccupy(step)) { clearInterval(timer); resolve(false); return; }
+        if (this.d.canOccupy?.(step) === false || options.canOccupy && !options.canOccupy(step)) { clearInterval(timer); resolve(false); return; }
         this.d.move(step);
         if (u >= 1) { clearInterval(timer); resolve(true); }
       };
@@ -118,20 +124,25 @@ export class TeleportController {
 
   async go(target: TeleportTarget, reason: 'manual' | 'auto' | 'ai', how: 'teleport' | 'glide' | 'either' = 'teleport'): Promise<{ ok: boolean; detail: string; to?: Rect }> {
     if (this.busy) return { ok: false, detail: 'Already teleporting' };
+    if (target === 'near_cursor' && this.d.cursorProtected?.()) return {ok:false,detail:'Keeping clear of the video or avoided window under the pointer.'};
     const cur = this.d.bounds();
     if (!cur) return { ok: false, detail: 'Character is not on screen' };
     const s = this.d.settings();
-    const dest = chooseDestination(target, {
+    const context = {
       displays: this.d.displays(), current: cur, cursor: this.d.cursor(),
       avoid: target === 'perch' || s.teleport.avoidActiveWindow ? this.d.activeWindow() : null,
-    });
+    };
+    let dest = chooseDestination(target, context);
+    for (let attempt = 0; dest && this.d.canOccupy?.(dest) === false && attempt < 16; attempt++) dest = chooseDestination(target, context);
+    if (dest && this.d.canOccupy?.(dest) === false) dest = null;
     if (!dest) return { ok: false, detail: target === 'perch' ? 'No window to sit on (needs a non-maximised window with room above it)' : 'No free spot to teleport to' };
     this.busy = true;
+    const revision = this.revision;
     // short hops on the same screen are sometimes a glide instead of a teleport
     const near = Math.hypot(dest.x - cur.x, dest.y - cur.y) < 900 && this.d.displays().some((x) => x.workArea.x <= cur.x + cur.width / 2 && cur.x + cur.width / 2 < x.workArea.x + x.workArea.width && x.workArea.x <= dest.x + dest.width / 2 && dest.x + dest.width / 2 < x.workArea.x + x.workArea.width);
     if (how === 'glide' || (how === 'either' && near && Math.random() < 0.4)) {
       try {
-        const completed = await this.glide(dest, { cancelled: () => reason === 'auto' && !!this.automaticBlock() });
+        const completed = await this.glide(dest, { cancelled: () => revision !== this.revision || reason === 'auto' && !!this.automaticBlock() });
         if (!completed) return { ok: false, detail: this.automaticBlock() ?? 'Automatic movement interrupted.' };
         this.count++;
         this.last = `${new Date().toLocaleTimeString()} (${reason}, glide ${target}) → ${dest.x},${dest.y}`;
@@ -147,7 +158,7 @@ export class TeleportController {
       const departure = this.waitAck(id, 'out', fx ? 1500 : 400);
       this.d.cue({ type: 'teleport', phase: 'out', id, effects: fx });
       const outOk = await departure;
-      const blocked = reason === 'auto' ? this.automaticBlock() : null;
+      const blocked = (revision !== this.revision ? 'Movement cancelled by a newer instruction.' : null) ?? (reason === 'auto' ? this.automaticBlock() : null) ?? (this.d.canOccupy?.(dest) === false ? 'That spot is in a protected window area.' : null);
       if (blocked) {
         // Restore her at the departure point when a new request interrupts automatic travel.
         const restored = this.waitAck(id, 'in', fx ? 1800 : 400);

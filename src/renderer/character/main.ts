@@ -54,6 +54,7 @@ let lastPointerAt = 0;
 let cursorLocal: { x: number; y: number } | null = null;
 let hit = false;
 let dragging = false;
+let stayRest: 'sleep' | 'awake' | null = null;
 let forced: Partial<Params> | null = null;
 let surface: Surface = 'taskbar';
 let attachment: 'perch' | 'inverted' | 'moving' | null = null;
@@ -147,8 +148,8 @@ function tick(dt: number) {
   const level = speaker.lips.update(dt);
   const gaze = attention.update(dt, { pointer, engaged: ['listening', 'transcribing', 'thinking', 'speaking'].includes(phase), held: dragging, sleeping: behavior.state === 'sleeping' });
   const target: Params = behavior.update(dt, {
-    forceSleep: devPreview ? devPreview.deepSleep || devPreview.animation === 'sleep' : settings.behavior.mode === 'sleep' || simulatedAbsence === 'sleep',
-    phase: devPreview?.phase ?? phase, speechLevel: level, speaking: speaker.speaking, pointer: gaze, idleSec: devPreview ? 0 : idleSec, quiet, intensity,
+    forceSleep: devPreview ? devPreview.deepSleep || devPreview.animation === 'sleep' : settings.behavior.mode === 'sleep' || stayRest === 'sleep' || simulatedAbsence === 'sleep',
+    phase: devPreview?.phase ?? phase, speechLevel: level, speaking: speaker.speaking, pointer: gaze, idleSec: devPreview || stayRest === 'awake' ? 0 : idleSec, quiet, intensity,
     sleepAfterSec: settings.behavior.sleepAfterMinutes * 60,
     surface, dashing, held: devPreview?.held ?? dragging,
   });
@@ -331,6 +332,7 @@ api.on('cue', (raw) => {
     case 'pause': setPaused(c.paused); if (c.paused) speaker.stopAll(); break;
     case 'interact': canvas.style.filter = c.enabled ? 'drop-shadow(0 0 1.5px #22f27a) drop-shadow(0 0 1px #22f27a)' : ''; break; // click-through lifted for a moment
     case 'presence': simulatedAbsence = c.simulated ?? null; idleSec = c.idleSec; quiet = c.quiet; break;
+    case 'stayRest': if(stayRest === 'sleep' && c.phase !== 'sleep') behavior.wake(); stayRest=c.phase; break;
     case 'remark': break;
     case 'bubble': break; // the attached bubble window owns text layout
     case 'textTalk': textTalkUntil = performance.now() + Math.min(10000, Math.max(1800, c.text.length * 40)); break;

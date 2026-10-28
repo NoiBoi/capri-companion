@@ -15,7 +15,7 @@ export interface ActionContext {
   memory: { add(text: string, source: 'user' | 'model'): MemoryItem; approve(id: string): void };
   now(): number;
   /** Character hooks (validated, renderer never sees model text). */
-  teleport?(where: string): Promise<{ ok: boolean; detail: string }>;
+  teleport?(where: string, window?: string, motion?: 'teleport' | 'glide'): Promise<{ ok: boolean; detail: string }>;
   emote?(name: string): boolean;
   /** Text in the user's active window (on-device OCR), with her scan effect over it. */
   readScreen?(): Promise<{ ok: boolean; text: string; window: string; detail?: string }>;
@@ -199,12 +199,12 @@ export const TOOLS = {
     },
   }),
   teleport: def({
-    description: 'Teleport yourself (Capri) to another spot on the desktop. args: {"where": "auto"|"near_cursor"|"corner"|"left"|"right"|"other_monitor"|"random"|"perch" (sit on top of the user\'s active window)|"peek" (lean in from a screen edge)}. Use when the user asks you to move, come over, sit somewhere or get out of the way.',
-    schema: z.object({ where: z.enum(['auto', 'near_cursor', 'corner', 'left', 'right', 'other_monitor', 'random', 'perch', 'peek']).default('auto') }),
+    description: 'Teleport yourself (Capri) to another spot on the desktop. args: {"where": "auto"|"near_cursor"|"corner"|"left"|"right"|"other_monitor"|"random"|"perch" (sit on top of the user\'s active window)|"peek" (lean in from a screen edge)}. Use when the user asks you to move, come over, sit somewhere or get out of the way. Optional window is an app name or unique window title; optional motion is teleport or glide. This moves Capri directly without computer control.',
+    schema: z.object({ where: z.enum(['auto', 'near_cursor', 'corner', 'left', 'right', 'other_monitor', 'random', 'perch', 'peek']).default('auto'), window: z.string().min(1).max(200).optional(), motion: z.enum(['teleport', 'glide']).optional() }),
     describe: (a) => `Teleport Capri (${a.where.replace('_', ' ')})`,
     async run(a, ctx) {
       if (!ctx.teleport) return { ok: false, summary: 'Teleport unavailable' };
-      const r = await ctx.teleport(a.where);
+      const r = await ctx.teleport(a.where, a.window, a.motion);
       return { ok: r.ok, summary: r.detail, cosmetic: true };
     },
   }),

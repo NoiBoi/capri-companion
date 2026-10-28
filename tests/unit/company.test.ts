@@ -38,6 +38,14 @@ describe('local conversational company controls', () => {
 });
 
 describe('purposeful visit sequences', () => {
+  it('cancels even a manual teleport when a newer stay instruction arrives', async () => {
+    const move=vi.fn();let t:TeleportController;
+    t=new TeleportController({settings:()=>structuredClone(DEFAULT_SETTINGS),bounds:()=>({x:300,y:300,width:180,height:240}),move,
+      displays:()=>[{id:1,bounds:{x:0,y:0,width:1920,height:1080},workArea:{x:0,y:0,width:1920,height:1040},scaleFactor:1}],
+      cursor:()=>({x:0,y:0}),activeWindow:()=>null,aiConnected:()=>true,blocked:()=>null,userIdleSec:()=>0,log:nullLogger,
+      cue:c=>{if(c.type==='teleport'){if(c.phase==='out')t.cancel();queueMicrotask(()=>t.ack(c.id,c.phase));}}});
+    expect((await t.go('left','manual')).ok).toBe(false);expect(move).not.toHaveBeenCalled();expect(t.active).toBe(false);
+  });
   it('restores her departure appearance without moving when stay interrupts a teleport', async () => {
     const move = vi.fn(), moved = vi.fn(), phases: string[] = [];
     let blocked: string | null = null;
