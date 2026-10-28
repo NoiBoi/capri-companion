@@ -1,6 +1,6 @@
 import type { DialogueSurface } from './dialogueContext';
 export type ExplorationGoal = 'music corner' | 'social corner' | 'something unfamiliar' | 'a small circuit' | 'somewhere to settle';
-export interface ExplorationPlace { key: string; surface?: DialogueSurface; favorite?: number; interest?: number }
+export interface ExplorationPlace { key: string; surface?: DialogueSurface; favorite?: number; interest?: number; interestAt?: number }
 export interface ExplorationState {
   version: 1; restUntil: number; completed: number; recentGoals: ExplorationGoal[];
   visits: { key: string; at: number; count: number }[];
@@ -12,6 +12,7 @@ const unit = (r: () => number) => Math.max(0, Math.min(.999999, r()));
 /** A bounded local outing, not an agent task. No screen reading, model work or system actions. */
 export class ExplorationDirector {
   private state: ExplorationState = { version: 1, restUntil: 0, completed: 0, recentGoals: [], visits: [], outing: null };
+  private previousManner = '';
   private failures = new Map<string, number>();
   constructor(private random = Math.random, private save?: (s: ExplorationState) => void) {}
   configure(save: (s: ExplorationState) => void) { this.save = save; }
@@ -29,11 +30,12 @@ export class ExplorationDirector {
         ? { ...outing, visited: outing.visited.filter(keyOK).slice(-3) } : null };
   }
   private persist() { try { this.save?.(this.snapshot()); } catch { /* continuity remains in memory */ } }
-  choose(places: ExplorationPlace[], now: number) {
-    if (now < this.state.restUntil) return null;
+  choose(places: ExplorationPlace[], now: number, options: { newlyOpened?: boolean } = {}) {
+    if (now < this.state.restUntil && !options.newlyOpened) return null;
+    if (options.newlyOpened) this.state.outing = null;
     if (this.state.outing && now - this.state.outing.started >= 2 * 3600000) this.state.outing = null;
     let candidates = places.filter(p => !this.state.outing?.visited.includes(p.key) && now >= (this.failures.get(p.key) ?? 0)
-      && !this.state.visits.some(v => v.key === p.key && now - v.at < 10 * 60000));
+      && !this.state.visits.some(v => v.key === p.key && now - v.at < 10 * 60000 && !((p.interest ?? 0) > 0 && (p.interestAt ?? 0) > v.at)));
     if (!candidates.length) {
       // A circuit ends if its remaining places close or are already covered by its visits.
       if (this.state.outing?.visited.length) { this.state.completed++; this.state.outing = null; }
@@ -62,8 +64,15 @@ export class ExplorationDirector {
     };
     candidates.sort((a, b) => score(b) - score(a));
     const place = candidates[Math.floor(unit(this.random) * Math.min(2, candidates.length))];
+    const manners = goal === 'somewhere to settle' ? ['settle', 'lounge'] as const
+      : (place.interest ?? 0) > 0 ? ['inspect', 'settle', 'lounge'] as const : ['peek', 'drift', 'survey', 'settle', 'lounge'] as const;
+    const freshManners = manners.filter(m => m !== this.previousManner);
+    const choices = freshManners.length ? freshManners : manners;
+    const manner = choices[Math.floor(unit(this.random) * choices.length)];
+    this.previousManner = manner;
     this.persist();
-    return { key: place.key, goal, hops: goal === 'somewhere to settle' ? 1 : 1 + Math.floor(unit(this.random) * 3), pauseMs: 900 + unit(this.random) * 1800 };
+    return { key: place.key, goal, manner, hops: manner === 'settle' || manner === 'lounge' || manner === 'peek' ? 1 : manner === 'survey' ? 3 : 2,
+      pauseMs: 900 + unit(this.random) * 1800 };
   }
   complete(key: string, now: number) {
     const outing = this.state.outing;

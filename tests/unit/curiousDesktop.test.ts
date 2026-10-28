@@ -36,7 +36,7 @@ describe('drop fallback and request priority', () => {
   });
   it('reserves a bounded drop allowance without competing with background work', () => {
     let now = 1000000; const b = new BackgroundBudget(undefined, () => now);
-    for (let i = 0; i < 3; i++) { expect(b.reserve('ambient')).toBe(true); now += 60001; }
+    for (let i = 0; i < 6; i++) { expect(b.reserve('ambient')).toBe(true); now += 30001; }
     for (let i = 0; i < 4; i++) { expect(b.reserve('placement')).toBe(true); now += 15001; }
     expect(b.reserve('placement')).toBe(false); expect(b.reserve('ambient')).toBe(false);
   });

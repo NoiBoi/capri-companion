@@ -92,9 +92,9 @@ describe('bounded behavior experiment', () => {
     s.advance(61000); await core.dispatch({ kind: 'opportunity' });
     s.advance(61000); await core.dispatch({ kind: 'opportunity' });
     s.advance(61000); await core.dispatch({ kind: 'opportunity' });
-    expect(s.calls).toBe(3);
+    expect(s.calls).toBe(2);
     const restarted = s.make(); s.advance(61000); await restarted.dispatch({ kind: 'opportunity' });
-    expect(s.calls).toBe(3);
+    expect(s.calls).toBe(2);
   });
   it('records speech as delivered only when the host accepts it', async () => {
     const s = setup(), core = s.make(); s.setAnswer(ask); s.rejectDelivery();

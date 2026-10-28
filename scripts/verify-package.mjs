@@ -30,7 +30,12 @@ check('third-party licenses shipped', fs.existsSync(path.join(target, 'resources
 check('Chromium/Electron notices shipped', fs.existsSync(path.join(target, 'LICENSES.chromium.html')));
 const uninstaller = fs.readdirSync(target).find((f) => /^Uninstall .*\.exe$/i.test(f));
 check('uninstaller present', !!uninstaller, uninstaller);
-const sizeMB = Number(execSync(`powershell -NoProfile -Command "(Get-ChildItem -Recurse '${target}' | Measure-Object Length -Sum).Sum / 1MB"`, { encoding: 'utf8' }).trim());
+// Avoid locale-dependent decimal formatting and shell-profile output.
+const directoryBytes = (dir) => fs.readdirSync(dir, { withFileTypes: true }).reduce((sum, entry) => {
+  const file = path.join(dir, entry.name);
+  return sum + (entry.isDirectory() ? directoryBytes(file) : fs.statSync(file).size);
+}, 0);
+const sizeMB = directoryBytes(target) / 1048576;
 check('installed size reported', sizeMB > 0, `${sizeMB.toFixed(0)} MB on disk`);
 
 // secrets must never ship: scan every installed file (incl. app.asar) for the dev key and for .env files

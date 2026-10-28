@@ -8,6 +8,29 @@ import { HistoryStore, MemoryStore, NotesStore, ReminderStore } from '../../src/
 import { Logger, redact } from '../../src/main/log';
 import { fakeCipher, tmpDir } from './helpers';
 
+describe('profile read safety', () => {
+  it.each(['settings.json', 'memory.json'])('does not treat an inaccessible %s as a fresh profile', name => {
+    const dir = tmpDir(), file = path.join(dir, name);
+    fs.writeFileSync(file, name === 'settings.json' ? JSON.stringify({voice:{volume:.37}}) : JSON.stringify([{id:'known',text:'The user prefers to be called Noi.',status:'approved'}]));
+    const original = fs.readFileSync.bind(fs), before = original(file, 'utf8');
+    const read = vi.spyOn(fs, 'readFileSync').mockImplementation(((target: any, ...args: any[]) => {
+      if (String(target) === file) throw Object.assign(new Error('File is inaccessible'), {code:'EACCES'});
+      return (original as any)(target, ...args);
+    }) as any);
+    try { expect(() => name === 'settings.json' ? new SettingsStore(dir) : new MemoryStore(dir)).toThrow(/Cannot read saved Capri data/); }
+    finally { read.mockRestore(); }
+    expect(original(file, 'utf8')).toBe(before);
+  });
+  it('loads Windows BOM-prefixed settings and memories without resetting or quarantining them', () => {
+    const dir = tmpDir();
+    fs.writeFileSync(path.join(dir,'settings.json'), '\uFEFF'+JSON.stringify({voice:{volume:.37}}));
+    fs.writeFileSync(path.join(dir,'memory.json'), '\uFEFF'+JSON.stringify([{id:'known',text:'The user prefers to be called Noi.',status:'approved'}]));
+    const s=new SettingsStore(dir);expect(s.get().voice.volume).toBe(.37);expect(s.repairedOnLoad).toEqual([]);
+    expect(new MemoryStore(dir).approved()).toHaveLength(1);
+    expect(fs.readdirSync(dir).some(name=>name.includes('.corrupt-'))).toBe(false);
+  });
+});
+
 describe('history write economy and privacy', () => {
   it('does not rewrite valid unchanged history at launch; still repairs a torn tail', () => {
     const dir = tmpDir(), file = path.join(dir, 'history.jsonl');

@@ -5,6 +5,14 @@ import { WeatherContext } from '../../src/main/dialogueContext';
 
 const random = () => { let s = 48271; return () => ((s = s * 16807 % 2147483647) - 1) / 2147483646; };
 describe('procedural character dialogue', () => {
+  it('paces delivered spontaneous speech independently of observations and keeps near-duplicate lines out', () => {
+    let now=1000000; const d=new DialogueDirector(()=>.5,()=>now);
+    expect(d.proactiveWaitSeconds()).toBe(0);
+    for(let i=0;i<4;i++) { d.remember('Distinct spoken aside '+i,{event:'notice'}); expect(d.proactiveWaitSeconds()).toBeGreaterThan(0); now+=35000; }
+    expect(d.proactiveWaitSeconds()).toBe(160);
+    expect(d.acceptGenerated('Distinct spoken aside 3',{event:'notice'},'plain')).toBe('');
+    now=1300000; expect(d.proactiveWaitSeconds()).toBe(0);
+  });
   it('has long mixed-event variety without repeated setups or title receipts', () => {
     let now = 1000000;
     const d = new DialogueDirector(random(), () => now), lines: string[] = [];

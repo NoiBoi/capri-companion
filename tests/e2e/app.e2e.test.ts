@@ -28,9 +28,9 @@ const dirs: string[] = [];
 function profile(settings: Record<string, unknown> = {}) {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'capri-e2e-'));
   dirs.push(d);
-  const { ai, character, ...rest } = settings as { ai?: Record<string, unknown>; character?: Record<string, unknown> };
+  const { ai, character, behavior, ...rest } = settings as { ai?: Record<string, unknown>; character?: Record<string, unknown>; behavior?: Record<string, unknown> };
   // Host fullscreen activity must not silently hide an isolated offscreen fixture.
-  fs.writeFileSync(path.join(d, 'settings.json'), JSON.stringify({ firstRunComplete: true, character: { hideOnFullscreen: false, ...(character ?? {}) }, voice: { ttsEnabled: false }, teleport: { auto: false }, ai: { provider: 'offline', ...(ai ?? {}) }, ...rest }));
+  fs.writeFileSync(path.join(d, 'settings.json'), JSON.stringify({ firstRunComplete: true, behavior: { quietHours: { enabled: false }, ...(behavior ?? {}) }, character: { hideOnFullscreen: false, ...(character ?? {}) }, voice: { ttsEnabled: false }, teleport: { auto: false }, ai: { provider: 'offline', ...(ai ?? {}) }, ...rest }));
   return d;
 }
 async function launch(userData: string, opts: { liveKey?: boolean; env?: Record<string, string> } = {}) {
@@ -100,7 +100,7 @@ async function mockModel(reply: (body: { messages: { role: string; content: stri
 }
 const openaiProfile = (url: string, extra: Record<string, unknown> = {}) => {
   const { ai, ...rest } = extra as { ai?: Record<string, unknown> };
-  return profile({ ai: { provider: 'openai', openai: { baseUrl: url, model: 'mock-model' }, ...ai }, ...rest });
+  return profile({ actions: { policies: { read_screen: 'allow' } }, ai: { provider: 'openai', openai: { baseUrl: url, model: 'mock-model' }, ...ai }, ...rest });
 };
 
 describe('opening and taskbar controls', () => {
@@ -252,7 +252,7 @@ describe('opening and taskbar controls', () => {
       const { app } = await launch(openaiProfile(mock.url, { memory: { autoLearn: false }, dialogue: { localContext: true, contextPings: false }, behavior: { explore: false, smallActivities: false, idleRemarks: true, quietHours: { enabled: false } } }));
       await app.evaluate(async () => {
         const g = globalThis as any, a = g.__capri, rect = { x: 100, y: 200, width: 800, height: 500 }, nativeNow = Date.now;
-        g.__auditNativeNow = nativeNow; g.__auditClock = nativeNow() + 11 * 60000; Date.now = () => g.__auditClock; a.behavior.now = () => g.__auditClock;
+        g.__auditNativeNow = nativeNow; g.__auditClock = nativeNow() + 11 * 60000; Date.now = () => g.__auditClock;
         g.__capriWindowsOverride = [{ handle: -97n, rect }]; g.__capriWindowInfo = { '-97': { title: 'Route', process: 'fixture.exe' } };
         g.__capriForegroundHandle = -97n; g.__capriDesktopOverride = { title: 'Route', process: 'fixture.exe' };
         g.__capriObservationOverride = { jpegBase64: 'test-image', region: rect, window: rect };
@@ -549,7 +549,7 @@ describe('opening and taskbar controls', () => {
     await expect.poll(() => ray.isClosed(), { timeout: 3000 }).toBe(true);
     await app.evaluate(async () => { await (globalThis as any).__rayJump; });
   });
-  it('returns near the cursor after inactivity without compulsory speech or a model request', async () => {
+  it('returns near the cursor after inactivity with a text greeting and no model request', async () => {
     const mock = await mockModel(() => 'No model call needed.');
     const { app } = await launch(openaiProfile(mock.url, { behavior: { quietHours: { enabled: false } }, teleport: { auto: false, effects: false } }));
     try {
@@ -563,7 +563,7 @@ describe('opening and taskbar controls', () => {
         return { triggered, target: a.teleporter.last, line: a.bubble.state.text, twice: a.cursorReturn.move(Date.now(), false) };
       });
       expect(result.triggered).toBe(true); expect(result.target).toContain('near_cursor'); expect(result.twice).toBe(false);
-      expect(result.line).toBe(''); expect(mock.calls).toBe(0);
+      expect(result.line.length).toBeGreaterThan(0); expect(mock.calls).toBe(0);
     } finally { await mock.close(); }
   });
   it('waits for stable cursor direction and preserves idle phase across a blink', async () => {
@@ -600,7 +600,7 @@ describe('opening and taskbar controls', () => {
         finally { Date.now = original; }
         return { idle: a.systemIdleSec(), phase: a.activities.phase, subject: a.activities.subject, line: a.bubble.state.text };
       });
-      expect(state).toMatchObject({ idle: 0, phase: 'settle', subject: 'Engineering notes' });
+      expect(state).toMatchObject({ idle: 0, phase: 'rest', subject: 'Engineering notes' });
       expect(state.line).not.toContain('Engineering notes'); expect(mock.calls).toBe(0);
       await expect.poll(() => char.evaluate(() => (window.__capriDebug as any).idleSec)).toBe(0);
       expect(await char.evaluate(() => (window.__capriDebug as any).behavior.state)).not.toBe('sleeping');
@@ -1065,10 +1065,14 @@ describe('conversation', () => {
 describe('voice', () => {
   it('speaks replies with a Windows voice: phase goes speaking → idle, mouth moves', async () => {
     const { app, char } = await launch(profile({ voice: { ttsEnabled: true, volume: 0 } }));
+    if (process.env.CAPRI_VOICE_TRACE) console.log('voice: launched');
     const voices = await char.evaluate(() => new Promise<number>((r) => { const v = speechSynthesis.getVoices(); if (v.length) r(v.length); else speechSynthesis.onvoiceschanged = () => r(speechSynthesis.getVoices().length); setTimeout(() => r(speechSynthesis.getVoices().length), 3000); }));
     expect(voices).toBeGreaterThan(0);
+    if (process.env.CAPRI_VOICE_TRACE) console.log('voice: voices ready');
     const panel = await openPanel(app, char);
+    if (process.env.CAPRI_VOICE_TRACE) console.log('voice: panel ready');
     await panel.fill('textarea', 'who are you'); await panel.press('textarea', 'Enter');
+    if (process.env.CAPRI_VOICE_TRACE) console.log('voice: submitted');
     await panel.waitForSelector('#phaseText >> text=speaking', { timeout: 15_000 });
     let maxMouth = 0;
     for (let i = 0; i < 20; i++) {
@@ -1081,7 +1085,9 @@ describe('voice', () => {
 
   it('interrupting speech stops it immediately', async () => {
     const { app, char } = await launch(profile({ voice: { ttsEnabled: true, volume: 0 } }));
+    if (process.env.CAPRI_VOICE_TRACE) console.log('interrupt: launched');
     const panel = await openPanel(app, char);
+    if (process.env.CAPRI_VOICE_TRACE) console.log('interrupt: panel ready');
     await panel.fill('textarea', 'help'); await panel.press('textarea', 'Enter');
     await panel.waitForSelector('#phaseText >> text=speaking', { timeout: 15_000 });
     await panel.keyboard.press('Escape');
@@ -1938,6 +1944,7 @@ describe('purposeful company', () => {
       const early = await app.evaluate(async () => {
         const g = globalThis as any, a = g.__capri;
         g.__capriWindowsOverride = [{ handle: -93n, rect: { x: 350, y: 400, width: 700, height: 500 } }];
+        g.__capriObservationOverride = { jpegBase64: 'fixture-image', region: { x: 350, y: 400, width: 700, height: 500 }, window: { x: 350, y: 400, width: 700, height: 500 } };
         g.__capriWindowInfo = { '-93': { title: 'Drawing notes', process: 'notepad.exe' } };
         const random = Math.random; Math.random = () => 0;
         a.setNextVisit(); g.__outing = a.exploreTick(0).finally(() => { Math.random = random; });
@@ -1955,17 +1962,18 @@ describe('purposeful company', () => {
     } finally { await model.close(); }
   });
 
-  it('does not start a second outing while a cancelled inspection is still unwinding', async () => {
+  it('does not start a second outing while cancelled movement is still unwinding', async () => {
     const model = await mockModel(() => ({ delayMs: 100, text: JSON.stringify(visualDecision({ line: '<quiet/>', facts: ['A green branch.'], curiosity: 'Where does it go?', points: [] })) }));
     try {
       const { app } = await launch(openaiProfile(model.url, { memory: { autoLearn: false }, behavior: { explore: true, idleRemarks: true, quietHours: { enabled: false } }, teleport: { effects: false } }));
       await app.evaluate(() => {
         const g = globalThis as any, a = g.__capri;
         g.__capriWindowsOverride = [{ handle: -93n, rect: { x: 350, y: 400, width: 700, height: 500 } }];
+        g.__capriObservationOverride = { jpegBase64: 'fixture-image', region: { x: 350, y: 400, width: 700, height: 500 }, window: { x: 350, y: 400, width: 700, height: 500 } };
         g.__capriWindowInfo = { '-93': { title: 'Route experiment', process: 'fixture.exe' } };
         a.setNextVisit(); g.__firstOuting = a.exploreTick(0);
       });
-      await expect.poll(() => app.evaluate(() => { const a = (globalThis as any).__capri; return a.tourStage === 'roaming' && !a.teleporter.active; })).toBe(true);
+      await expect.poll(() => app.evaluate(() => { const a = (globalThis as any).__capri; return a.visit.phase === 'approach' && a.teleporter.active; })).toBe(true);
       const target = await app.evaluate(() => {
         const g = globalThis as any, a = g.__capri; a.visit.cancel(); a.setNextVisit(); g.__secondOuting = a.exploreTick(0); return a.visit.target;
       });
@@ -2494,9 +2502,9 @@ describe('contextual companion interactions', () => {
     const ud = profile(); let { app } = await launch(ud);
     await app.evaluate(() => {
       const a = (globalThis as any).__capri;
-      a.presentRemark('Saved until disabled.', false, false);
+      a.presentRemark('Saved until disabled.', true, false);
       a.settings.update({ privacy: { saveHistory: false } });
-      a.presentRemark('Only this session remembers me.', false, false);
+      a.presentRemark('Only this session remembers me.', true, false);
       a.settings.update({ voice: { volume: .5 } });
     });
     expect(fs.existsSync(path.join(ud, 'companion-scenes.json'))).toBe(false);
@@ -2766,9 +2774,10 @@ describe('contextual companion interactions', () => {
   });
   it('keeps the completed outing perch when its exposed window gains focus', async () => {
     const { app } = await launch(profile({ behavior: { explore: true, quietHours: { enabled: false } }, teleport: { effects: false, auto: false } }));
-    await app.evaluate(async () => {
+    await app.evaluate(async ({ screen }) => {
       const g = globalThis as any, a = g.__capri;
       g.__capriWindowsOverride = [{ handle: -22n, rect: { x: 120, y: 350, width: 700, height: 400 } }];
+      const area=screen.getPrimaryDisplay().workArea; screen.getCursorScreenPoint=()=>({x:area.x,y:area.y});
       a.setNextVisit(); await a.exploreTick(0);
     });
     expect(await app.evaluate(() => String((globalThis as any).__capri.attentionHandle))).toBe('-22');

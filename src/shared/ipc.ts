@@ -42,7 +42,7 @@ export interface ActionResult { id: string; ok: boolean; summary: string; data?:
 
 /** Coarse status shown on the character + panel */
 export type AssistantPhase = 'idle' | 'listening' | 'transcribing' | 'thinking' | 'speaking' | 'error' | 'offline';
-export interface BubbleState { text: string; phase: AssistantPhase; composer: boolean; side: 'left' | 'right'; tail?: { x: number; y: number }; startedAt?: number; delivery?: 'aside' | 'reply'; company?: string }
+export interface BubbleState { text: string; phase: AssistantPhase; composer: boolean; side: 'left' | 'right'; tail?: { x: number; y: number }; startedAt?: number; delivery?: 'aside' | 'reply'; company?: string; previous?: {id:string;text:string;fading?:boolean}[]; maxHeight?:number; fading?:boolean }
 
 /** Cues the main process sends to the character renderer */
 export type CharacterCue =
@@ -196,6 +196,7 @@ export interface InvokeMap {
   'panel:open': [string | void, void];
   'panel:close': [void, void];
   'panel:ready': [void, void];
+  'panel:viewed': [string, void];
   'voice:ptt': ['start' | 'stop' | 'cancel', void];
   // character renderer → main
   'char:hit': [boolean, void];
@@ -214,6 +215,9 @@ export interface InvokeMap {
   'bubble:open': [void, void];
   'bubble:close': [void, void];
   'bubble:get': [void, BubbleState];
+  'bubble:escape': [void,void];
+  'bubble:hover': [boolean,void];
+  'bubble:draft': [boolean,void];
   'bubble:resize': [number, void];
   'tts:fetch': [string | { text: string; mood: Mood }, Uint8Array];
   'connection:get': [void, ConnectionStatus];
@@ -234,10 +238,10 @@ export const INVOKE_CHANNELS: InvokeChannel[] = [
   'dialogue:scene', 'dialogue:clearScene',
   'continuity:get', 'continuity:manage', 'continuity:clear',
   'action:respond', 'provider:test', 'provider:models', 'claude:status', 'claude:signin', 'claude:code', 'claude:signout', 'diagnostics:get', 'logs:tail', 'app:openDataFolder',
-  'app:resetAll', 'app:quit', 'app:restart', 'apps:pick', 'folders:pick', 'panel:open', 'panel:close', 'panel:ready',
+  'app:resetAll', 'app:quit', 'app:restart', 'apps:pick', 'folders:pick', 'panel:open', 'panel:close', 'panel:ready', 'panel:viewed',
   'voice:ptt', 'char:hit', 'char:anchor', 'char:drag', 'char:click', 'char:menu', 'char:speechState', 'char:audio',
   'char:micError', 'char:poseRenderer', 'char:fps', 'char:ready', 'tts:fetch', 'connection:get', 'connection:check', 'teleport:now', 'char:teleport',
-  'char:personality', 'char:interaction', 'bubble:open', 'bubble:close', 'bubble:get', 'bubble:resize',
+  'char:personality', 'char:interaction', 'bubble:open', 'bubble:close', 'bubble:get', 'bubble:resize', 'bubble:escape', 'bubble:hover', 'bubble:draft',
 ];
 export const EVENT_CHANNELS = [
   'theatre:play', 'theatre:update',

@@ -1,9 +1,11 @@
-export interface RelationshipSource { messageId: string; evidence: string; role: 'user' | 'assistant'; at: number }
+export interface RelationshipSource { messageId: string; evidence: string; role: 'user' | 'assistant'; at: number; preferenceQuestion?: string }
 export interface CapriTaste { id: string; topic: string; text: string; updatedAt: number; source: RelationshipSource; support?: RelationshipSource[] }
 export type ThreadStatus = 'active' | 'paused' | 'done' | 'dismissed';
 export interface ProjectThread {
   id: string; title: string; summary: string; status: ThreadStatus; updatedAt: number;
   nextAskAt: number; lastAskedAt?: number; asksSinceUpdate: number; source: RelationshipSource;
+  aliases?: string[];
+  developments?: { summary: string; status: ThreadStatus; source: RelationshipSource }[];
 }
 export interface RelationshipState { version: 1; tastes: CapriTaste[]; threads: ProjectThread[]; lastFollowUpAt?: number }
 export interface RetiredLine { id: string; text: string; at: number }

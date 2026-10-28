@@ -101,6 +101,7 @@ describe("construct life and desktop spectacles", () => {
         behavior: { mode: "sleep" },
       });
     });
+    await expect.poll(()=>char.evaluate(()=>(window as any).__capriDebug.behavior.state)).toBe('sleeping');
     const sleeping = await char.evaluate(() => {
       const d = (window as any).__capriDebug;
       d.manual(true);

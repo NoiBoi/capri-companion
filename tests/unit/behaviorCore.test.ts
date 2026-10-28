@@ -25,6 +25,15 @@ function setup() {
     noPersistence() { persistent = false; }, fail() { fail = true; } };
 }
 describe('integrated behavioral decision lifecycle', () => {
+  it('retains visual understanding while converting crowded speech into a real nonverbal decision', async () => {
+    const s=setup(); s.answer({ ...hold, action:'speak', line:'The violet swatch is the sharper choice.', gesture:'none' });
+    const expressions: Expression[]=[];
+    const core=new BehaviorCore({directory:s.dir,scene:s.scene,provider:s.provider,memories:()=>[],now:()=>START,maySpeak:()=>false,express:e=>{expressions.push(e);return true;}});
+    const result=await core.dispatch(s.trigger());
+    expect(result).toMatchObject({action:'gesture',line:'',delivered:true});
+    expect(expressions[0]).toMatchObject({action:'gesture',gesture:'curious',line:''}); expect(core.pending()).toBe(true);
+    expect(s.scene.snapshot().entries).toEqual([]);
+  });
   it('accepts strict-schema null omissions and exposes a rejected decision without calling it quiet', async () => {
     const s = setup(), core = s.make();
     s.answer({ ...hold, interest: null, experience: null, taste: null, points: null, curiosity: null, facts: null, resolveExperience: null, interestDisposition: null });
@@ -67,11 +76,11 @@ describe('integrated behavioral decision lifecycle', () => {
     core.notice({ ...fact('new-document'), title: 'A different document' });
     expect(core.pending()).toBe(false); expect(core.snapshot().facts.some(f => f.id === 'color')).toBe(false);
   });
-  it('chat receives pending context and takes ownership after its delivered answer', async () => {
+  it('chat retains an unfinished interest through an unrelated delivered answer', async () => {
     const s = setup(), core = s.make(); await core.dispatch(s.trigger());
     core.userInput('What caught your eye?'); expect(core.context()).toContain('violet');
     expect(core.canInitiate()).toBe(false);
-    core.conversationDelivered(); expect(core.pending()).toBe(false);
+    core.conversationDelivered(); expect(core.pending()).toBe(true);
     expect(core.snapshot().facts).toHaveLength(1);
   });
   it('explicit topic corrections invalidate old interpretations before generating a reply', async () => {

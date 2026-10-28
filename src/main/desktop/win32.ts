@@ -5,6 +5,7 @@ import { helperWindow } from './exposure';
 
 type Fn = (...a: unknown[]) => unknown;
 interface Api {
+  SwitchToThisWindow:Fn; GetCurrentThreadId:Fn; AttachThreadInput:Fn; SetForegroundWindow:Fn; SetFocus:Fn;
   GetForegroundWindow: Fn; GetWindowRect: Fn; MonitorFromWindow: Fn; GetMonitorInfoW: Fn;
   GetClassNameW: Fn; SHQueryUserNotificationState: Fn; GetAsyncKeyState: Fn; address: (p: unknown) => bigint;
   GetWindowLongPtrW: Fn; GetLayeredWindowAttributes: Fn;
@@ -29,6 +30,11 @@ export function loadWin32(log?: Logger): boolean {
     const RECT = koffi.struct('CAPRI_RECT', { left: 'long', top: 'long', right: 'long', bottom: 'long' });
     koffi.struct('CAPRI_MONITORINFO', { cbSize: 'uint32', rcMonitor: RECT, rcWork: RECT, dwFlags: 'uint32' });
     api = {
+      SwitchToThisWindow:user32.func('void __stdcall SwitchToThisWindow(void* hwnd, bool altTab)'),
+      GetCurrentThreadId:kernel.func('uint32 __stdcall GetCurrentThreadId()'),
+      AttachThreadInput:user32.func('bool __stdcall AttachThreadInput(uint32 from, uint32 to, bool attach)'),
+      SetForegroundWindow:user32.func('bool __stdcall SetForegroundWindow(void* hwnd)'),
+      SetFocus:user32.func('void* __stdcall SetFocus(void* hwnd)'),
       GetWindowTextW: user32.func('int __stdcall GetWindowTextW(void* hwnd, _Out_ uint16_t* text, int size)'),
       GetWindowThreadProcessId: user32.func('uint32 __stdcall GetWindowThreadProcessId(void* hwnd, _Out_ uint32* pid)'),
       OpenProcess: kernel.func('void* __stdcall OpenProcess(uint32 access, bool inherit, uint32 pid)'),
@@ -162,6 +168,28 @@ export function foregroundHandle(): bigint {
 export function leftButtonDown(): boolean | null {
   if (!api) return null;
   try { return ((api.GetAsyncKeyState(0x01) as number) & 0x8000) !== 0; } catch { return null; }
+}
+/** Only sample the requested chord. No key history or typed text is collected. */
+export function chatChordDown():boolean{
+  if(!api)return false;
+  try{return [0x11,0x20,0x43].every(key=>((api!.GetAsyncKeyState(key) as number)&0x8000)!==0);}catch{return false;}
+}
+/** Explicit user activation only. Release the temporary input-queue link immediately. */
+export function activateChatWindow(handle:Buffer):boolean{
+  if(!api)return false;
+  const native=handleToBigint(handle);let linked=false,targetLinked=false,from=0,to=0,target=0;
+  try{
+    from=Number(api.GetCurrentThreadId());const foreground=api.GetForegroundWindow();
+    target=Number(api.GetWindowThreadProcessId(native,new Uint32Array(1)));
+    to=foreground?Number(api.GetWindowThreadProcessId(foreground,new Uint32Array(1))):0;
+    if(to&&from!==to)linked=!!api.AttachThreadInput(from,to,true);
+    if(target&&target!==from&&target!==to)targetLinked=!!api.AttachThreadInput(from,target,true);
+    api.SwitchToThisWindow(native,true);return !!api.SetForegroundWindow(native);
+  }catch{return false;}finally{if(targetLinked)try{api.AttachThreadInput(from,target,false);}catch{}if(linked)try{api.AttachThreadInput(from,to,false);}catch{}}
+}
+export function restoreChatFocus(handle:bigint):boolean{
+  if(!api||!handle)return false;
+  try{if(!api.IsWindow(handle))return false;const bytes=Buffer.alloc(8);bytes.writeBigUInt64LE(handle);return activateChatWindow(bytes);}catch{return false;}
 }
 
 /** Read a BrowserWindow native handle Buffer as a bigint. */

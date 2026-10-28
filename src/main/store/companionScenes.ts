@@ -31,7 +31,7 @@ export class CompanionScenes {
   private suppressed: string[] = [];
   private revision = 0;
   private wasRemembering: boolean;
-  constructor(dir: string, private enabled: () => boolean, private retentionDays: () => number, private now = Date.now, private rememberEnabled: () => boolean = enabled) {
+  constructor(dir: string, private enabled: () => boolean, private retentionDays: () => number, private now = () => Date.now(), private rememberEnabled: () => boolean = enabled) {
     this.file = path.join(dir, 'companion-scenes.json');
     this.wasEnabled = enabled();
     this.wasRemembering = rememberEnabled();
@@ -119,10 +119,10 @@ export class CompanionScenes {
     if (!this.rememberEnabled()) return [];
     this.prune(); const key = applicationKey(process);
     if (!query.trim() && !key && !proactive) return structuredClone(this.episodes.filter(e => this.now() - e.updatedAt < 48 * 3600000).sort((a,b) => b.updatedAt - a.updatedAt).slice(0,1));
-    return this.episodes.map(e => ({ e, rank: localRelevance(query, e.topic + ' ' + e.sources.map(s => s.text).join(' ') + ' ' + e.readings.map(r => r.text).join(' '), e.tags).score
-      + (key && e.sources.some(s => applicationKey(s.process ?? '') === key) ? 8 : 0) }))
+    // Application identity breaks ties only after subject evidence qualifies the episode.
+    return this.episodes.map(e => ({ e, rank: localRelevance(query, e.topic + ' ' + e.sources.map(s => s.text).join(' ') + ' ' + e.readings.map(r => r.text).join(' '), e.tags).score }))
       .filter(x => x.rank > 0 && (!proactive || x.e.status !== 'superseded'))
-      .sort((a,b) => b.rank - a.rank || b.e.updatedAt - a.e.updatedAt).slice(0,3).map(x => structuredClone(x.e));
+      .sort((a,b) => b.rank - a.rank || Number(!!key && b.e.sources.some(s => applicationKey(s.process ?? '') === key)) - Number(!!key && a.e.sources.some(s => applicationKey(s.process ?? '') === key)) || b.e.updatedAt - a.e.updatedAt).slice(0,3).map(x => structuredClone(x.e));
   }
   experienceContext(query: string, process = '', proactive = false) {
     const selected = this.recall(query, process, proactive); if (!selected.length) return '';

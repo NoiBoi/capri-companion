@@ -1,7 +1,32 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Speaker } from '../../src/renderer/character/speaker';
 import { DEFAULT_SETTINGS } from '../../src/shared/settings';
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+it('waits for the selected Windows voice without dropping the first sentence', async () => {
+  vi.useFakeTimers(); let voices: any[]=[];
+  const speak=vi.fn((u:any)=>u.onstart()), report=vi.fn(), settings=structuredClone(DEFAULT_SETTINGS);
+  vi.stubGlobal('SpeechSynthesisUtterance',class { constructor(public text:string){} });
+  vi.stubGlobal('speechSynthesis',{getVoices:()=>voices,speak,cancel:vi.fn()});
+  const speaker=new Speaker(()=>settings,report,vi.fn());speaker.enqueue('first','First sentence.');
+  await vi.advanceTimersByTimeAsync(100);expect(speak).not.toHaveBeenCalled();
+  voices=[{name:'Microsoft Zira',lang:'en-US'}];await vi.advanceTimersByTimeAsync(50);
+  expect(speak).toHaveBeenCalledTimes(1);expect(report).toHaveBeenCalledWith('first','start');
+  speak.mock.calls[0][0].onend();await Promise.resolve();expect(report).toHaveBeenCalledWith('first','end');
+});
+it('cancels voice readiness and never plays a late available voice', async () => {
+  vi.useFakeTimers();let voices:any[]=[];const speak=vi.fn(),report=vi.fn();
+  vi.stubGlobal('SpeechSynthesisUtterance',class {});
+  vi.stubGlobal('speechSynthesis',{getVoices:()=>voices,speak,cancel:vi.fn()});
+  const settings=structuredClone(DEFAULT_SETTINGS),speaker=new Speaker(()=>settings,report,vi.fn());
+  speaker.enqueue('cancelled','Do not play.');speaker.stopAll();voices=[{name:'Microsoft Zira',lang:'en-US'}];
+  await vi.advanceTimersByTimeAsync(2500);expect(speak).not.toHaveBeenCalled();expect(report.mock.calls).toEqual([['cancelled','cancel']]);
+});
+it('reports an unavailable configured Windows voice once after a bounded wait', async()=>{
+  vi.useFakeTimers();const report=vi.fn();vi.stubGlobal('SpeechSynthesisUtterance',class {});
+  vi.stubGlobal('speechSynthesis',{getVoices:()=>[],speak:vi.fn(),cancel:vi.fn()});
+  const settings=structuredClone(DEFAULT_SETTINGS),speaker=new Speaker(()=>settings,report,vi.fn());speaker.enqueue('missing','No substitute.');
+  await vi.advanceTimersByTimeAsync(2100);expect(report.mock.calls).toEqual([['missing','error']]);expect(speaker.speaking).toBe(false);
+});
 function setup() {
   const sources: any[] = [];
   class Context {

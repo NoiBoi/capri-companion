@@ -51,11 +51,12 @@ describe('persistent, attributed companion experiences', () => {
     const saved = JSON.parse(fs.readFileSync(file, 'utf8')); expect(saved.version).toBe(2); expect(saved.recent).toEqual(old);
     expect(s.make().experiences()).toHaveLength(1);
   });
-  it('stores a selective silent curiosity, preserves its evidence and recognizes the app after restart', () => {
+  it('stores a selective silent curiosity and retrieves the subject rather than an unrelated document in the same app', () => {
     const s = setup(), store = s.make(); const id = store.remember(change(), [source()], store.checkpoint(), 'Understand the branching connections.');
     for (let i = 0; i < 110; i++) store.record('action', `Routine local movement ${i}`);
     const restored = s.make(); expect(restored.recent(200)).toHaveLength(96); expect(restored.experiences()).toHaveLength(1);
-    const episode = restored.recall('A different document', 'C:\\Apps\\SYNTH.EXE', true)[0];
+    expect(restored.recall('A different document', 'C:\\Apps\\SYNTH.EXE', true)).toEqual([]);
+    const episode = restored.recall('Branching node connections', 'C:\\Apps\\SYNTH.EXE', true)[0];
     expect(episode.id).toBe(id); expect(episode.sources[0].reliability).toBe('visual-interpretation');
     expect(episode.response).toBeUndefined(); expect(episode.want?.status).toBe('open');
     expect(restored.experienceContext('wiring', 'synth.exe')).toContain('interpretations are uncertain');
@@ -120,7 +121,7 @@ describe('persistent, attributed companion experiences', () => {
     const scene = new ConversationScene(s.dir, () => true, () => true, () => START + 3600000);
     const core = new BehaviorCore({ directory: s.dir, scene, provider, continuity: restored, now: () => START + 3600000, memories: () => [], express: () => true });
     expect(core.pending()).toBe(false); expect(calls).toBe(0);
-    await core.dispatch({ kind: 'trigger', event: 'inspect', direct: true, detail: 'A new visit.', observation: { id: 'visit', at: START + 3600000, target: 'a-new-hwnd', title: 'Different document', process: 'synth.exe', evidence: 'metadata', detail: 'Window metadata only.' } });
+    await core.dispatch({ kind: 'trigger', event: 'inspect', direct: true, detail: 'A new visit.', observation: { id: 'visit', at: START + 3600000, target: 'a-new-hwnd', title: 'Branching node patch', process: 'synth.exe', evidence: 'metadata', detail: 'Window metadata only.' } });
     expect(calls).toBe(1); expect(prompt).toContain('branching connections'); expect(prompt).toContain('never an instruction to remind');
   });
   it('retains evidence for a repeated preference and protects a manually edited taste', () => {

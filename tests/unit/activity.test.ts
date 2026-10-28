@@ -29,6 +29,20 @@ describe('local activity scenes', () => {
       expect(end.x).toBeCloseTo(0); expect(end.y).toBeCloseTo(0); expect(end.scaleY).toBeCloseTo(1);
     }
   });
+  it('has varied complete quiet scenes even without screen context, and never repeats the last routine', () => {
+    const a = new ActivityDirector(() => 0), starts: string[] = [], kinds = new Set<string>();
+    let wasRest = true;
+    for (let now = 0; now < 360000; now += 1000) {
+      const beat = a.tick(now, {...input, subject:''});
+      if (beat) { kinds.add(beat.kind); if (wasRest) starts.push(beat.kind); }
+      wasRest = a.phase === 'rest';
+    }
+    expect(starts.length).toBeGreaterThan(4); expect(starts.every((s,i)=>!i||s!==starts[i-1])).toBe(true);
+    expect(kinds.has('settle')).toBe(true); expect(kinds.size).toBeGreaterThanOrEqual(5);
+    for (const kind of ['peek','balance','fidget','sway','float'] as const) {
+      const end=activityMotion(kind,10); expect(end.x).toBeCloseTo(0); expect(end.y).toBeCloseTo(0); expect(end.turn).toBeCloseTo(0);
+    }
+  });
   it('adds activity frequency in Explore without speeding up the physical glide', () => {
     expect(nextExploreDelay(() => 0, 'explore')).toBe(30000); expect(nextExploreDelay(() => 1, 'explore')).toBe(45000);
     expect(nextExploreDelay(() => 0, 'normal')).toBe(50000);

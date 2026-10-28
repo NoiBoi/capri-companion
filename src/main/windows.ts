@@ -117,7 +117,7 @@ export function createPanelWindow(near: Rectangle, preload: string, log: Logger,
 export function createBubbleWindow(preload: string, log: Logger): BrowserWindow {
   const win = new BrowserWindow({ width: 340, height: 170, frame: false, transparent: true, backgroundColor: '#00000000',
     resizable: false, minimizable: false, maximizable: false, fullscreenable: false, hasShadow: false,
-    skipTaskbar: true, focusable: false, show: false, alwaysOnTop: true, title: 'Capri bubble',
+    skipTaskbar: true, focusable: true, show: false, alwaysOnTop: true, title: 'Capri bubble',
     webPreferences: { offscreen: OFFSCREEN, preload, contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: true, backgroundThrottling: false } });
   win.setAlwaysOnTop(true, 'floating');
   harden(win, log);

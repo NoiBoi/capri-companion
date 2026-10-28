@@ -1,6 +1,7 @@
 import type { Rect } from './displays';
 import { windowAttachment } from './perch';
 import { SEAT_RATIO } from '../../shared/framing';
+import { restSupport } from './restSupport';
 export function helperWindow(info: { title: string; process: string; className?: string }) {
   return /(?:qa[ _-]*osd|geforce.*overlay|nvidia.*(?:overlay|share|hud)|rtss|rivatuner|xbox game bar|gamebar|discord.*overlay)/i.test(info.title + ' ' + info.className)
     || /^(?:nvidia overlay|nvspcap64|gamebar|rtss|presentmon|q[a_ -]*osd)(?:\.exe)?$/i.test(info.process);
@@ -29,6 +30,16 @@ export const bodyFootprint = (pet: Rect): Rect => ({ x: pet.x + pet.width * .02,
 export function exposedBody(pet: Rect, blockers: Rect[], area: Rect) {
   const visible = intersection(bodyFootprint(pet), area);
   return !!visible && !blockers.some(b => intersects(visible, b));
+}
+export function lowerWindowRest(pet: Rect, window: Rect, blockers: Rect[], area: Rect, cursor: { x: number; y: number }, fraction?: number) {
+  for (const f of fraction === undefined ? [.18,.82,.38,.62] : [fraction]) {
+    const x = Math.round(window.x + f * window.width - pet.width / 2);
+    const bounds = { ...pet, x, y: Math.round(window.y + window.height - pet.height * SEAT_RATIO) };
+    const clear = (r: Rect) => !blockers.some(b => intersects(r,b));
+    if (restSupport(bounds,area,null,[window],clear).lie && exposedBody(bounds,blockers,area)
+      && Math.hypot(bounds.x+pet.width*.5-cursor.x,bounds.y+pet.height*.4-cursor.y)>130) return { bounds, fraction:f };
+  }
+  return null;
 }
 export function tourPlan(pet: Rect, window: Rect, blockers: Rect[], area: Rect, cursor: { x: number; y: number }, random = Math.random) {
   const regions = exposedRegions(window, blockers).map(r => intersection(r, area)).filter((r): r is Rect => !!r).sort((a, b) => b.width * b.height - a.width * a.height);

@@ -3,6 +3,7 @@ import { createBubbleWindow, reveal, conceal, OFFSCREEN } from './windows';
 import type { BubbleState, AssistantPhase, ChatMessage } from '../shared/ipc';
 import type { Logger } from './log';
 import { SEAT_RATIO } from '../shared/framing';
+import {activateChatWindow,foregroundHandle,handleToBigint,restoreChatFocus} from './desktop/win32';
 
 /** Position against the pose's fixed envelope, never its animated face or mirrored head. */
 export function lyingBubblePosition(pet: Rectangle, size: { width: number; height: number }, area: Rectangle) {
@@ -52,9 +53,48 @@ export class BuddyBubble {
   private dismissed = false;
   private disposed = false;
   private height = 170;
+  private serial=0;
+  private previous: {id:string;text:string;expires:number}[]=[];
+  private stackTimer:NodeJS.Timeout|null=null;
+  private expiresAt=0;
+  private hoveredAt=0;
+  private collapseTimer:NodeJS.Timeout|null=null;
+  private hasDraft=false;
+  private previousFocus=0n;
+  escape(){this.dismiss();if(!OFFSCREEN)restoreChatFocus(this.previousFocus);this.previousFocus=0n;}
+  draft(present:boolean){this.hasDraft=present;this.scheduleCollapse();}
+  private scheduleCollapse(){
+    if(this.collapseTimer)clearTimeout(this.collapseTimer);
+    if(!this.state.composer||this.hoveredAt||this.hasDraft||this.disposed)return;
+    this.collapseTimer=setTimeout(()=>{
+      if(this.state.phase!=='idle'&&this.state.phase!=='error'){this.scheduleCollapse();return;}
+      this.state.composer=false;this.state.delivery='aside';this.send();this.expire();
+    },4000);this.collapseTimer.unref?.();
+  }
+  private pausedMs=0;
+  private clock(){return (this.hoveredAt||Date.now())-this.pausedMs;}
+  hover(active:boolean){
+    if(active){if(this.hoveredAt)return;this.hoveredAt=Date.now();this.state.fading=false;this.send();if(this.timer)clearTimeout(this.timer);if(this.stackTimer)clearTimeout(this.stackTimer);}
+    else if(this.hoveredAt){this.pausedMs+=Date.now()-this.hoveredAt;this.hoveredAt=0;this.syncStack();this.scheduleExpiry();}
+    this.scheduleCollapse();
+  }
+  private scheduleExpiry(){
+    if(this.timer)clearTimeout(this.timer);
+    if(this.hoveredAt||this.state.composer||!this.visible||!this.state.text)return;
+    this.timer=setTimeout(()=>{
+      this.state.fading=true;this.send();
+      this.timer=setTimeout(()=>{
+      this.state.fading=false;this.syncStack();
+      this.previous=this.previous.filter(p=>p.expires>this.clock());
+      if(this.previous.length){this.state.text='';this.syncStack();this.send();}
+      else this.hide();
+      },220);
+    },Math.max(1,this.expiresAt-this.clock()));this.timer.unref?.();
+  }
   private lastBounds: Rectangle | null = null;
   constructor(private d: { anchor(): Rectangle | null; head?(): { x: number; y: number }; body?(): Rectangle | undefined; inverted?(): boolean; enabled(): boolean; filterText?(text: string): string; preload: string; log: Logger }) {}
-  get hasVisibleText() { return this.visible && !!this.state.text; }
+  get nativeActive(){return !!this.window&&foregroundHandle()===handleToBigint(this.window.getNativeWindowHandle());}
+  get hasVisibleText() { return this.visible && (!!this.state.text||this.previous.length>0); }
   private ensure() {
     if (this.window && !this.window.isDestroyed()) return this.window;
     const win = (this.window = createBubbleWindow(this.d.preload, this.d.log));
@@ -63,15 +103,15 @@ export class BuddyBubble {
     win.on('closed', () => { if (this.window === win) this.window = null; });
     return win;
   }
-  private send() { if (this.window && !this.window.isDestroyed() && !this.window.webContents.isLoading()) this.window.webContents.send('bubble:state', this.state); }
-  private focusInput() { const w = this.window; if (!w || w.isDestroyed() || w.webContents.isLoading()) return; if (!OFFSCREEN) { w.focus(); w.webContents.focus(); } w.webContents.send('bubble:focus', null); }
+  private send() { if (this.window && !this.window.isDestroyed() && !this.window.webContents.isLoadingMainFrame()) this.window.webContents.send('bubble:state', this.state); }
+  private focusInput() { const w = this.window; if (!w || w.isDestroyed() || w.webContents.isLoadingMainFrame()) return; if (!OFFSCREEN) { w.setFocusable(true);w.setIgnoreMouseEvents(false);w.show();activateChatWindow(w.getNativeWindowHandle());w.focus(); w.webContents.focus(); } w.webContents.send('bubble:focus', null); }
   private show(focus = false) {
     if (this.disposed || this.dismissed || (!this.d.enabled() && !this.state.composer)) return false;
     this.visible = true;
     const win = this.ensure(); this.reposition(); this.send();
     // showInactive keeps asides quiet; a real click can activate their reply/settings buttons.
     win.setFocusable(true);
-    if (!win.webContents.isLoading()) { reveal(win, focus); if (focus && !OFFSCREEN) win.focus(); }
+    if (!win.webContents.isLoadingMainFrame()) { reveal(win, focus); if (focus && !OFFSCREEN) win.focus(); }
     return true;
   }
   private expire() {
@@ -79,21 +119,35 @@ export class BuddyBubble {
     if (this.timer) clearTimeout(this.timer);
     if (this.state.composer) return;
     const aside = this.state.delivery === 'aside';
-    this.timer = setTimeout(() => this.hide(), aside ? Math.min(16000, Math.max(6000, this.state.text.length * 60)) : Math.min(90000, Math.max(16000, this.state.text.length * 65)));
-    this.timer.unref?.();
+    const duration=aside ? Math.min(24000, Math.max(10000, this.state.text.length * 65)) : Math.min(90000, Math.max(16000, this.state.text.length * 65));
+    this.expiresAt=this.clock()+duration;this.state.fading=false;
+    this.scheduleExpiry();
   }
-  open() { this.dismissed = false; this.state.composer = true; if (this.timer) clearTimeout(this.timer); this.show(true); this.focusInput(); }
+  open() { if(!OFFSCREEN){const focused=foregroundHandle(),own=this.window&&!this.window.isDestroyed()?handleToBigint(this.window.getNativeWindowHandle()):0n;if(focused&&focused!==own)this.previousFocus=focused;}this.dismissed = false; this.state.composer = true; if (this.timer) clearTimeout(this.timer); this.show(true); this.focusInput();for(const delay of [80,240])setTimeout(()=>{if(this.visible&&this.state.composer&&!this.disposed)this.focusInput();},delay);this.scheduleCollapse(); }
   company(label: string) { if (this.state.company !== label) { this.state.company = label; this.send(); } }
-  hide() { this.visible = false; if (this.window && !this.window.isDestroyed()) conceal(this.window); }
+  private archive(){
+    if(!this.visible||!this.state.text.trim())return;
+    if(this.expiresAt<=this.clock())return;
+    this.previous.push({id:`aside-${++this.serial}`,text:this.state.text,expires:this.expiresAt});
+    this.previous=this.previous.slice(-3);this.syncStack();
+  }
+  private syncStack(){
+    if(this.stackTimer)clearTimeout(this.stackTimer);
+    this.previous=this.previous.filter(x=>x.expires+220>this.clock());
+    this.state.previous=this.previous.map(({id,text,expires})=>({id,text,fading:expires<=this.clock()}));
+    if(this.visible&&!this.state.text&&!this.previous.length&&!this.state.composer&&this.state.phase==='idle'){this.visible=false;if(this.window&&!this.window.isDestroyed())conceal(this.window);}
+    if(this.previous.length&&!this.hoveredAt){const next=Math.min(...this.previous.map(x=>x.expires>this.clock()?x.expires:x.expires+220));this.stackTimer=setTimeout(()=>{this.syncStack();this.send();},Math.max(1,next-this.clock()));this.stackTimer.unref?.();}
+  }
+  hide() { this.visible = false;this.hoveredAt=0;this.state.fading=false; this.previous=[];this.syncStack(); if (this.window && !this.window.isDestroyed()) conceal(this.window); }
   dismiss() { this.dismissed = true; this.state.composer = false; this.hide(); }
-  begin() { this.id = ''; this.state.text = ''; this.state.delivery = 'reply'; this.state.startedAt = Date.now(); this.dismissed = false; if (this.timer) clearTimeout(this.timer); }
+  begin() { this.archive();this.id = ''; this.state.text = ''; this.state.delivery = 'reply'; this.state.startedAt = Date.now(); this.dismissed = false; if (this.timer) clearTimeout(this.timer); }
   phase(p: AssistantPhase) { if (p === 'thinking' && !this.state.startedAt) this.state.startedAt = Date.now(); this.state.phase = p; if (p === 'thinking' || p === 'listening' || p === 'transcribing') this.show(); else this.send(); }
-  delta(id: string, text: string) { if (this.id !== id) { this.id = id; this.state.text = ''; } this.state.text = (this.state.text + text).slice(-20000); this.show(); }
-  done(message: ChatMessage) { this.id = message.id; this.state.delivery = 'reply'; this.state.text = this.d.filterText?.(message.content) ?? message.content; this.state.phase = message.meta?.error ? 'error' : 'idle'; this.state.startedAt = undefined; const shown = !!this.state.text && this.show(); this.expire(); return shown; }
-  remark(text: string) { text = this.d.filterText?.(text) ?? text; if (this.state.composer || !text.trim()) return false; this.dismissed = false; this.state.delivery = 'aside'; this.state.startedAt = undefined; this.state.text = text; this.state.phase = 'idle'; const shown = this.show(); this.expire(); return shown; }
+  delta(id: string, text: string) { if (this.id !== id) { this.archive();this.id = id; this.state.text = ''; } this.state.text = (this.state.text + text).slice(-20000); this.show(); }
+  done(message: ChatMessage) { if(this.id!==message.id)this.archive();this.id = message.id; this.state.delivery = 'reply'; this.state.text = this.d.filterText?.(message.content) ?? message.content; this.state.phase = message.meta?.error ? 'error' : 'idle'; this.state.startedAt = undefined; const shown = !!this.state.text && this.show(); this.expire(); return shown; }
+  remark(text: string) { text = this.d.filterText?.(text) ?? text; if (this.state.composer || !text.trim()) return false; this.archive();this.id='';this.dismissed = false; this.state.delivery = 'aside'; this.state.startedAt = undefined; this.state.text = text; this.state.phase = 'idle'; const shown = this.show(); this.expire(); return shown; }
   resize(height: number) {
     if (!this.window || this.window.isDestroyed()) return;
-    const h = Math.min(360, Math.max(76, Math.ceil(height / 2) * 2));
+    const h = Math.min(this.state.maxHeight??1200, Math.max(76, Math.ceil(height / 2) * 2));
     if (Math.abs(h - this.height) > 2) this.height = h;
     this.reposition();
   }
@@ -110,8 +164,11 @@ export class BuddyBubble {
     // While lying, choose the display by the fixed contact line as well. A face
     // crossing a monitor seam must not send the whole text box to another screen.
     const lyingArea = body ? screen.getDisplayNearestPoint({ x: Math.round(pet.x + pet.width / 2), y: Math.round(pet.y + pet.height * SEAT_RATIO - 8) }).workArea : area;
-    const size = { width: Math.min(340, lyingArea.width - 8), height: Math.min(this.height, lyingArea.height - 8) };
-    const pos = body ? lyingBubblePosition(pet, size, lyingArea) : bubblePosition(pet, size, area, this.d.inverted?.(), head);
+    const longest=Math.max(this.state.text.length,...this.previous.map(x=>x.text.length));
+    this.state.maxHeight=Math.min(1200,lyingArea.height-16);
+    const size = { width: Math.min(Math.max(320,340+Math.ceil(Math.max(0,longest-180)/5)),540,lyingArea.width - 8), height: Math.min(this.height, this.state.maxHeight) };
+    const envelope=body??{x:pet.x+pet.width*.12,y:pet.y+pet.height*.12,width:pet.width*.76,height:pet.height*.76};
+    const pos = body ? lyingBubblePosition(pet, size, lyingArea) : bubblePosition(pet, size, area, this.d.inverted?.(), head,envelope);
     const bounds = { x: pos.x, y: pos.y, ...size }, old = this.lastBounds;
     if (!old || Math.abs(old.x - bounds.x) > 1 || Math.abs(old.y - bounds.y) > 1 || old.height !== bounds.height || old.width !== bounds.width) {
       this.lastBounds = bounds;
@@ -120,5 +177,5 @@ export class BuddyBubble {
     const tail = { x: Math.round(pet.x + pet.width * head.x - pos.x), y: Math.round(pet.y + pet.height * head.y - pos.y) };
     if (this.state.side !== pos.side || this.state.tail?.x !== tail.x || this.state.tail?.y !== tail.y) { this.state.side = pos.side; this.state.tail = tail; this.send(); }
   }
-  close() { this.disposed = true; if (this.timer) clearTimeout(this.timer); this.window?.destroy(); this.window = null; }
+  close() { this.disposed = true; if (this.timer) clearTimeout(this.timer);if(this.stackTimer)clearTimeout(this.stackTimer);if(this.collapseTimer)clearTimeout(this.collapseTimer); this.window?.destroy(); this.window = null; }
 }

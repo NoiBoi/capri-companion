@@ -46,10 +46,12 @@ export class MemoryLearning {
   }
   private active: AbortController | null = null;
   private timer: NodeJS.Timeout | null = null;
+  private timerDue = 0;
   private retryDelay = 0;
   pause() {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null; this.active?.abort();
+    this.timerDue = 0;
   }
   discard() { this.pause(); this.queue = []; this.persistQueue(); }
   attachReply(messageId: string, text: string, replyId: string) {
@@ -65,9 +67,13 @@ export class MemoryLearning {
     this.persistQueue();
   }
   schedule(delay = this.d.settings().ai.provider === 'codex' ? 60000 : 2000) {
+    const due = Date.now() + delay;
+    // Frequent desktop observations must not keep pushing pending learning into the future.
+    if (this.timer && this.timerDue <= due) return;
     if (this.timer) clearTimeout(this.timer);
     if (!this.queue.length) return;
-    this.timer = setTimeout(() => { this.timer = null; void this.drain(); }, delay);
+    this.timerDue = due;
+    this.timer = setTimeout(() => { this.timer = null; this.timerDue = 0; void this.drain(); }, delay);
   }
   private async drain() {
     if (this.active) { this.schedule(250); return; }
@@ -118,7 +124,7 @@ export class MemoryLearning {
     const relationshipSnapshot = this.d.relationship?.snapshot();
     const sceneSnapshot = this.d.scene?.snapshot();
     const episodeRevision = this.d.episodes?.checkpoint();
-    const tasteSources = [...sources.flatMap(j => j.assistant ? [{ text: j.assistant.text, messageId: j.assistant.messageId, at: j.at ?? Date.now() }] : []), ...(this.d.deliveredAsides?.() ?? []).slice(-3)];
+    const tasteSources: { text: string; messageId: string; at: number; preferenceQuestion?: string }[] = [...sources.flatMap(j => j.assistant ? [{ text: j.assistant.text, messageId: j.assistant.messageId, at: j.at ?? Date.now(), preferenceQuestion: j.text.slice(0,1000) }] : []), ...(this.d.deliveredAsides?.() ?? []).slice(-3)];
     let raw = '';
     try {
       for await (const chunk of provider.stream([
@@ -159,7 +165,7 @@ export class MemoryLearning {
       if (relationship && relationshipSnapshot && JSON.stringify(relationshipSnapshot) === JSON.stringify(relationship.snapshot())) {
         for (const change of relationshipChanges.tastes) {
           const source = [...tasteSources].sort((a, b) => b.at - a.at).find(j => j.text.includes(change.evidence));
-          if (source) relationship.learnTaste(change, { role: 'assistant', messageId: source.messageId, evidence: source.text, at: source.at }, relationship.snapshot());
+          if (source) relationship.learnTaste(change, { role: 'assistant', messageId: source.messageId, evidence: source.text, at: source.at, preferenceQuestion: source.preferenceQuestion }, relationship.snapshot());
         }
         for (const change of relationshipChanges.threads) {
           const source = [...sources].reverse().find(j => j.text.includes(change.evidence));
@@ -168,6 +174,7 @@ export class MemoryLearning {
       }
       this.context = `\nMemory result for this turn: ${count} durable memory changes applied. ${count ? 'Use the current saved memories above.' : 'No new durable memory was saved. Do not claim a memory update occurred.'}\n`;
       if (count) this.d.log.info('automatic memory updated', { count });
+      this.d.log.info('companion learning completed', { memories: count, tastes: this.d.relationship?.snapshot().tastes.length ?? 0, projects: this.d.relationship?.snapshot().threads.length ?? 0 });
     } catch (e) {
       // Network errors or invalid JSON are not successful extraction. Keep the source job.
       this.retryDelay = 300000;

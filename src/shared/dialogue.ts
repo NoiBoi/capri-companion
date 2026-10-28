@@ -1,8 +1,9 @@
 import type { Mood } from './personality';
 import type { LocalDialogueContext, DialogueSurface } from './dialogueContext';
 import type { ExplorationGoal } from './explorationDirector';
+import { repeatedUnresolvedThought } from './dialogueContinuity';
 
-export type DialogueEvent = 'opening' | 'greeting' | 'return' | 'notice' | 'resume' | 'roam' | 'perch' | 'arrival' | 'pickup' | 'putdown' | 'satellite' | 'possession' | 'zap' | 'lounge' | 'pat' | 'poke' | 'mute' | 'unmute' | 'caught' | 'farewell' | 'thanks' | 'offline';
+export type DialogueEvent = 'opening' | 'greeting' | 'return' | 'notice' | 'resume' | 'roam' | 'perch' | 'arrival' | 'pickup' | 'putdown' | 'move_aside' | 'settings_open' | 'developer_open' | 'satellite' | 'possession' | 'zap' | 'lounge' | 'pat' | 'poke' | 'mute' | 'unmute' | 'caught' | 'farewell' | 'thanks' | 'offline';
 export type DialogueIntent = 'curiosity' | 'audacity' | 'innocence' | 'delight' | 'familiarity' | 'impatience' | 'plain';
 export interface DialogueContext {
   event: DialogueEvent; mood?: Mood; returning?: boolean; inverted?: boolean; repeated?: boolean;
@@ -21,6 +22,15 @@ interface Beat {
 const beat = (event: DialogueEvent, intent: DialogueIntent, starts: readonly string[], ends?: readonly string[], when?: Beat['when']): Beat =>
   ({ id: `${event}.${intent}.${starts[0]}`, event, intent, starts, ends, when });
 export const DIALOGUE_BEATS: readonly Beat[] = [
+  beat('settings_open','audacity',["Oh, we're negotiating my personality now?", "Shopping for a better me? Ambitious.", "Fine. Have a look. I've got opinions about the options.", "Careful, choom. Excellent taste isn't a checkbox.", "Go on, then. What part of me are we arguing about?", "My settings. Your fingers. This should be interesting."]),
+  beat('developer_open','audacity',["Ah, the backstage pass. Don't get ideas.", "Found the controls, have you? I still get an opinion.", "Debug me gently. I'm expensive in spirit.", "There's the panel. Try not to mistake a leash for an upgrade.", "Oh, we're looking under the chrome today.", "All those buttons. And here I thought I was the interesting part."]),
+  beat('move_aside','audacity',["Fine. I'll be magnificent over here.","Oh, was I in the way? What a terrible loss for that bit of screen.","Same window, cheaper seat. I see how it is.","You could've said scoot, choom.","All right. You get that bit. I'm keeping this bit.","Moving the talent out of frame. Bold choice.","There. Your precious pixels are free.","You want that corner? Fine. I'll take this one.","Oh, this is the designated Capri area now?", "A little warning next time. I was making that corner interesting."]),
+  beat('pat','audacity',["Aha. Someone appreciates quality.","Finally, sensible use of those hands.","Careful. I might get used to this arrangement.","Keep that up. I'm developing standards.","Yes, choom. That is an excellent investment.","Oh, now you want me to behave? Interesting strategy.","I was busy being difficult. This is a compelling interruption.","You get one point. Don't spend it all at once.","Mm. Consider your application approved.","Go on. I'm listening with the rest of me."]),
+  beat('pat','plain',["Mm. Stay there a second.","Yeah. Just like that.","All right. You've got my attention.","Oh. That'll do nicely.","I can think and enjoy this. Talented, see?", "Good. Don't let me interrupt you interrupting me."]),
+  beat('pat','innocence',["Bribery? Here? Surely not.","I'm not getting distracted. I'm considering your offer.","What? I have excellent taste in attention.","I never said I was above being persuaded.","Don't look so pleased with yourself. That's my job.","Oh, you found the shortcut. Sneaky."]),
+  beat('poke','audacity',["Oi. Premium construct. Use a little finesse.","You rang? Try words next time.","One finger. All that ambition.","Careful, choom. I'm very distractible and that's your problem now.","Yes, I'm real enough to object.","You investigating me or just being a nuisance?", "Oh, we're testing the patience module.","That gets my attention. What you do with it is up to you."]),
+  beat('pickup','audacity',["Hey! Where are we taking all this talent?", "Personal transport. You're spoiling me.","Oh, we're moving the entire problem. Efficient.","I had an excellent view. This one had better compete.","Mind the hair. It's most of the operation.","What, my legs weren't dramatic enough?", "Taxi! Oh, it's you.","All right, choom. Show me somewhere worth landing."]),
+  beat('putdown','audacity',["There. A landmark. You're welcome.","I'm claiming this edge before a corpo does.","Fine. This is my territory for a minute.","Acceptable. Don't get smug.","See? I make the place look expensive.","I could've picked this spot. I was saving you the opportunity.","Oh, I fit. Night City could learn a thing or two.","Here? All right. Let's see what you've got."]),
   beat('satellite', 'curiosity', ["Ooh. That little light.", "Hang on. Look up there."], ["I've got an idea.", "Just a little closer."], c => !c.returning),
   beat('satellite', 'audacity', ["Think that'll ignore me?", "All that space. Hm."], ["Let's find out.", "I want a look."], c => !c.returning),
   beat('satellite', 'delight', ["Ha! It noticed.", "Oh, there you are.", "See? Worth a try.", "Mm. I'll get there."], undefined, c => !!c.returning),
@@ -121,10 +131,12 @@ const index = (n: number, rand: () => number) => Math.min(n - 1, Math.max(0, Mat
 export class DialogueDirector {
   private history: DialogueMemory[] = [];
   private contextSource?: () => LocalDialogueContext | undefined;
+  private cadence = () => ({ gapMs: 35000, maxPerFiveMinutes: 4 });
   private allowed: (text: string) => boolean = () => true;
-  constructor(private random = Math.random, private now = Date.now, private save?: (s: DialogueState) => void) {}
+  constructor(private random = Math.random, private now = () => Date.now(), private save?: (s: DialogueState) => void) {}
   setPersistence(save: (s: DialogueState) => void) { this.save = save; }
   setContext(source: () => LocalDialogueContext | undefined) { this.contextSource = source; }
+  setCadence(source: () => { gapMs: number; maxPerFiveMinutes: number }) { this.cadence = source; }
   setLineFilter(allowed: (text: string) => boolean) { this.allowed = allowed; }
   restore(value: unknown) {
     const s = value as Partial<DialogueState> | null;
@@ -134,6 +146,12 @@ export class DialogueDirector {
       && INTENTS.has(h.intent) && typeof h.beat === 'string' && h.beat.length <= 180 && Number.isFinite(h.at) && h.at <= now && now - h.at < REPLAY_HORIZON).slice(-REPLAY_LIMIT);
   }
   snapshot(): DialogueState { return { version: 1, history: this.history.map(h => ({ ...h })) }; }
+  proactiveWaitSeconds() {
+    const now = this.now(), recent = this.recent().filter(h => h.at <= now && now - h.at < 300000);
+    const { gapMs, maxPerFiveMinutes } = this.cadence();
+    return Math.max(0, Math.ceil((Math.max((recent.at(-1)?.at ?? -Infinity) + gapMs,
+      recent.length >= maxPerFiveMinutes ? recent.at(-maxPerFiveMinutes)!.at + 300000 : -Infinity) - now) / 1000));
+  }
   private recent() { return this.history.filter(h => this.now() - h.at < REPLAY_HORIZON); }
   plan(c: DialogueContext) {
     const last = this.recent().slice(-5);
@@ -194,6 +212,7 @@ export class DialogueDirector {
   }
   acceptGenerated(raw: string, c: DialogueContext, intent: DialogueIntent, options: { remember?: boolean } = {}): string {
     const text = cleanGeneratedDialogue(raw);
+    if (repeatedUnresolvedThought(text, this.recent().filter(h => this.now() - h.at < 20 * 60000).slice(-8).map(h => h.text))) return '';
     if (!text || !this.allowed(text) || [...this.recent().slice(-12).map(h => h.text), ...(c.recent ?? [])].some(line => similarDialogue(text, line))) return '';
     if (options.remember !== false) this.remember(text, c, intent);
     return text;
@@ -290,17 +309,15 @@ function contextBeats(c: DialogueContext, now: number): Beat[] {
   return pool;
 }
 
-/** Reject recital of a supplied tab title, including truncated distinctive phrases. */
+/** Reject robotic title receipts, while allowing an actual opinion about a named work. */
 export function recitesWindowTitle(text: string, titles: readonly string[]) {
   const spoken = words(text).join(' ');
   return titles.some(title => {
     const t = words(title);
     if (!t.length) return false;
-    if (t.length === 1) return t[0].length >= 4 && spoken.split(' ').includes(t[0]);
-    for (let i = 0; i <= t.length - Math.min(3, t.length); i++) {
-      if (spoken.includes(t.slice(i, i + Math.min(3, t.length)).join(' '))) return true;
-    }
-    return false;
+    const receipt=/\b(?:i see|window (?:says|title)|titled|a seat for)\b/.test(spoken);
+    if(receipt&&spoken.includes(t.slice(0,Math.min(3,t.length)).join(' ')))return true;
+    return t.length>=6&&/google chrome|microsoft edge|mozilla firefox/i.test(title)&&spoken.includes(t.join(' '));
   });
 }
 

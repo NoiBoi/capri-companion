@@ -16,7 +16,10 @@ describe('activity, grounded context and background economy', () => {
     now += 60001; expect(b.reserve('memory')).toBe(true);
     now += 60001; expect(b.reserve('memory')).toBe(false);
     expect(b.reserve('ambient')).toBe(true); now += 60001; expect(b.reserve('ambient')).toBe(true);
-    now += 60001; expect(b.reserve('ambient')).toBe(false);
+    now += 60001; expect(b.reserve('ambient')).toBe(true);
+    now += 30001; expect(b.reserve('ambient')).toBe(true);
+    now += 30001; expect(b.reserve('ambient')).toBe(true);
+    now += 30001; expect(b.reserve('ambient')).toBe(false); // three memory + five observations exhaust the shared eight
   });
   it('shares a persisted background ceiling without needing a reply reservation', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'capri-budget-')), file = path.join(dir, 'budget.json'); let now = 1000000;
@@ -26,6 +29,8 @@ describe('activity, grounded context and background economy', () => {
       expect(b.reserve('memory')).toBe(true); now += 120001;
       expect(b.reserve('ambient')).toBe(true); expect(b.reserve('memory')).toBe(true); now += 120001;
       expect(b.reserve('ambient')).toBe(true); expect(new BackgroundBudget(file, () => now).reserve('ambient')).toBe(false);
+      for (let i=0;i<3;i++) { now += 30001; expect(new BackgroundBudget(file, () => now).reserve('ambient')).toBe(true); }
+      now += 30001; expect(new BackgroundBudget(file, () => now).reserve('ambient')).toBe(false);
       now += 600001; expect(new BackgroundBudget(file, () => now).reserve('memory')).toBe(true);
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });

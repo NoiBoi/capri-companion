@@ -18,6 +18,8 @@ export interface TeleportDeps {
   userIdleSec(): number;
   /** After every move: lets the app work out where she now stands (taskbar / window / air / edge). */
   moved?(d: Destination, how: 'teleport' | 'glide'): void;
+  /** Release supported poses before the first flight frame. */
+  prepareFlight?(): Promise<void>;
   arrived?(d: Destination, reason: 'manual' | 'auto' | 'ai' | 'direct'): void;
   log: Logger;
 }
@@ -88,6 +90,9 @@ export class TeleportController {
 
   /** Glide across the desktop (B 4:03 dash): the window slides, hair streams behind her. */
   private async glide(dest: Destination, options: { gentle?: boolean; cancelled?: () => boolean; canOccupy?: (r: Rect) => boolean; curve?: number; pace?: number } = {}): Promise<boolean> {
+    if(options.cancelled?.())return false;
+    await this.d.prepareFlight?.();
+    if(options.cancelled?.())return false;
     const cur = this.d.bounds();
     if (!cur) return false;
     const dx = dest.x - cur.x, dy = dest.y - cur.y;

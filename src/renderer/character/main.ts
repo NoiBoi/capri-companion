@@ -314,7 +314,7 @@ api.on('cue', (raw) => {
     case 'userReturn': simulatedAbsence = null; behavior.wake(); idleSec = 0; if (c.from === 'sleep') model.requestAnimation('wake', 13 / 15); else behavior.react('wave'); break;
     case 'perchMotion': perchMotion = c.phase; break;
     case 'devPreview': model.perform(null); devPreview = c.preview; model.resetSecondary(); if (!devPreview) { behavior.wake(); model.settle(); } break;
-    case 'activity': if (performance.now() - lastHoverActAt < 2500 && c.kind !== 'putdown') break; model.act(c.kind, c.side); if (c.kind === 'return') behavior.react('wave'); else if (c.kind === 'notice') behavior.react('curious'); else if (c.kind === 'settle' || c.kind === 'putdown') model.settle(); break;
+    case 'activity': if (matchMedia('(prefers-reduced-motion: reduce)').matches || settings.character.animationIntensity <= 0) break; if (performance.now() - lastHoverActAt < 2500 && c.kind !== 'putdown') break; model.act(c.kind, c.side); if (c.kind === 'return') behavior.react('wave'); else if (c.kind === 'notice') behavior.react('curious'); else if (c.kind === 'settle' || c.kind === 'putdown') model.settle(); break;
     case 'dragging': model.perform(null); statusFx.clear(); dragging = c.active; document.body.style.cursor = dragging ? 'grabbing' : 'grab'; if (!dragging) setHit(false); break;
     case 'entrance': model.appear(); behavior.wake(); break;
     case 'attention': if (c.point) attention.watch({ x: (c.point.x - model.speechAnchor.x * W) / (W * 0.45), y: (c.point.y - model.speechAnchor.y * H) / (H * 0.35) }, c.seconds); else attention.clear(); break;

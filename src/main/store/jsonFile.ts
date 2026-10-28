@@ -6,11 +6,14 @@ export function readJson<T>(file: string, fallback: T): { value: T; corrupt: boo
   let raw: string;
   try {
     raw = fs.readFileSync(file, 'utf8');
-  } catch {
-    return { value: fallback, corrupt: false };
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return { value: fallback, corrupt: false };
+    // A locked or inaccessible profile is not a fresh profile. Defaults could
+    // otherwise overwrite the user's real settings or memories on the next save.
+    throw new Error(`Cannot read saved Capri data: ${file}. Existing data has not been reset. ${(cause as NodeJS.ErrnoException).code ?? 'Read failed'}`, { cause });
   }
   try {
-    return { value: JSON.parse(raw) as T, corrupt: false };
+    return { value: JSON.parse(raw.replace(/^\uFEFF/, '')) as T, corrupt: false };
   } catch {
     try { fs.renameSync(file, `${file}.corrupt-${Date.now()}`); } catch { /* ignore */ }
     return { value: fallback, corrupt: true };

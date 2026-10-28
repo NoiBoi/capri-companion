@@ -5,7 +5,7 @@ import type { AssistantPhase } from './ipc';
 export const DEV_REACTIONS = ['happy', 'surprised', 'annoyed', 'curious', 'wave', 'nod'] as const;
 export const DEV_PHASES = ['idle', 'listening', 'transcribing', 'thinking', 'speaking', 'error', 'offline'] as const;
 export const DEV_ANIMATIONS = ['idle', 'blink', 'blink_glitch', 'grin', 'glitch', 'dangle', 'sleep', 'wake', 'perch', 'perch_blink', 'perch_blink_glitch', 'perch_glitch', 'mouth'] as const satisfies readonly SpriteClip[];
-export const DEV_ACTIVITIES = ['notice', 'lean', 'stretch', 'settle', 'return', 'pickup', 'putdown'] as const;
+export const DEV_ACTIVITIES = ['notice', 'lean', 'stretch', 'settle', 'return', 'pickup', 'putdown', 'peek', 'balance', 'fidget', 'sway', 'float'] as const;
 export const DEV_INTERACTIONS = ['pat', 'poke', 'hover', 'return', 'window'] as const;
 export const DEV_DIALOGUE = ['greeting', 'notice', 'resume', 'roam', 'perch', 'arrival', 'pickup', 'putdown', 'pat', 'poke', 'return', 'thanks', 'farewell'] as const;
 export const DEV_SCENARIOS = ['shader_compare', 'sit_hover', 'sit_inspect', 'recline_rest', 'cursor_visit', 'drop_fallback', 'perch_quick', 'perch_held', 'pat_upright', 'pat_perched', 'pat_inverted', 'continuity'] as const;
@@ -47,7 +47,7 @@ export interface DevSnapshot {
     episodes: import('./continuity').SharedExperience[];
     relationship: import('./relationship').RelationshipState;
   };
-  gates: { blockers: string[]; initiativeReady: boolean; inspectionSeconds: number; nextVisitSeconds: number; idleSeconds: number;
+  gates: { blockers: string[]; initiativeReady: boolean; inspectionSeconds: number; speechSeconds: number; nextVisitSeconds: number; idleSeconds: number;
     localContext: boolean; learning: boolean; saveHistory: boolean; provider: string; connection: string;
     budgets: { purpose: string; used: number; limit: number; retrySeconds: number }[] };
   runtime: { scene: string | null; visible: boolean; phase: string; mode: string; fps: number | null; moving: boolean; visit: string; tour: string;

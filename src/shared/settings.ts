@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DIALOGUE_ACTIVITY_LEVELS } from './dialogueCadence';
 
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const httpUrl = z
@@ -38,7 +39,7 @@ export type Policy = z.infer<typeof Policy>;
 export const SettingsSchema = z.object({
   version: z.literal(1),
   firstRunComplete: z.boolean(),
-  dialogue: z.object({ localContext: z.boolean(), weatherCity: z.string().max(100), spotifyBanter: z.boolean(), contextPings: z.boolean() }),
+  dialogue: z.object({ activityLevel: z.enum(DIALOGUE_ACTIVITY_LEVELS), localContext: z.boolean(), weatherCity: z.string().max(100), spotifyBanter: z.boolean(), contextPings: z.boolean() }),
   character: z.object({
     animation: z.enum(['auto', 'idle', 'perch', 'grin', 'sleep', 'glitch', 'dangle']),
     facing: z.enum(['cursor', 'original', 'left', 'right']),
@@ -63,12 +64,14 @@ export const SettingsSchema = z.object({
   }),
   behavior: z.object({
     smallActivities: z.boolean(),
+    cursorVisits: z.boolean(),
+    newWindowVisits: z.boolean(),
     satelliteMoments: z.boolean(),
     windowPossession: z.boolean(),
     cursorLightning: z.boolean(),
     mode: z.enum(['normal', 'explore', 'sleep']),
     idleRemarks: z.boolean(),
-    remarkIntervalMinutes: z.number().min(5).max(480),
+    remarkIntervalMinutes: z.number().min(5).max(480), // legacy profile compatibility; initiative now follows desktop events
     proactiveVoice: z.boolean(), // idle remarks are silent bubbles unless this is on as well
     quietHours: z.object({ enabled: z.boolean(), start: hhmm, end: hhmm }),
     doNotDisturb: z.boolean(),
@@ -154,7 +157,7 @@ export const CAPRI_VOICE_DELIVERY = 'Speak in a playful, mischievous, confident 
 export const DEFAULT_SETTINGS: Settings = {
   version: 1,
   firstRunComplete: false,
-  dialogue: { localContext: true, weatherCity: '', spotifyBanter: true, contextPings: true },
+  dialogue: { activityLevel: 'lively', localContext: true, weatherCity: '', spotifyBanter: true, contextPings: true },
   character: {
     animation: 'auto',
     facing: 'cursor',
@@ -177,6 +180,8 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   behavior: {
     smallActivities: true,
+    cursorVisits: true,
+    newWindowVisits: true,
     satelliteMoments: false,
     windowPossession: false,
     cursorLightning: true,

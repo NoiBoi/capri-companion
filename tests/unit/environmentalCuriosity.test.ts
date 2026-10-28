@@ -7,13 +7,36 @@ function dwell(c: EnvironmentalCuriosity, key: string, start: number, duration =
   for (let t = start; t <= start + duration; t += 2000) c.observe(key, t);
 }
 describe('environmental judgment over desktop events', () => {
+  it('seeds startup without invented openings, then notices a new window and inspects after six settled seconds', () => {
+    const c = new EnvironmentalCuriosity();
+    expect(c.syncWindows([{ id: 'old', key: 'a' }], 0)).toEqual([]);
+    expect(c.syncWindows([{ id: 'old', key: 'a' }, { id: 'new', key: 'b' }], 1000)).toEqual([{ id: 'new', key: 'b', kind: 'opened' }]);
+    dwell(c, 'b', 1000, 4000); expect(c.choose(5000, allowed).action).toBe('look');
+    c.observe('b', 7000); expect(c.choose(7000, allowed)).toMatchObject({ action: 'inspect', reason: expect.stringContaining('newly opened') });
+    for (let t=9000;t<120000;t+=2000) { c.observe('b',t); expect(c.choose(t,allowed).action).toBe('quiet'); }
+  });
+  it('learns background metadata without inventing a document change and bounds rapid loading-title churn', () => {
+    const c = new EnvironmentalCuriosity(); c.syncWindows([{id:'1'}],0);
+    expect(c.syncWindows([{id:'1',key:'initial title'}],1000)).toEqual([]);
+    for(let i=0;i<5;i++) { c.syncWindows([{id:'1',key:'title'+i}],i*2000+2000); c.observe('title'+i,i*2000+2000); expect(c.choose(i*2000+2000,allowed).action).toBe('quiet'); }
+    dwell(c,'title4',12000,20000); expect(c.choose(32000,allowed).action).toBe('look');
+    expect(c.choose(32000,allowed).action).toBe('inspect');
+  });
+  it('compares only previously accepted visual fingerprints', () => {
+    const c = new EnvironmentalCuriosity(); expect(c.unchanged('a','same')).toBe(false);
+    c.record('a',{facts:['A loop.'],interpretation:'Maybe a route.',curiosity:''},1000,'same');
+    expect(c.unchanged('a','same')).toBe(true); expect(c.unchanged('a','changed')).toBe(false);
+    c.clear(); expect(c.unchanged('a','same')).toBe(false);
+  });
   it('looks, selectively inspects, then stays quiet during a long ordinary work session', () => {
     const c = new EnvironmentalCuriosity(); dwell(c, 'a', 0);
     expect(c.choose(32000, allowed).action).toBe('look');
     expect(c.choose(32000, allowed).action).toBe('inspect');
-    c.record('a', { facts: ['A disconnected green loop.'], interpretation: 'Maybe a route.', curiosity: 'Where does the loose end go?' }, 32000);
+    c.record('a', { facts: ['A disconnected green loop.'], interpretation: 'Maybe a route.', curiosity: 'Where does the loose end go?' }, 32000, 'same');
     for (let t = 34000; t < 3600000; t += 2000) {
-      c.observe('a', t); expect(c.choose(t, allowed).action).toBe('quiet');
+      c.observe('a', t); const choice = c.choose(t, allowed);
+      if (choice.action === 'inspect') expect(c.unchanged('a', 'same', t)).toBe(true);
+      else expect(choice.action).toBe('quiet');
     }
     expect(c.context('a', 3600000)?.evidence).toBeUndefined();
     expect(c.priority('a', 3600000)).toBe(0);
@@ -45,6 +68,22 @@ describe('environmental judgment over desktop events', () => {
     expect(c.choose(32000, { ...allowed, blocked: true }).action).toBe('quiet');
     expect(c.context('a', 32000)?.openCuriosity).toBe('A small unresolved detail.');
     c.clear(); expect(c.context('a', 32000)).toBeUndefined();
+  });
+  it('retries an unavailable first look, bounds failures, and resets on an external return', () => {
+    const c = new EnvironmentalCuriosity(); dwell(c, 'a', 0);
+    c.choose(32000, allowed); expect(c.choose(32000, allowed).action).toBe('inspect'); c.failed('a', 32000);
+    dwell(c, 'a', 34000, 30000); expect(c.choose(64000, allowed).action).toBe('inspect'); c.failed('a', 64000);
+    dwell(c, 'a', 66000, 60000); expect(c.choose(126000, allowed).action).toBe('inspect'); c.failed('a', 126000);
+    dwell(c, 'a', 128000, 120000); expect(c.choose(248000, allowed).action).toBe('quiet');
+    dwell(c, 'a', 400000, 20000); expect(c.choose(420000, allowed).action).toBe('look'); expect(c.choose(420000, allowed).action).toBe('inspect');
+  });
+  it('checks a changed same-title view without turning unchanged images into model events', () => {
+    const c = new EnvironmentalCuriosity(); dwell(c, 'a', 0); c.choose(32000, allowed); c.choose(32000, allowed);
+    c.record('a', {facts:['A branch.'], interpretation:'Maybe a route.', curiosity:'Where does it go?'}, 32000, 'first');
+    dwell(c, 'a', 34000, 120000); expect(c.choose(154000, allowed).action).toBe('inspect');
+    expect(c.unchanged('a','first',154000)).toBe(true);
+    dwell(c,'a',156000,60000); expect(c.choose(216000,allowed).action).toBe('quiet');
+    dwell(c,'a',218000,60000); expect(c.choose(278000,allowed).action).toBe('inspect'); expect(c.unchanged('a','second',278000)).toBe(false);
   });
   it('expires absent subjects and never implies unseen user intent from metadata', () => {
     const c = new EnvironmentalCuriosity(); dwell(c, 'opaque-key', 0);

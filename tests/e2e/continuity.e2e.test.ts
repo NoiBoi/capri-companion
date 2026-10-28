@@ -37,7 +37,7 @@ function profile(url?:string,model?:string) {
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'capri-stage2-'));dirs.push(dir);
   fs.writeFileSync(path.join(dir,'settings.json'),JSON.stringify({firstRunComplete:true,character:{hideOnFullscreen:false},
     ai:url?{provider:'openai',openai:{baseUrl:url,model:'test'}}:{provider:'codex',codex:{chatModel:model},requestTimeoutSec:30},
-    memory:{autoLearn:true},voice:{ttsEnabled:false},dialogue:{localContext:true},
+    actions:{policies:{read_screen:'allow'}},memory:{autoLearn:true},voice:{ttsEnabled:false},dialogue:{localContext:true},
     behavior:{quietHours:{enabled:false},explore:false,idleRemarks:false,smallActivities:false},teleport:{auto:false}}));return dir;
 }
 async function launch(dir:string,handle='888') {

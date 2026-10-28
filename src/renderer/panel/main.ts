@@ -143,6 +143,7 @@ function go(t: string) {
   t = ALIASES[t] ?? t;
   if (t !== 'welcome' && !TABS.some((x) => x.id === t)) t = 'chat';
   tab = t;
+  void api.invoke('panel:viewed', t).catch(() => {});
   renderRail();
   statusEl = null; stopBtn = null;
   view.replaceChildren();
@@ -487,11 +488,15 @@ async function renderCharacter() {
       sw('Avoid the active window', 'teleport.avoidActiveWindow'),
       sw('Teleport effects', 'teleport.effects')),
     group('Conversation cues',
+      sw('Occasional cursor visits and brief following', 'behavior.cursorVisits'),
+      sw('Visit newly opened windows', 'behavior.newWindowVisits'),
+      field('Conversation activity', select('dialogue.activityLevel', 'Conversation activity', [['relaxed', 'Relaxed (6 background requests / 10 min)'], ['balanced', 'Balanced (12 / 10 min)'], ['lively', 'Lively (24 / 10 min)'], ['very_lively', 'Very lively (48 / 10 min)']]), 'More room for reactions and observations, not a requirement to speak. Learning and direct interactions have separate allowances. Lower this if you hit provider limits; actual rate-limit errors still pause requests.'),
       sw('Notice local context', 'dialogue.localContext'),
+      h('div', { class: 'hint' }, 'Window openings and settled changes can draw her attention. Visual previews also require Read screen to be allowed in Privacy; Ask first never authorizes an automatic capture.'),
       sw('Occasional contextual pings', 'dialogue.contextPings'),
-      sw('Occasional song banter', 'dialogue.spotifyBanter'),
-      h('div', { class: 'hint' }, 'During Spotify visits, she may react to the current song using Windows playback details. At most one attempt per 15 minutes, sharing the existing AI budget.'),
-      h('div', { class: 'hint' }, 'Occasional clock, battery and broad app-activity reactions. No extra AI requests; tab titles are never read aloud.'),
+      sw('React to new songs', 'dialogue.spotifyBanter'),
+      h('div', { class: 'hint' }, 'A lightweight Windows media helper notices Spotify track changes about every 12 seconds. New songs can draw an opinion shaped by her tastes, with the shared activity allowance. No microphone, audio recording, or Spotify login. Pauses for quiet modes.'),
+      h('div', { class: 'hint' }, 'Clock, battery and app activity can shape her remarks. YouTube reactions favor the creator and title; an unavailable creator stays unknown. Quiet and context controls still apply.'),
       field('Weather city (optional)', h('input', { type: 'text', value: S.dialogue.weatherCity, maxLength: 100, placeholder: 'City, state or country', 'aria-label': 'Weather city', onchange: (e: Event) => save('dialogue.weatherCity', (e.target as HTMLInputElement).value.trim()) }), 'Leave blank for no weather requests. A city enables Open-Meteo forecasts, cached for 30 minutes. Ambiguous names are skipped.'),
       h('a', { href: 'https://open-meteo.com/', target: '_blank', rel: 'noreferrer' }, 'Weather data by Open-Meteo')),
     group('Behavior',
@@ -501,7 +506,7 @@ async function renderCharacter() {
       field('From', h('span', { class: 'row' }, timeIn('behavior.quietHours.start', 'Quiet hours start'), h('span', { class: 'sub' }, 'to'), timeIn('behavior.quietHours.end', 'Quiet hours end'))),
       sw('Idle remarks', 'behavior.idleRemarks'),
       S.behavior.idleRemarks ? sw('Say remarks out loud', 'behavior.proactiveVoice') : null,
-      S.behavior.idleRemarks ? field('Remark every (minutes)', num('behavior.remarkIntervalMinutes', 'Remark interval', 5, 480)) : null,
+      S.behavior.idleRemarks ? h('p', { class: 'hint' }, 'Attention responds to new windows, settled document changes and unresolved curiosities. She can look without speaking; recent conversation, repetition and focus controls limit interruptions.') : null,
       sw('Explore background windows', 'behavior.explore'),
       h('div', { class: 'hint' }, 'Allows visits in Company mode too. Visits are paced over minutes and pause for games, sleep, quiet hours and conversation. Occasional observations share a limited background request budget.')),
   );
@@ -754,7 +759,7 @@ async function renderDeveloper() {
             fresh?.openCuriosity ? note(`Unresolved: ${fresh.openCuriosity}`) : null),
           card('Why she may be quiet', g.blockers.length ? h('ul', { class: 'dev-blockers' }, ...g.blockers.map(t => h('li', {}, t))) : note('No current host blocker. Timing, evidence and the model can still favor silence.'),
             line('Core initiative gate', g.initiativeReady ? 'Open' : 'Waiting'), line('After direct interaction', wait(m.diagnostics.retrySeconds)),
-            line('Visual inspection interval', wait(g.inspectionSeconds)), line('Next movement window', wait(g.nextVisitSeconds)),
+            line('Next selective inspection', wait(g.inspectionSeconds)), line('Unsolicited speech spacing', wait(g.speechSeconds)), line('Next movement window', wait(g.nextVisitSeconds)),
             note('These are earliest eligibility windows, not promises to speak or move.')),
           card('Body and continuity', line('Artwork', renderer?.pose ?? renderer?.clip ?? 'Waiting for renderer'), line('Pose motion', !renderer?.pose ? 'Primary sprite' : renderer.reduced ? 'Reduced motion' : renderer.shader && renderer.motion > 0 ? 'Shader active' : 'Still / fallback'),
             line('Visit / tour', `${r.visit} / ${r.tour}`), line('Moving', String(r.moving)), line('FPS', String(r.fps ?? 'Unknown')),

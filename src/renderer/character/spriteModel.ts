@@ -209,12 +209,12 @@ export class CapriSpriteModel extends VectorModel {
       ctx.translate(gesture.x * W * intensity, gesture.y * H * intensity); ctx.rotate(gesture.turn * intensity);
       ctx.scale(1 + (gesture.sx - 1) * intensity, 1 + (gesture.sy - 1) * intensity);
     }
-    if (this.acting && !sleeping && !inp.dragging) {
+    if (this.acting && !sleeping && !inp.dragging && !inp.moving) {
       const desired = activityMotion(this.acting.kind, this.t - this.acting.at, this.acting.side);
       const ease = 1 - Math.exp(-dt * 14);
       for (const key of ['x', 'y', 'turn', 'scaleX', 'scaleY'] as const) this.actingPose[key] += (desired[key] - this.actingPose[key]) * ease;
       const pose = this.actingPose;
-      ctx.translate(pose.x * W, pose.y * H); ctx.rotate(pose.turn); ctx.scale(pose.scaleX, pose.scaleY);
+      ctx.translate(pose.x * W * intensity, pose.y * H * intensity); ctx.rotate(pose.turn * intensity); ctx.scale(1 + (pose.scaleX - 1) * intensity, 1 + (pose.scaleY - 1) * intensity);
     }
     // Cursor attention changes facing only. Body acting has its own explicit gestures.
     const still = !!this.activeSecondary && inp.secondaryMotion === 'still';

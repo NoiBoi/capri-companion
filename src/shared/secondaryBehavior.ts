@@ -1,4 +1,4 @@
-export interface PoseSupport { sit: boolean; lie: boolean; kind: 'window_top' | 'window_bottom' | 'taskbar' | 'none'; tight?: boolean; landing?: 'stand' | 'sit' | 'lie' }
+export interface PoseSupport { sit: boolean; lie: boolean; kind: 'window_top' | 'window_bottom' | 'taskbar' | 'none'; tight?: boolean; landing?: 'stand' | 'sit' | 'lie'; sustainedRest?:boolean }
 export interface SecondaryInput {
   enabled: boolean; blocked: boolean; support: PoseSupport; inverted: boolean;
   hovering: boolean; inspectingBelow: boolean; patting: boolean;
@@ -29,6 +29,7 @@ export class SecondaryBehavior {
     const lounge = input.support.sit && input.support.lie && !input.inverted
       && (input.support.kind === 'taskbar' || input.support.kind === 'window_bottom');
     this.rest = lounge ? this.rest + dt : 0;
+    if(lounge&&input.support.sustainedRest)return {pose:'recline',closed:false,reason:'chosen long rest'};
     // Begin lying immediately, then use the original side-sitting strip between rests.
     if (lounge && this.rest % 110 < 75) return { pose: 'recline', closed: false, reason: 'lower ledge rest' };
     return { pose: null, closed: false, reason: 'primary' };

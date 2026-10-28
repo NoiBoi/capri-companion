@@ -12,7 +12,7 @@ fs.mkdirSync(folder, { recursive: true });
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'capri-integrated-'));
 const actual = JSON.parse(fs.readFileSync(path.join(process.env.APPDATA, 'Capri Buddy/settings.json'), 'utf8'));
 if (actual.ai.provider !== 'codex') throw Error('This live check requires the configured Codex provider.');
-fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ firstRunComplete: true,
+fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ firstRunComplete: true, actions: { policies: { read_screen: 'allow' } },
   character: { hideOnFullscreen: false },
   ai: { provider: 'codex', codex: actual.ai.codex, requestTimeoutSec: 60 },
   memory: { autoLearn: false }, voice: { ttsEnabled: true, ttsEngine: 'windows', volume: 0, interactionLines: true },

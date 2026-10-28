@@ -27,7 +27,7 @@ async function model(quiet = false) {
 async function launch(dir: string) {
   app = await electron.launch({ ...(process.env.CAPRI_EXE ? { executablePath: process.env.CAPRI_EXE, args: [] } : { args: [root] }), env: { ...process.env, CAPRI_TEST: '1', CAPRI_OFFSCREEN: '1', CAPRI_USER_DATA: dir, CAPRI_NO_DEV_KEY: '1' } });
   await app.firstWindow();
-  for (let i = 0; i < 100; i++) { if (await app.evaluate(() => !!(globalThis as any).__capri)) return app; await new Promise(r => setTimeout(r, 100)); }
+  for (let i = 0; i < 100; i++) { if (await app.evaluate(() => !!(globalThis as any).__capri)) { const char=app.windows().find(w=>w.url().includes('character.html'))!; await char.waitForFunction(()=>!!(window as any).__capriDebug); await app.evaluate(()=>{const g=globalThis as any;g.__capriIdleOverride=0;g.__capriDesktopOverride={title:'Conversation fixture',process:'fixture.exe'};}); return app; } await new Promise(r => setTimeout(r, 100)); }
   throw Error('No app state');
 }
 function profile(url: string) {
@@ -39,7 +39,7 @@ describe('multi-turn chat and physical interaction', () => {
     const m = await model(), dir = profile(m.url), a = await launch(dir);
     await a.evaluate(async () => { const a = (globalThis as any).__capri; await a.convo.send('I choose blue glaze for the fox. What do you think?'); await a.convo.settle(); await a.generatedRemark('pat'); });
     const touch = m.requests.find(r => /"event":"pat"/.test(r.messages.at(-1)!.content));
-    expect(touch).toBeDefined(); expect(touch!.messages[0].content).toContain('I vote for red glaze. Why blue?');
+    expect(touch,await a.evaluate(()=>(globalThis as any).__capri.lastDialogueOutcome)).toBeDefined(); expect(touch!.messages[0].content).toContain('I vote for red glaze. Why blue?');
     expect(touch!.messages[0].content).toContain('CURRENT SHARED EXCHANGE'); expect(touch!.messages.at(-1)!.content).not.toContain('Lightly dodge');
     expect(await a.evaluate(() => (globalThis as any).__capri.bubble.state.text)).toContain('still vote for red');
     await a.evaluate(async () => { const a = (globalThis as any).__capri; await a.convo.send('New subject. I want quiet company, no more glaze argument.'); await a.convo.settle(); });
@@ -63,7 +63,7 @@ describe('multi-turn chat and physical interaction', () => {
   it('honors a generated quiet touch instead of replacing it with a reward line', async () => {
     const m = await model(true), a = await launch(profile(m.url));
     const result = await a.evaluate(async () => { const a = (globalThis as any).__capri; a.conversationScene.record({ id: 'quiet', role: 'user', text: 'I just want quiet company.', at: Date.now() }); a.bubble.dismiss(); await a.generatedRemark('pat'); return { outcome: a.lastDialogueOutcome, scenes: a.scenes.recent() }; });
-    expect(m.requests).toHaveLength(1); expect(result.outcome).toContain('chose quiet');
+    expect(m.requests,result.outcome).toHaveLength(1); expect(result.outcome).toContain('chose quiet');
     expect(result.scenes.filter((s: any) => s.kind === 'said')).toHaveLength(0);
   });
 });

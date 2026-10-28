@@ -13,6 +13,11 @@ describe('bounded purposeful outings', () => {
     const b = d.choose(places, now)!; expect(b.goal).toBe(a.goal); expect(b.key).not.toBe(a.key);
     const endRest = d.complete(b.key, now); expect(endRest).toBeGreaterThanOrEqual(120000); expect(d.snapshot().outing).toBeNull();
   });
+  it('chooses different physical forms rather than repeating a roam-perch routine', () => {
+    const d=new ExplorationDirector(()=>0); let now=1000000; const manners=new Set<string>(); let previous='';
+    for(let i=0;i<8;i++) { const pick=d.choose([{key:'place_'+i}],now)!; manners.add(pick.manner); expect(pick.manner).not.toBe(previous); previous=pick.manner; d.complete(pick.key,now); now=d.snapshot().restUntil+1; }
+    expect(manners.size).toBeGreaterThanOrEqual(3);
+  });
   it('persists visits and rest across launches without raw window titles', () => {
     const first = new ExplorationDirector(() => .9), now = 1000000;
     const pick = first.choose([{ key: 'one' }], now)!; first.complete(pick.key, now);
@@ -25,6 +30,14 @@ describe('bounded purposeful outings', () => {
     const d = new ExplorationDirector(() => .1), now = 1000000;
     const a = d.choose([places[0]], now)!; d.complete(a.key, now);
     expect(d.choose([places[0]], d.snapshot().restUntil + 1)).toBeNull();
+  });
+  it('allows new visual evidence to justify one revisit, while an old unresolved question cannot bypass visit memory', () => {
+    const d=new ExplorationDirector(()=>0), now=1000000;
+    const pick=d.choose([{key:'one',interest:12,interestAt:now-1}],now)!;d.complete(pick.key,now);
+    const later=d.snapshot().restUntil+1;
+    expect(d.choose([{key:'one',interest:12,interestAt:now-1}],later)).toBeNull();
+    const ready=d.snapshot().restUntil+1;
+    expect(d.choose([{key:'one',interest:12,interestAt:ready-1}],ready)?.key).toBe('one');
   });
   it('resumes an interrupted outing without counting a failed visit as finished', () => {
     const d = new ExplorationDirector(() => .3), now = 1000000;

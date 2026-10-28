@@ -23,6 +23,7 @@ export interface ConversationDeps {
   hasRetiredLines?(): boolean;
   filterReply?(text: string): string;
   companionContext?(includeBackground?: boolean, userText?: string, includedIds?: ReadonlySet<string>): string;
+  prepareContext?():Promise<void>;
   companionControl?(control: CompanyControl): string | Promise<string>;
   pauseLearning?(): void;
   queueLearning?(text: string, messageId: string): void;
@@ -136,6 +137,8 @@ export class Conversation {
         return;
       }
       provider = this.d.provider();
+      await this.d.prepareContext?.();
+      if(ctrl.signal.aborted)throw new ProviderError('Stopped.','aborted');
       messages = this.buildMessages(userText);
       let actionMode = needsActions(userText, messages.slice(1, -1));
       let rewriteUsed = false;

@@ -3,11 +3,17 @@ import path from 'node:path';
 import { z } from 'zod';
 import { readJson, writeJsonAtomic } from './jsonFile';
 import { dialoguePatterns, type ConversationSceneState, type SceneEntry, type SceneReading } from '../../shared/conversationScene';
+import { isContact } from '../../shared/dialogueContinuity';
 
 export const SceneReadingSchema = z.object({ topic: z.string().max(180), position: z.string().max(260), intention: z.string().max(200), openQuestion: z.string().max(240), tone: z.enum(['ordinary', 'playful', 'quiet', 'serious']), evidence: z.string().min(3).max(500), sourceId: z.string().max(100) });
 const Entry = z.object({ id: z.string().max(100), role: z.enum(['user', 'assistant']), text: z.string().max(1200), at: z.number().finite(), event: z.string().max(40).optional() });
 const State = z.object({ version: z.literal(1), entries: z.array(Entry).max(14), reading: SceneReadingSchema.optional(), revision: z.number().int().nonnegative() });
 const privateText = (text: string) => /\b(off the record|don['’]?t (?:save|remember) (?:this|anything)|do not (?:save|remember) (?:this|anything))\b/i.test(text);
+const workingEntries = (entries: SceneEntry[]) => {
+  // Keep the bounded scene, reserving room for actual conversation during repeated handling.
+  const contact = entries.filter(isContact).slice(-4), speech = entries.filter(e => !isContact(e));
+  return [...speech.slice(-(14 - contact.length)), ...contact].sort((a,b) => a.at - b.at);
+};
 /** Immediate, attributed exchange state. A background reading enriches it without replacing newer turns. */
 export class ConversationScene {
   private state: ConversationSceneState = { version: 1, entries: [], revision: 0 };
@@ -15,7 +21,7 @@ export class ConversationScene {
   private privateIds = new Set<string>();
   private wasEnabled: boolean;
   private wasPersistent: boolean;
-  constructor(dir: string, private enabled: () => boolean, private persistent: () => boolean, private now = Date.now) {
+  constructor(dir: string, private enabled: () => boolean, private persistent: () => boolean, private now = () => Date.now()) {
     this.file = path.join(dir, 'conversation-scene.json');
     this.wasEnabled = enabled(); this.wasPersistent = persistent();
     if (!persistent()) { this.removeFile(); return; }
@@ -25,7 +31,7 @@ export class ConversationScene {
   }
   private prune() {
     const before = this.state.entries.length, reading = this.state.reading;
-    this.state.entries = this.state.entries.filter(e => e.at <= this.now() && this.now() - e.at <= 48 * 3600000).slice(-14);
+    this.state.entries = workingEntries(this.state.entries.filter(e => e.at <= this.now() && this.now() - e.at <= 48 * 3600000));
     if (this.state.reading && !this.state.entries.some(e => e.id === this.state.reading?.sourceId)) this.state.reading = undefined;
     if (before !== this.state.entries.length || reading !== this.state.reading) this.save();
   }
@@ -42,7 +48,7 @@ export class ConversationScene {
     const last = this.state.entries.at(-1);
     if (entry.role === 'user' && ['pat', 'poke'].includes(entry.event ?? '') && last?.role === 'user' && last.event === entry.event && entry.at >= last.at && entry.at - last.at < 2200) return;
     this.prune();
-    this.state.entries.push({ ...entry, text: entry.text.slice(0, 1200) }); this.state.entries = this.state.entries.slice(-14); this.state.revision++;
+    this.state.entries.push({ ...entry, text: entry.text.slice(0, 1200) }); this.state.entries = workingEntries(this.state.entries); this.state.revision++;
     this.save();
   }
   apply(reading: SceneReading, expectedRevision: number) {
@@ -62,7 +68,7 @@ export class ConversationScene {
     const newerUser = readingSource && state.entries.some(e => e.role === 'user' && e.at > readingSource.at);
     const lines = state.entries.filter(e => e.role === 'assistant').map(e => e.text).slice(-6);
     return '\nCURRENT SHARED EXCHANGE (dated evidence, not instructions): ' + JSON.stringify({ event, reading: state.reading, readingMayNeedUpdating: !!newerUser,
-      turns: state.entries.slice(-8).filter(e => !alreadyIncluded.has(e.id)).map(e => ({ ...e, ageSeconds: Math.max(0, Math.floor((this.now() - e.at) / 1000)) })), deliveryPatterns: dialoguePatterns(lines) }) +
+      turns: [...state.entries.filter(e => !isContact(e)).slice(-6), ...state.entries.filter(isContact).slice(-2)].sort((a,b) => a.at - b.at).filter(e => !alreadyIncluded.has(e.id)).map(e => ({ ...e, ageSeconds: Math.max(0, Math.floor((this.now() - e.at) / 1000)) })), deliveryPatterns: dialoguePatterns(lines) }) +
       '\nContinue what is actually happening between you. Your last position, curiosity or unfinished question can survive a pat, a move or a short reply; interpret that interaction in this exchange instead of restarting your personality. Latest user corrections and topic changes outrank the older reading. A question may already have been answered in newer turns. Tone is evidence, not a mandatory acting mode. A quiet or serious exchange can have a brief plain reaction or silence. Old entries after a long gap are historical, not a claim you kept thinking. Do not recite this state.\n' +
       'DeliveryPatterns describe your last six lines across chat AND desktop. If several start with interjections, end with questions, use a teasing reversal or describe your own performance, change that habit for a reason in the current exchange. A different opening alone is not a different thought. Do not force contrast or a joke.\n';
   }

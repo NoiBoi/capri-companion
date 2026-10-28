@@ -71,20 +71,34 @@ export class Speaker {
     return new Promise<void>((resolve, reject) => {
       if (typeof speechSynthesis === 'undefined') return reject(new Error('no speechSynthesis'));
       const u = new SpeechSynthesisUtterance(item.text);
-      const voice = pickVoice(speechSynthesis.getVoices(), v.systemVoice);
-      if (!voice) return reject(new Error('Configured voice is not ready'));
-      u.voice = voice;
       u.rate = v.rate; u.pitch = v.pitch; u.volume = v.volume;
-      let done = false, watchdog: ReturnType<typeof setTimeout>;
-      const finish = (state: 'end' | 'error' | 'cancel') => { if (done) return; done = true; clearTimeout(watchdog); this.audible = false; this.lips.stop(); this.report(item.id, state); state === 'error' ? reject(new Error('tts error')) : resolve(); };
+      let done = false, watchdog: ReturnType<typeof setTimeout> | undefined, readiness: ReturnType<typeof setTimeout> | undefined;
+      const finish = (state: 'end' | 'error' | 'cancel') => {
+        if (done) return; done = true; clearTimeout(watchdog); clearTimeout(readiness); this.audible = false; this.lips.stop();
+        // The queue reports errors once; cancelled or completed audio reports here.
+        if (state === 'error') reject(new Error('tts error'));
+        else { this.report(item.id, state); resolve(); }
+      };
       u.onstart = () => { if (done) return; this.audible = true; this.lips.start(); this.report(item.id, 'start'); };
       u.onboundary = (e) => { if (e.name === 'word') this.lips.boundary(e.charLength || 4); };
       u.onend = () => finish('end');
       u.onerror = (e) => (e.error === 'interrupted' || e.error === 'canceled' ? finish('cancel') : finish('error'));
       this.playing = { id: item.id, cancel: () => { finish('cancel'); speechSynthesis.cancel(); } };
-      // watchdog: some voices never fire onend
-      watchdog = setTimeout(() => finish('error'), 4000 + item.text.length * 120);
-      try { speechSynthesis.speak(u); } catch { finish('error'); }
+      const readyUntil = Date.now() + 2000;
+      const start = () => {
+        if (done) return;
+        const voice = pickVoice(speechSynthesis.getVoices(), v.systemVoice);
+        if (!voice) {
+          if (Date.now() < readyUntil) readiness = setTimeout(start, 50);
+          else finish('error');
+          return;
+        }
+        u.voice = voice;
+        // Some installed voices never emit onend. Readiness has its own bounded wait.
+        watchdog = setTimeout(() => finish('error'), 4000 + item.text.length * 120);
+        try { speechSynthesis.speak(u); } catch { finish('error'); }
+      };
+      start();
     });
   }
 

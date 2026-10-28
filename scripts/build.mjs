@@ -8,7 +8,7 @@ const out = path.join(root, 'dist');
 const prod = process.argv.includes('--prod');
 fs.rmSync(out, { recursive: true, force: true });
 
-const common = { bundle: true, sourcemap: prod ? false : 'linked', minify: prod, target: 'es2023', logLevel: 'warning', legalComments: 'none' };
+const common = { bundle: true, loader: { '.md': 'text' }, sourcemap: prod ? false : 'linked', minify: prod, target: 'es2023', logLevel: 'warning', legalComments: 'none' };
 
 await Promise.all([
   build({ ...common, entryPoints: [path.join(root, 'src/main/index.ts')], outfile: path.join(out, 'main/index.js'), platform: 'node', format: 'cjs', external: ['electron', 'koffi'] }),
