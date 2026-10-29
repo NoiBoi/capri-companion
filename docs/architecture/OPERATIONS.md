@@ -31,3 +31,8 @@ Read docs/architecture/FINAL_REPORT.md and SCENARIO_RESULTS.md for exact verific
 Typecheck: npm run typecheck. Units: npm test -- --maxWorkers=2. Build: npm run build. Windows package: npm run dist, which stages the unpacked application before deployment. Electron checks run serially with CAPRI_EXE pointing at the staged package and synthetic CAPRI_USER_DATA directories. CAPRI_LIVE_SESSIONS=1 enables the bounded actual-model restart fixture. The deterministic day-in-life scenario lives in tests/scenarios/dayInLife.ts; CAPRI_SCENARIO_REPORT saves its results. scripts/stage5-character-eval.ts saves append-only original generations and delivery decisions. Use a new output filename for every run.
 
 Future improvements with the highest value: broaden subject closure beyond explicit named terms without imposing global text bans; reduce unnecessary concessions to delivery criticism; improve native focus return across external applications; exercise live authorized sources across an actual multi-day workload; measure long-duration resource growth. Keep ordinary silence and independent opinions as successful outcomes.
+
+
+## Final 1.0.0 release record
+
+Private stopped-profile and 0.9.0 application rollback: C:\Users\matth\Documents\Codex\2026-10-29\complete-the-original-capri-1-0\work\stage6-release-20261029-031809. All 155 profile files matched before normal relaunch. Use an ordinary visible Desktop shortcut launch for this interactive companion. A first hidden-style launch stalled; after clean shutdown and terminating its lingering owned processes, two ordinary launches succeeded. Do not reset data or delete caches to reproduce a successful startup. See FINAL_REPORT.md for the remaining uncertainty and exact validation results.

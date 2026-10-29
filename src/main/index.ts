@@ -1660,7 +1660,10 @@ async function generatedRemark(event: string, detail = '', options: { target?: b
   let pending = behavior.preferredTarget();
   if (pending && /^-?\d+$/.test(pending) && !trackedWindowFor(BigInt(pending))) { behavior.forgetTarget(pending); pending = undefined; }
   const preferred = pending && /^-?\d+$/.test(pending) ? BigInt(pending) : null;
-  const candidate = event === 'roam'||event==='song'||event==='own_panel'||event==='personal_followup' ? null : options.target ?? (event === 'opportunity' && preferred ? preferred : event === 'inspect' ? exploringHandle : attentionHandle ?? watchedHandle ?? lastDesktopHandle);
+  const freshForeground=TEST&&(globalThis as any).__capriForegroundHandle!==undefined?(globalThis as any).__capriForegroundHandle as bigint:foregroundHandle();
+  const freshContextTarget=freshForeground&&!ownHandles().includes(freshForeground)&&trackedWindowFor(freshForeground)?freshForeground:null;
+  const knownDesktop=lastDesktopHandle&&trackedWindowFor(lastDesktopHandle)?lastDesktopHandle:null;
+  const candidate = event === 'roam'||event==='song'||event==='own_panel'||event==='personal_followup' ? null : options.target ?? (event === 'opportunity' && preferred ? preferred : event === 'inspect' ? exploringHandle : attentionHandle ?? watchedHandle ?? knownDesktop ?? freshContextTarget);
   const target = local && candidate && trackedWindowFor(candidate) ? candidate : null;
   const observed = target ? observedWindow(target) : null;
   if (['inspect', 'question', 'placed_window'].includes(event) && !target) return waiting('no valid context-enabled target');

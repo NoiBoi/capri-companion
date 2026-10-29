@@ -1,3 +1,7 @@
+# Capri 1.0.0: Stages 5 and 6
+
+Character performance and long-horizon stabilization are implemented and installed. Read FINAL_REPORT.md for exact evidence and limitations. Final unit/type checks pass (689 tests). The accelerated 48-hour scenario passes 25 integrated assertions. Two actual-model sequences preserve 62 first generations. Final focused packaged checks pass 19 cases with 3 deliberate skips, including crash recovery and real native-model restart. The earlier broad package run was 232 passed/5 failed/10 skipped; failures and retests are retained, and a single all-green broad run is not claimed. Normal production launch preserves 40 memories, saved identity, provider connectivity and settings, with all 155 prelaunch profile files preserved. Actual external multi-day reliability remains unverified. The first hidden-style renderer startup stall and its successful ordinary-launch recovery are recorded, not hidden.
+
 # Current Stage 4 update: product 0.9.0
 
 Read [STAGE4.md](STAGE4.md), [STAGE4_VALIDATION.md](STAGE4_VALIDATION.md) and

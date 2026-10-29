@@ -1,3 +1,9 @@
+# Final Stage 5/6 handoff: Capri 1.0.0
+
+Implementation and release are complete with the verification scope in FINAL_REPORT.md. Use OPERATIONS.md for setup, privacy and rollback. Keep all earlier stage records as historical evidence. Do not restart from the 0.3.0 memory summary or assume AppData is the current profile: normal data is Documents/Capri Buddy. Architectural checkpoints: 289e34f baseline, 2c498ed Milestone A, dd90560 two-day corrections, da90aa8 stabilization. The final source/report checkpoint follows these. No private backup belongs in a public artifact.
+
+The actual installed app loaded all 40 approved memories and known-name state, with no settings repairs and Codex connected. Its normal Memory panel renders and retains Honcho state. The ordinary shortcut relaunch after a full normal quit reports readiness in 462 ms. See the recorded initial hidden-style startup failure before assuming every launch was successful. The accelerated scenario and synthetic source fixtures do not prove an actual two-day live-source workload.
+
 # Current Stage 4 update: product 0.9.0
 
 Read [STAGE4.md](STAGE4.md), [STAGE4_VALIDATION.md](STAGE4_VALIDATION.md) and

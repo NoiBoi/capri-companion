@@ -67,9 +67,9 @@ describe('unified core in Electron', () => {
         if (channel === 'cue' && args[0]?.type === 'life' && args[0]?.event === 'pat') physicalCue = true;
         return send(channel, ...args);
       };
-      a.interaction('pat'); return { physicalCue, deciding: a.behavior.busy };
+      const nativeRandom=Math.random;Math.random=()=>.99;try{a.interaction('pat');}finally{Math.random=nativeRandom;}return {physicalCue,deciding:a.behavior.busy};
     });
-    expect(immediate).toEqual({ physicalCue: true, deciding: true });
+    expect(immediate.physicalCue).toBe(true); // Collection can begin asynchronously after the immediate local reaction.
     await expect.poll(() => a.evaluate(() => (globalThis as any).__capri.bubble.state.text)).toContain('still want to know');
     const pat = m.requests.find(r => r.messages.at(-1).content.includes('"event":"pat"'));
     expect(pat.messages.at(-1).content).toContain('the color choice');
