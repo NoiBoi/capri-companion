@@ -19,10 +19,10 @@ it('honors timed stays, sleeps in place, wakes and delivers exactly one near-end
   const {a,char}=await boot();
   const reply=await a.evaluate(async()=>{const a=(globalThis as any).__capri;await a.convo.send('stay here for 5 minutes');await a.convo.settle();return a.history.recent(1)[0];});
   expect(reply.content).toContain('5 minutes');expect(reply.meta.provider).toBe('companion');
-  await a.evaluate(()=>{const a=(globalThis as any).__capri;a.company.apply({kind:'stay',minutes:5},Date.now()-150000);a.presenceTick();});
+  await a.evaluate(()=>{const a=(globalThis as any).__capri;a.agency.intentions.find((i:any)=>i.skill==='hold_position').startAt=Date.now()-150000;a.presenceTick();});
   await expect.poll(()=>char.evaluate(()=>(window as any).__capriDebug.behavior.state)).toBe('sleeping');
   const pos=await a.evaluate(()=>{const a=(globalThis as any).__capri;return a.charWin.getBounds();});
-  await a.evaluate(()=>{const a=(globalThis as any).__capri;a.company.apply({kind:'stay',minutes:5},Date.now()-245000);a.presenceTick();a.presenceTick();});
+  await a.evaluate(()=>{const a=(globalThis as any).__capri;const i=a.agency.intentions.find((i:any)=>i.skill==='hold_position');i.startAt=Date.now()-245000;i.deadline=Date.now()+55000;a.presenceTick();a.presenceTick();});
   await expect.poll(()=>char.evaluate(()=>(window as any).__capriDebug.behavior.state)).not.toBe('sleeping');
   const result=await a.evaluate(()=>{const a=(globalThis as any).__capri;return {bounds:a.charWin.getBounds(),lines:a.scenes.recent().filter((s:any)=>s.kind==='said'&&s.text.includes('minute left')),staying:a.company.staying};});
   expect(result.lines).toHaveLength(1);expect(result.bounds).toEqual(pos);expect(result.staying).toBe(true);
@@ -67,13 +67,13 @@ it('can choose a direct lower-window lounge, follows that edge, and loses it saf
 });
 it('occasionally teleports beside the pointer, follows a moved pointer, and returns home',async()=>{
   const {a}=await boot();
-  await a.evaluate(()=>{const g=globalThis as any,a=g.__capri,b=a.charWin.getBounds();g.__home=b;g.__capriCuriosityCursor={x:b.x+380,y:b.y+70};g.__cursorRun=a.curiosityDetour('',undefined,undefined,true);});
+  await a.evaluate(()=>{const g=globalThis as any,a=g.__capri,b=a.charWin.getBounds();g.__home=b;g.__savedRandom=Math.random;Math.random=()=>.1;g.__capriCuriosityCursor={x:b.x+380,y:b.y+70};g.__cursorRun=a.curiosityDetour('',undefined,undefined,true);});
   await expect.poll(()=>a.evaluate(()=>(globalThis as any).__capri.curiosityActive)).toBe(true);
   await new Promise(r=>setTimeout(r,1300));
   const before=await a.evaluate(()=>{const g=globalThis as any,b=g.__capri.charWin.getBounds();g.__capriCuriosityCursor={x:g.__capriCuriosityCursor.x-180,y:g.__capriCuriosityCursor.y+100};return b;});
   await new Promise(r=>setTimeout(r,2500));
   const during=await a.evaluate(()=>(globalThis as any).__capri.charWin.getBounds());expect(Math.hypot(during.x-before.x,during.y-before.y)).toBeGreaterThan(30);
-  const result=await a.evaluate(async()=>{const g=globalThis as any;return {done:await g.__cursorRun,home:g.__home,end:g.__capri.charWin.getBounds(),scenes:g.__capri.scenes.recent()};});
+  const result=await a.evaluate(async()=>{const g=globalThis as any;const done=await g.__cursorRun;Math.random=g.__savedRandom;return {done,home:g.__home,end:g.__capri.charWin.getBounds(),scenes:g.__capri.scenes.recent()};});
   expect(result.done).toBe(true);expect(result.end.x).toBe(result.home.x);expect(result.end.y).toBe(result.home.y);expect(result.scenes.some((s:any)=>s.text.includes('Followed beside'))).toBe(true);
 });
 it('moves to the active monitor taskbar on a contextual cue and yields to sleep',async()=>{

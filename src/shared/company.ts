@@ -1,4 +1,7 @@
-export type CompanyControl = { kind: 'focus'; minutes: number } | { kind: 'stay'; minutes?: number; target?: string }
+export type CompanyControl = { kind: 'focus'; minutes: number } | { kind: 'stay'; minutes?: number; target?: string; posture?: 'lie'|'sit'; quiet?: boolean }
+  | { kind:'timer'; seconds:number; label?:string } | {kind:'cancel_intentions'}
+  | {kind:'commitment';text:string}
+  | {kind:'complete_commitment'}
   | { kind: 'avoid' | 'allow_window'; target: string; minutes?: number }
   | { kind: 'move_window'; target: string; motion: 'teleport' | 'glide' }
   | { kind: 'focus_end' | 'release' | 'resume' | 'look' | 'explore' | 'sleep' };
@@ -8,10 +11,18 @@ export function companyControl(text: string): CompanyControl | null {
   const words: Record<string, number> = {a:1,one:1,two:2,three:3,four:4,five:5,ten:10,fifteen:15,twenty:20,thirty:30,sixty:60};
   const s = text.toLowerCase().replace(/[’]/g, "'").trim().replace(/^(?:hey\s+)?capri[,!]?\s+/, '').replace(/^(?:can|could|would) you\s+/, '').replace(/^please,?\s+/, '').replace(/[.!?]+$/, '').replace(/,?\s+please$/, '').trim().replace(/\bfor (a|one|two|three|four|five|ten|fifteen|twenty|thirty|sixty) (minutes?|mins?|hours?|hrs?|seconds?|secs?)\b/, (_m,n,u)=>`for ${words[n]} ${u}`);
   if (/^(?:go to sleep|sleep mode|take a nap|go to bed|sleep)$/.test(s)) return { kind: 'sleep' };
+  const commitment=/^track my commitment to (.{1,280})$/.exec(s);
+  if(commitment&&!/["<>]/.test(commitment[1]))return {kind:'commitment',text:commitment[1]};
+  if(/^mark my commitment (?:done|complete)$/.test(s))return {kind:'complete_commitment'};
   if (/^(?:explore mode|start exploring|go explor(?:e|ing)|explore)$/.test(s)) return { kind: 'explore' };
   if (/^(?:wake up|wake|normal mode|stop exploring)$/.test(s)) return { kind: 'resume' };
   const stay = /^(?:stay (?:right )?here|sit (?:right )?here|stay put|hold (?:this|your) spot|don't (?:move|wander)|do not (?:move|wander))(?: for (a bit|a while|now|\d+(?:\.\d+)?\s*(?:minutes?|mins?|hours?|hrs?|seconds?|secs?)))?$/.exec(s);
   const duration = (value?: string) => value && /\d/.test(value) ? Math.min(1440, Math.max(1 / 60, parseFloat(value) * (/hours?|hrs?/.test(value) ? 60 : /seconds?|secs?/.test(value) ? 1 / 60 : 1))) : undefined;
+  const lay=/^(?:go )?(lay|lie|rest|sit|stay) (?:down )?(?:in|on|at) (.+? window) for (\d+(?:\.\d+)?\s*(?:minutes?|mins?|min|hours?|hrs?|seconds?|secs?))(?: while i (?:finish my (?:hw|homework|work)|work|study))?(?:[.,;]?\s*(?:i need to lock in|i need to focus|keep quiet|quietly))?$/.exec(s);
+  if(lay&&!/["<>]|\band\b/.test(lay[2])) return {kind:'stay',target:lay[2],minutes:duration(lay[3]),posture:/lay|lie|rest/.test(lay[1])?'lie':'sit',quiet:/lock in|focus|quiet/.test(s)};
+  const timer=/^(?:start|set) (?:a )?(\d+(?:\.\d+)?)\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)(?: timer)$/.exec(s);
+  if(timer)return {kind:'timer',seconds:Math.round((duration(timer[1]+' '+timer[2])??1)*60)};
+  if(/^(?:cancel|stop) (?:my |the |all )?(?:timer|timers|commitment|commitments|intentions|stay)$/.test(s))return {kind:'cancel_intentions'};
   if (stay) { const minutes = duration(stay[1]); return { kind: 'stay', ...(minutes === undefined ? {} : { minutes }) }; }
   const stayOn = /^(?:stay|sit) (?:on|at|in) (.+? window)(?: for (\d+(?:\.\d+)?\s*(?:minutes?|mins?|hours?|hrs?|seconds?|secs?)))?$/.exec(s);
   if(stayOn && !/["<>]|\band\b/.test(stayOn[1])) return {kind:'stay',target:stayOn[1],...(duration(stayOn[2])===undefined?{}:{minutes:duration(stayOn[2])})};
@@ -30,34 +41,36 @@ export function companyControl(text: string): CompanyControl | null {
 
 /** Temporary requests never mutate the user's persistent settings or approved memories. */
 export class Company {
+  durable?: {staying():boolean;focused():boolean;avoiding(id:string):boolean;stayState(now:number):{phase:'sleep'|'awake'|null;remaining:number;reminderDue:boolean};markReminded():void};
   focusUntil = 0;
   private stayUntil = 0;
   private stayStarted = 0;
   private reminded = false;
   stayState(now = Date.now()) {
+    if(this.durable)return this.durable.stayState(now);
     const remaining = this.stayUntil - now;
     const lead = Math.min(60000, (this.stayUntil - this.stayStarted) * .2);
     const nearEnd = Number.isFinite(remaining) && remaining > 0 && remaining <= lead;
     return { phase: remaining <= 0 ? null : nearEnd ? 'awake' as const : now - this.stayStarted >= 120000 ? 'sleep' as const : 'awake' as const,
       remaining, reminderDue: nearEnd && !this.reminded };
   }
-  markReminded() { this.reminded = true; }
+  markReminded() { if(this.durable)this.durable.markReminded();else this.reminded = true; }
   private avoided = new Map<string, number>();
-  get staying() { return this.stayUntil > Date.now(); }
+  get staying() { return this.durable?.staying()??this.stayUntil > Date.now(); }
   set staying(value: boolean) { this.stayUntil = value ? Infinity : 0; }
-  avoiding(id: string, now = Date.now()) { const until = this.avoided.get(id) ?? 0; if (until <= now) this.avoided.delete(id); return until > now; }
+  avoiding(id: string, now = Date.now()) { if(this.durable)return this.durable.avoiding(id);const until = this.avoided.get(id) ?? 0; if (until <= now) this.avoided.delete(id); return until > now; }
   avoid(id: string, minutes?: number, now = Date.now()) { this.avoided.set(id, minutes === undefined ? Infinity : now + minutes * 60000); }
   allow(id: string) { this.avoided.delete(id); }
   pruneWindows(ids: ReadonlySet<string>) { for (const id of this.avoided.keys()) if (!ids.has(id)) this.avoided.delete(id); }
-  focused(now = Date.now()) { return this.focusUntil > now; }
+  focused(now = Date.now()) { return this.durable?.focused()??this.focusUntil > now; }
   apply(control: CompanyControl, now = Date.now()) {
     if (control.kind === 'focus') this.focusUntil = now + control.minutes * 60000;
     if (control.kind === 'focus_end' || control.kind === 'resume') this.focusUntil = 0;
     if (control.kind === 'stay') { this.stayStarted = now; this.reminded = false; this.stayUntil = control.minutes === undefined ? Infinity : now + control.minutes * 60000; }
     if (control.kind === 'release' || control.kind === 'resume') this.staying = false;
   }
-  blocked(now = Date.now()) { return this.focused(now) || this.stayUntil > now; }
-  label(now = Date.now()) { return [this.focused(now) ? 'Quiet company' : '', this.stayUntil > now ? 'Staying here' : ''].filter(Boolean).join(' · '); }
+  blocked(now = Date.now()) { return this.focused(now) || (this.durable?.staying()??this.stayUntil>now); }
+  label(now = Date.now()) { return [this.focused(now) ? 'Quiet company' : '', (this.durable?.staying()??this.stayUntil>now) ? 'Staying here' : ''].filter(Boolean).join(' · '); }
 }
 
 export type VisitPhase = 'idle' | 'approach';

@@ -204,6 +204,13 @@ export class ReminderStore extends EventEmitter {
   private save() { writeJsonAtomic(this.file, this.items); }
   active() { return this.items.filter((r) => !r.fired).sort((a, b) => a.dueAt - b.dueAt); }
   list() { return [...this.items].sort((a, b) => b.dueAt - a.dueAt).slice(0, 200); }
+  /** Stable keys make timer recovery safe even after an already-fired event. */
+  addKeyed(id:string,text:string,dueAt:number,kind:'timer'|'reminder') {
+    const existing=this.items.find(r=>r.id===id);if(existing)return existing;
+    if(!Number.isFinite(dueAt)||dueAt>this.now()+366*86400_000)throw Error('Invalid deadline');
+    if(this.active().length>=ReminderStore.MAX_ACTIVE)throw Error('Too many active reminders');
+    const r:Reminder={id,text:text.slice(0,300),dueAt,kind,fired:false};this.items.push(r);this.save();this.reschedule();return r;
+  }
   add(text: string, dueAt: number, kind: 'reminder' | 'timer'): Reminder {
     if (!Number.isFinite(dueAt) || dueAt < this.now() - 1000) throw new Error('Time is in the past');
     if (dueAt > this.now() + 366 * 86400_000) throw new Error('Too far in the future (max 1 year)');

@@ -14,6 +14,8 @@ export interface ActionContext {
   reminders: { add(text: string, dueAt: number, kind: 'reminder' | 'timer'): Reminder; cancel(q: string): Reminder | null; active(): Reminder[] };
   memory: { add(text: string, source: 'user' | 'model'): MemoryItem; approve(id: string): void };
   now(): number;
+  durableTimer?(text:string,dueAt:number):Promise<ToolResult>;
+  cancelDurableTimer?(query:string):ToolResult|null;
   /** Character hooks (validated, renderer never sees model text). */
   teleport?(where: string, window?: string, motion?: 'teleport' | 'glide'): Promise<{ ok: boolean; detail: string }>;
   emote?(name: string): boolean;
@@ -157,6 +159,7 @@ export const TOOLS = {
       .refine((a) => a.at || a.in_minutes, 'Provide "at" or "in_minutes"'),
     describe: (a, ctx) => `Remind you "${clip(a.text, 60)}" at ${new Date(dueOf(a, ctx)).toLocaleString()}`,
     async run(a, ctx) {
+      if(ctx.durableTimer)return ctx.durableTimer(a.text,dueOf(a,ctx));
       const r = ctx.reminders.add(a.text, dueOf(a, ctx), 'reminder');
       return { ok: true, summary: `Reminder set for ${new Date(r.dueAt).toLocaleString()}` };
     },
@@ -166,6 +169,7 @@ export const TOOLS = {
     schema: z.object({ seconds: z.number().int().min(1).max(86_400), label: z.string().max(100).optional() }),
     describe: (a) => `Start a ${formatDuration(a.seconds * 1000)} timer${a.label ? ` (${a.label})` : ''}`,
     async run(a, ctx) {
+      if(ctx.durableTimer)return ctx.durableTimer(a.label||`${formatDuration(a.seconds*1000)} timer`,ctx.now()+a.seconds*1000);
       const r = ctx.reminders.add(a.label || `${formatDuration(a.seconds * 1000)} timer`, ctx.now() + a.seconds * 1000, 'timer');
       return { ok: true, summary: `Timer running: ${formatDuration(a.seconds * 1000)} (ends ${new Date(r.dueAt).toLocaleTimeString()})` };
     },
@@ -175,6 +179,7 @@ export const TOOLS = {
     schema: z.object({ query: z.string().min(1).max(100) }),
     describe: (a) => `Cancel the timer/reminder matching "${a.query}"`,
     async run(a, ctx) {
+      const durable=ctx.cancelDurableTimer?.(a.query);if(durable)return durable;
       const r = ctx.reminders.cancel(a.query);
       return r ? { ok: true, summary: `Cancelled "${r.text}"` } : { ok: false, summary: 'No matching active timer or reminder' };
     },

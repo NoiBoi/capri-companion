@@ -56,10 +56,11 @@ const Journal = z.object({ at: z.number(), event: z.string(), action: z.string()
 const InterestLife = z.object({ topic: Text, target: z.string().max(100), expiresAt: z.number().finite(), retainUntil: z.number().finite() });
 const StateSchema = z.object({ version: z.literal(1), facts: z.array(Fact).max(8), interests: z.array(Interest).max(3),
   interestLives: z.array(InterestLife).max(32).default([]),
+  saturation:z.array(z.object({key:z.string().max(64),at:z.number(),phase:z.enum(['investigated','discussed','concluded','dismissed','exhausted'])})).max(64).default([]),
   quiet: z.boolean(), journal: z.array(Journal).max(32), opportunityKey: z.string().max(80).optional() });
 type State = z.infer<typeof StateSchema>;
-const fresh = (): State => ({ version: 1, facts: [], interests: [], interestLives: [], quiet: false, journal: [] });
-export interface Expression { action: Decision['action']; line: string; gesture: Decision['gesture']; target?: string;
+const fresh = (): State => ({ version: 1, facts: [], interests: [], interestLives: [], saturation:[], quiet: false, journal: [] });
+export interface Expression { contextSources?: string[]; action: Decision['action']; line: string; gesture: Decision['gesture']; target?: string;
   onAudioDelivered?: (source: ExperienceSource) => void }
 export interface CoreDeps {
   directory: string; provider: LLMProvider | (() => LLMProvider); now?: () => number;
@@ -71,6 +72,7 @@ export interface CoreDeps {
   maySpeak?: (event: BehaviorEvent) => boolean;
   initiativeGapMs?: () => number;
   /** Production host records through its existing delivered-scene path, avoiding duplicate entries. */
+  contextSources?: () => string[];
   hostRecordsScene?: boolean; promptContext?: (event: BehaviorEvent) => string;
   fallback?: (event: BehaviorEvent) => Expression | null;
   onError?: (error: unknown) => void;
@@ -124,6 +126,8 @@ export class BehaviorCore {
   private privateExchange = false;
   private optionalAfter = 0;
   private failure: { at: number; summary: string } | null = null;
+  private sourceDependencies = new Set<string>();
+  contextDependencies() { return [...this.sourceDependencies]; }
   constructor(private d: CoreDeps) {
     this.now = d.now ?? (() => Date.now());
     this.file = path.join(d.directory, 'behavior-state.json');
@@ -136,6 +140,7 @@ export class BehaviorCore {
   }
   private prune() {
     const now = this.now();
+    this.state.saturation=this.state.saturation.filter(s=>s.at<=now&&now-s.at<2*3600000).slice(-64);
     this.state.interestLives = this.state.interestLives.filter(i => i.retainUntil > now && i.retainUntil <= now + 2 * 3600000).slice(-32);
     // Migrate existing duplicate interests, keeping the oldest deadline and newest evidence.
     const merged: State['interests'] = [];
@@ -165,11 +170,12 @@ export class BehaviorCore {
     } catch (error) { this.d.onError?.(error); }
   }
   get busy() { return !!this.active; }
-  diagnostics() { return { busy: this.busy, privateExchange: this.privateExchange, retrySeconds: Math.max(0, Math.ceil((this.optionalAfter - this.now()) / 1000)), failure: this.failure }; }
+  diagnostics() { return { busy: this.busy, privateExchange: this.privateExchange, saturated:this.state.saturation.length, retrySeconds: Math.max(0, Math.ceil((this.optionalAfter - this.now()) / 1000)), failure: this.failure }; }
+  perceptionSaturated(process:string,title:string,fingerprint=''){const key=createHash('sha256').update(JSON.stringify([process,title,fingerprint])).digest('hex');return this.state.saturation.some(s=>s.key===key&&this.now()-s.at<2*3600000);}
   reserve(budget: 'ambient' | 'placement' | 'interaction') { return this.budget.reserve(budget); }
   resumeInitiative() { this.optionalAfter = this.now(); if (this.state.quiet) { this.state.quiet = false; this.save(); } }
   cancel() { this.active?.abort(); this.active = null; this.revision++; }
-  clear() { this.cancel(); this.state = fresh(); this.failure = null;
+  clear() { this.cancel(); this.sourceDependencies.clear(); this.state = fresh(); this.failure = null;
     try { fs.rmSync(this.file, { force: true }); } catch (error) { this.d.onError?.(error); } }
   privacyChanged() { this.cancel(); if (this.d.persistent?.() === false) this.clear(); }
   /** Chat remains with Conversation; it informs and preempts this same situation without a second model call. */
@@ -239,12 +245,15 @@ export class BehaviorCore {
     const input = event.kind === 'trigger' ? { kind: event.kind, event: event.event, detail: event.detail, observation: event.observation, context: event.context } : event;
     const s = this.snapshot(),mode=event.kind==='interact'||event.kind==='trigger'&&event.direct?'chat':'proactive',excluded=this.d.excludedContextSources?.(mode)??new Set<string>();
     if(excluded.size){s.facts=[];s.interests=[];s.journal=[];s.interestLives=[];}
-    return [{ role: 'system', content: CAPRI_DIALOGUE_REGISTER + '\n' + CAPRI_SCENE_VOICE + '\n' + worldContext(this.query(event)) + '\n' + AMBIENT_VOICE_BRIEF + '\n' + DECISION_BRIEF +
+    const messages: LLMMessage[] = [{ role: 'system', content: CAPRI_DIALOGUE_REGISTER + '\n' + CAPRI_SCENE_VOICE + '\n' + worldContext(this.query(event)) + '\n' + AMBIENT_VOICE_BRIEF + '\n' + DECISION_BRIEF +
       this.d.scene.context(event.kind === 'trigger' ? event.event : event.kind,new Set(),excluded) + (this.d.promptContext?.(event) ?? '') +
       (this.d.continuity?.experienceContext(this.query(event), event.kind === 'trigger' ? event.observation?.process : '', event.kind === 'trigger' && !event.direct) ?? '') },
       { role: 'user', content: JSON.stringify({ event: event.kind === 'trigger' ? event.event : event.kind, input, situation: { facts: s.facts, interests: s.interests, decisions: s.journal.slice(-3) },
         interestLives: s.interestLives.map(i => ({ topic: i.topic, expired: i.expiresAt <= this.now() })),
         delivery: { speechAllowed: this.d.maySpeak?.(event) !== false }, approvedMemories: selectMemories(this.d.memories(), this.query(event)).slice(0,8).map(m => m.text.slice(0, 400)) }) }];
+    if(event.kind==='trigger'&&event.event==='life_context'){const context=event.context as {evidence?:{source?:string};relatedEvidence?:{source?:string}[]}|undefined;for(const e of [context?.evidence,...context?.relatedEvidence??[]])if(e?.source)this.sourceDependencies.add(e.source);}
+    for (const source of this.d.contextSources?.() ?? []) this.sourceDependencies.add(source);
+    return messages;
   }
   private query(event: BehaviorEvent) {
     const e = event.kind === 'trigger' ? event : undefined;
@@ -286,9 +295,11 @@ export class BehaviorCore {
       this.save();
       if (fact.evidence === 'metadata') return this.record(event, 'defer', 'metadata recorded; insufficient reason to interrupt');
     }
-    if (this.state.quiet && event.kind !== 'interact') return this.record(event, 'silent', 'user requested quiet');
+    if (this.state.quiet && event.kind !== 'interact' && !(event.kind==='trigger'&&event.direct)) return this.record(event, 'silent', 'user requested quiet');
     if (event.kind === 'opportunity' && !this.state.interests.length) return this.record(event, 'silent', 'no pending interest');
     if (this.active) return this.record(event, 'defer', 'decision already in flight');
+    const perceptionKey=event.kind==='trigger'&&event.event==='inspect'&&event.observation?createHash('sha256').update(JSON.stringify([event.observation.process,event.observation.title,(event.context as {perceptionFingerprint?:string}|undefined)?.perceptionFingerprint??''])).digest('hex'):undefined;
+    if(perceptionKey&&event.kind==='trigger'&&!event.direct&&this.state.saturation.some(s=>s.key===perceptionKey&&this.now()-s.at<2*3600000))return this.record(event,'silent','semantic observation already investigated; wait for meaningful evidence');
     if (event.kind === 'trigger') this.optionalAfter = this.now() + (event.direct ? ['pat','poke','pickup','placed_window','putdown'].includes(event.event) ? 15000 : 30000 : this.d.initiativeGapMs?.() ?? 30000);
     const fallback = (reason = 'provider unavailable; physical response retained') => {
       if (event.kind === 'trigger' && event.valid?.() === false || this.d.allowed?.(event) === false) return this.record(event, 'silent', 'suppressed');
@@ -368,10 +379,11 @@ export class BehaviorCore {
       const target = event.kind === 'observe' ? event.observation.target : event.kind === 'trigger' ? event.observation?.target : this.state.interests.at(-1)?.sourceId;
       const factTarget = this.state.facts.find(f => f.id === target)?.target ?? target;
       const silent = decision.action === 'silent' || decision.action === 'defer';
-      const repeatedQuestion = event.kind === 'trigger' && !event.direct && line.includes('?') && this.d.continuity?.recall(this.query(event), event.observation?.process).some(e => e.want &&
+      const saturatedQuestion=event.kind==='trigger'&&event.event!=='question'&&line.includes('?')&&event.observation&&this.perceptionSaturated(event.observation.process,event.observation.title,(event.context as {perceptionFingerprint?:string}|undefined)?.perceptionFingerprint??'');
+      const repeatedQuestion = saturatedQuestion || event.kind === 'trigger' && !event.direct && line.includes('?') && this.d.continuity?.recall(this.query(event), event.observation?.process).some(e => e.want &&
         (e.want.status !== 'open' || e.want.askedAt !== undefined) && localRelevance(line, e.topic + ' ' + e.want.text).score > 0);
       let receiptRevision: number | undefined;
-      const delivered = !silent && !repeatedQuestion && this.d.express({ action: decision.action, line, gesture: silent ? 'none' : decision.gesture, target: factTarget,
+      const delivered = !silent && !repeatedQuestion && this.d.express({ contextSources: this.contextDependencies(), action: decision.action, line, gesture: silent ? 'none' : decision.gesture, target: factTarget,
         onAudioDelivered: response => {
           // Voice-only acceptance is not delivered evidence until Stage 4's completed receipt.
           if (!this.d.continuity || receiptRevision === undefined || this.d.continuity.checkpoint() !== receiptRevision || this.d.allowLearning?.() === false) return;
@@ -404,6 +416,7 @@ export class BehaviorCore {
       receiptRevision = this.d.continuity?.checkpoint();
       // A glance is follow-through, not proof that an unresolved curiosity was answered.
       this.record(event, decision.action, decision.reason, delivered, decision.interpretation);
+      if(perceptionKey){this.state.saturation=this.state.saturation.filter(s=>s.key!==perceptionKey).concat({key:perceptionKey,at:this.now(),phase:delivered&&line?'discussed':decision.interestDisposition==='clear'?'concluded':'investigated'}).slice(-64);this.save();}
       this.failure = null;
       return { ...decision, line, delivered };
     } catch (error) {

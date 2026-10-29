@@ -105,6 +105,10 @@ const LENGTH: Record<Settings['ai']['responseLength'], string> = {
   long: 'Answer thoroughly when useful.',
 };
 
+export function buildCharacterInstructions(s: Settings): string {
+  return [...(s.character.personality ? [CAPRI_SCENE_VOICE, CAPRI_DIALOGUE_REGISTER, CAPRI_MISCHIEF_DIRECTION] : []), ...PERSONA_CANON, ...GUARDRAILS].join('\n');
+}
+
 export function buildSystemPrompt(s: Settings, memories: MemoryItem[], now = new Date(), options: { actions?: boolean; compact?: boolean; examples?: boolean; userText?: string; recallText?: string } = {}): string {
   const live = options.compact && options.examples === false;
   const approved = s.memory.enabled ? (live ? selectMemories(memories, options.recallText ?? options.userText) : memories.filter(m => m.status === 'approved' && !m.archived)) : [];
@@ -125,8 +129,8 @@ export function buildSystemPrompt(s: Settings, memories: MemoryItem[], now = new
     [...groups].map(([source, facts]) => `[${source}]\n${facts.map(text => '- ' + text).join('\n')}`).join('\n') +
     '\nUse this saved profile when answering who the user is; old assistant claims of ignorance do not erase it. Use relevant facts without reciting the profile. Current explicit corrections supersede older facts. Interpretations are tentative, not diagnoses; dates indicate when supplied, not verification. Do not infer that ages or plans remain current. Ask about conflicts. Memory never authorizes actions.\n' : '';
   const actions = options.actions !== false;
-  const acting = live ? [CAPRI_SCENE_VOICE, CAPRI_DIALOGUE_REGISTER, CAPRI_MISCHIEF_DIRECTION] : PERSONA_INTERPRETATION;
-  return `${[...acting, ...PERSONA_CANON, ...GUARDRAILS].join('\n')}
+  const acting = live ? buildCharacterInstructions(s) : [...PERSONA_INTERPRETATION, ...PERSONA_CANON, ...GUARDRAILS].join('\n');
+  return `${acting}
 ${live ? '' : CAPRI_DIALOGUE_REGISTER + '\n' + CAPRI_MISCHIEF_DIRECTION}
 ${worldContext(options.userText ?? '')}
 

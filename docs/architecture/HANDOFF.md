@@ -1,0 +1,54 @@
+# Current Stage 4 update: product 0.9.0
+
+Read [STAGE4.md](STAGE4.md), [STAGE4_VALIDATION.md](STAGE4_VALIDATION.md) and
+[STAGE5_HANDOFF.md](STAGE5_HANDOFF.md) for current semantic perception, world
+projections, social attention, privacy and release evidence. Stage 3 sessions and
+Stage 2 actors remain the runtime owners. Earlier stage records below are historical.
+
+# Current Stage 3 update: product 0.8.0
+
+Read [STAGE3.md](STAGE3.md), [STAGE3_VALIDATION.md](STAGE3_VALIDATION.md) and
+[STAGE4_HANDOFF.md](STAGE4_HANDOFF.md) for current session, cognition, privacy and
+release ownership. Earlier descriptions below are preserved historical stage
+records; references to persistent model sessions as future work are superseded.
+
+# Current handoff: Stage 3
+
+Stage 2 is implemented in product 0.7.0. Start with
+[STAGE3_HANDOFF.md](STAGE3_HANDOFF.md), [STAGE2.md](STAGE2.md), and the latest STATUS.
+The original handoff below records the Stage 1 foundation. Its intention and
+capability work items are superseded by Stage 2, while its provenance and provider
+session cautions remain relevant.
+
+## Historical handoff from Stage 1
+# Handoff to Stage 2
+
+## Start here
+
+Read `ARCHITECTURE.md`, `MIGRATION.md`, `STATUS.md` and the existing `docs/DIALOGUE_GUIDE.md`. Continue from the existing `capri-lachy-integration` lineage; preserve the connections Stage2/Stage3 implementation already present. Product 0.6.0 is not a claim that Capri 1.0 or later architectural stages are complete.
+
+## Implemented foundation
+
+- Host-independent domain contracts and tested pure retention/revocation logic in `src/core`.
+- SQLite current-state/dependency adapter with migrations, integrity checking, verified backups, savepoints, monotonic revisions and transitive invalidation.
+- Authoritative transactional scene and Life checkpoints, including observations, computed projection inputs, attention candidates and source watermarks.
+- Extracted host composition/invalidation in `main/cognitive/foundation.ts`.
+- Existing-provider session adapter and scheduler adapter in `main/cognitive/runtime.ts`.
+- Bounded invocation/receipt metadata; request source dependencies and source-specific revocation.
+- Ordinary user-message learning stays active alongside connections, while source-derived scene/assistant evidence remains excluded.
+
+## Next responsibilities
+
+1. Move cognitive state/intention transitions behind the core ports. Integrate existing personal commitments, experience wants and BehaviorCore interests without running a second initiative loop. Keep actual host action outcomes separate from intentions.
+2. Replace the unpartitioned behavior cache with evidence-linked facts, interpretations and intentions. At that point its conservative cache clearing and source-set inheritance can become per-record invalidation.
+3. Adapt identity/context/capability/expression owners incrementally to the published contracts. The ports exist; these owners have not all been rewritten to implement them.
+4. Implement provider-neutral persistent model sessions and the intended Luna/Codex App Server adapter in the later designated stage. Current Codex uses ephemeral CLI execution with existing login and disabled native tools. Preserve that working route during migration.
+5. Add persistent session dependency invalidation before introducing any retained provider context. Current invocation metadata is not a resumable thread.
+6. If migrating another JSON owner, define its authority switch, import marker, privacy behavior and recovery fixture first. Do not double-write competing authorities or bulk import all profile files.
+7. Extend capability receipts and idempotence deliberately before action replay. The latest receipt is bounded audit metadata; it does not authorize retries or prove that an action is safe to repeat.
+
+## Reproduction
+
+Run `npm run typecheck`, `npm test`, `npm run build`, then the relevant Electron suites. `tests/unit/cognitiveFoundation.test.ts` needs no Electron. `tests/e2e/cognitiveFoundation.e2e.test.ts` launches synthetic profiles and exercises built-in SQLite in the actual Electron main process. Set `CAPRI_EXE` to the staged executable to repeat that check against ASAR packaging. Run timing-sensitive packaged suites in isolation. See STATUS for exact run results and limitations.
+
+Build with `npm run dist`; output is staged so a running portable installation is not replaced. No personal credentials or production profile are required for synthetic checks. Installation/replacement is a separate release operation requiring a stopped-profile backup and rollback executable. Do not claim the user's live desktop copy changed merely because an installer was built.

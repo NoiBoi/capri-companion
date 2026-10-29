@@ -198,7 +198,7 @@ export function handleToBigint(buf: Buffer): bigint {
 }
 
 /** Read window metadata without activating it or inspecting document contents. */
-export function windowInfo(handle: bigint): { title: string; process: string } {
+export function windowInfo(handle: bigint): { title: string; process: string; pid?: number } {
   if (!api || !handle) return { title: '', process: '' };
   let processHandle: unknown;
   try {
@@ -207,14 +207,14 @@ export function windowInfo(handle: bigint): { title: string; process: string } {
     const title = String.fromCharCode(...text.slice(0, Math.max(0, n)));
     const pid = new Uint32Array(1); api.GetWindowThreadProcessId(handle, pid);
     const cached = processNames.get(pid[0]);
-    if (cached && Date.now() - cached.at < 2000) return { title, process: cached.name };
+    if (cached && Date.now() - cached.at < 2000) return { title, process: cached.name, pid:pid[0] };
     processHandle = api.OpenProcess(0x1000, false, pid[0]);
     const filename = new Uint16Array(2048), size = new Uint32Array([filename.length]);
     const process = processHandle && api.QueryFullProcessImageNameW(processHandle, 0, filename, size)
       ? String.fromCharCode(...filename.slice(0, size[0])).split(/[\\/]/).pop()! : '';
     processNames.set(pid[0], { name: process, at: Date.now() });
     if (processNames.size > 128) processNames.delete(processNames.keys().next().value!);
-    return { title, process };
+    return { title, process, pid:pid[0] };
   } catch { return { title: '', process: '' }; }
   finally { if (processHandle) api.CloseHandle(processHandle); }
 }

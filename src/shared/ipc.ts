@@ -92,6 +92,8 @@ export interface ConnectionStatus {
 }
 
 export interface Diagnostics {
+  perception?: {snapshots:number;snapshotCharacters:number;pending:number;saturated:number;backgroundModelsOnIngest:number};
+  agency?: { availability:string; attention:string|null; physical:{owner:string|null;state:string}; reconciledAt:number; intentions:{id:string;skill:string;state:string;deadline?:number;receipts:number}[] };
   version: string;
   electron: string;
   chrome: string;

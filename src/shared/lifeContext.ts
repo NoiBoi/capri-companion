@@ -18,7 +18,7 @@ export type LifeEntityRecord = z.infer<typeof LifeEntity>;
 export const LifeSetupDraft = z.object({ sites: z.string().max(10000).optional(), name: z.string().max(100).optional(), retentionDays: z.string().max(4).optional(), aliases: z.string().max(5000).optional(), extensionId: z.string().max(64).optional() }).strict();
 export type LifeDraft = z.infer<typeof LifeSetupDraft>;
 export type CandidateStatus = 'pending' | 'deferred' | 'delivered' | 'dismissed' | 'expired' | 'superseded';
-export interface LifeCandidate { id: string; source: string; recordId: string; revision: number; status: CandidateStatus; at: number; expiresAt: number; nextAt: number; attempts: number; reason: string }
+export interface LifeCandidate { id: string; source: string; recordId: string; revision: number; status: CandidateStatus; at: number; expiresAt: number; nextAt: number; attempts: number; reason: string; importance:number; novelty:number; deadline?:number; related:string[]; phase:'noticed'|'investigated'|'discussed'|'concluded'|'dismissed'|'resolved'|'exhausted'; acknowledgedAt?:number }
 export interface SourceHealth { state: 'disconnected' | 'paused' | 'waiting' | 'syncing' | 'healthy' | 'error' | 'degraded' | 'unsupported'; detail: string; lastSync?: number; lastFailure?: number }
 export interface LifeView { sources: LifeSourceConfig[]; entities: LifeEntityRecord[]; drafts: Record<string, LifeDraft>; events: LifeObservation[]; current: LifeObservation[]; proactiveCurrent:LifeObservation[]; candidates: LifeCandidate[]; health: Record<string, SourceHealth>; bridge: { state: string; port: number; extensionId: string }; learning: string }
 export interface LifeAdapter { start(): void | Promise<void>; stop(): void; }

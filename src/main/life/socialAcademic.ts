@@ -13,11 +13,11 @@ export class SocialAcademic {
  local(info:{process:string;title:string}|null,games:string[],now=Date.now()){
   const s=this.ledger.source('discord-local');if(!s?.permissions.collect||s.paused)return;
   const discord=info&&/^discord(?:canary|ptb)?\.exe$/i.test(info.process),game=info&&games.some(g=>g.toLowerCase()===info.process.toLowerCase());
-  const prior=this.ledger.latest().find(e=>e.source===s.id&&e.recordId==='foreground'&&e.operation!=='delete');
-  if(!discord&&!game){if(prior)this.ledger.ingest({...prior,revision:Math.max(now,prior.revision+1),occurredAt:now,receivedAt:now,expiresAt:now+1000,operation:'delete'});return;}
+  const prior=this.ledger.latest().find(e=>e.source===s.id&&e.recordId==='foreground');
+  if(!discord&&!game){if(prior&&prior.operation!=='delete')this.ledger.ingest({...prior,revision:Math.max(now,prior.revision+1),occurredAt:now,receivedAt:now,expiresAt:now+1000,operation:'delete'});return;}
   const summary=discord?'Discord is foreground':'Configured game application is foreground: '+cleanEvidence(info!.process,80);
-  if(prior?.summary===summary&&now-prior.receivedAt<30000)return;
-  this.ledger.ingest({source:s.id,recordId:'foreground',revision:now,type:game?'local-game-foreground':'discord-foreground',occurredAt:now,receivedAt:now,expiresAt:now+90000,entities:[],quality:'observed',permissions:s.permissions,summary,detail:'Local Windows foreground metadata only. Not account presence, a voice call, actual gameplay or message access. Discord window titles are not collected.',operation:'upsert',importance:.25});
+  if(prior?.operation!=='delete'&&prior?.summary===summary&&now-prior.receivedAt<30000)return;
+  this.ledger.ingest({source:s.id,recordId:'foreground',revision:Math.max(now,(prior?.revision??0)+1),type:game?'local-game-foreground':'discord-foreground',occurredAt:now,receivedAt:now,expiresAt:now+90000,entities:[],quality:'observed',permissions:s.permissions,summary,detail:'Local Windows foreground metadata only. Not account presence, a voice call, actual gameplay or message access. Discord window titles are not collected.',operation:'upsert',importance:.25});
  }
  running(running:boolean){const s=this.ledger.source('discord-local')!,now=Date.now();this.ledger.ingest({source:s.id,recordId:'process',revision:now,type:'discord-process',occurredAt:now,receivedAt:now,expiresAt:now+90000,entities:[],quality:'observed',permissions:s.permissions,summary:running?'Discord process is running':'Discord process was not found',detail:'Process inventory only; not foreground, call status or account activity.',operation:'upsert',importance:0});}
  async bot(config:Stage3Settings,token:string,cp:CommunicationCheckpoint,signal:AbortSignal,active:()=>boolean){

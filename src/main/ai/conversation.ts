@@ -3,21 +3,27 @@ import type { ActionRequest, ActionResult, AssistantPhase, CharacterCue, ChatMes
 import type { LLMMessage, LLMProvider } from './providers';
 import { friendlyError, ProviderError } from './providers';
 import { ActionStreamParser, SentenceChunker, speakable } from './actionStream';
-import { buildSystemPrompt } from './persona';
+import { buildSystemPrompt, buildCharacterInstructions } from './persona';
+import type { ConversationSessions } from '../cognitive/conversationSessions';
 import { needsActions } from './requestRoute';
 import { companyControl, type CompanyControl } from '../../shared/company';
 import { recentContext, recalledExchanges, memoryQuery, continuityThread, publicHistory } from './promptContext';
 import { prepareAction, runAction, type ActionContext } from '../actions/registry';
 import { newId } from '../store/jsonFile';
 import type { Logger } from '../log';
+import { LegacyModelSessions } from '../cognitive/runtime';
+import type { ExecutionReceipt, ModelSession } from '../../core/contracts';
 
 export interface ConversationDeps {
+  sessions?: ConversationSessions;
   settings(): Settings;
   provider(): LLMProvider;
   history: { append(m: ChatMessage): void; recent(n: number): ChatMessage[]; recallHistory?(): ChatMessage[] };
   memories(): MemoryItem[];
   excludedMemorySources?(): Set<string>;
   contextSources?(): string[];
+  onModelSession?(session: ModelSession): void;
+  onExecutionReceipt?(receipt: ExecutionReceipt): void;
   onUserMessage?(message: ChatMessage): void;
   onAssistantMessage?(message: ChatMessage, userMessageId: string): void;
   localReply?(text: string): string | null;
@@ -26,7 +32,7 @@ export interface ConversationDeps {
   companionContext?(includeBackground?: boolean, userText?: string, includedIds?: ReadonlySet<string>): string;
   prepareContext?():Promise<void>;
   longTermRecall?(text: string, signal: AbortSignal): Promise<string>;
-  companionControl?(control: CompanyControl): string | Promise<string>;
+  companionControl?(control: CompanyControl, signal?:AbortSignal): string | Promise<string>;
   pauseLearning?(): void;
   queueLearning?(text: string, messageId: string): void;
   resumeLearning?(): void;
@@ -119,7 +125,8 @@ export class Conversation {
     const speak = s.voice.ttsEnabled;
     let messages: LLMMessage[];
     let visible = '';
-    let tainted = !!this.d.contextSources?.().length;
+    let sources: string[] = [];
+    let tainted = false;
     let utterance = 0;
     let provider: LLMProvider | undefined;
     if (!control && localReply === null) this.setPhase('thinking');
@@ -127,7 +134,7 @@ export class Conversation {
     try {
       if (ctrl.signal.aborted) throw new ProviderError('Stopped.', 'aborted');
       if (localReply !== null || control && this.d.companionControl) {
-        visible = localReply ?? await this.d.companionControl!(control!);
+        visible = localReply ?? await this.d.companionControl!(control!,ctrl.signal);
         visible = this.d.filterReply?.(visible) ?? visible;
         if (ctrl.signal.aborted) throw new ProviderError('Stopped.', 'aborted');
         this.d.emit('chat:delta', { messageId: replyId, delta: visible });
@@ -145,6 +152,8 @@ export class Conversation {
       const longTerm = this.privateTurn ? '' : await this.d.longTermRecall?.(userText, ctrl.signal);
       if (ctrl.signal.aborted) throw new ProviderError('Stopped.', 'aborted');
       if (longTerm) messages[0].content += longTerm;
+      sources = [...new Set([...sources, ...(this.d.contextSources?.() ?? [])])];
+      tainted ||= sources.length > 0;
       let actionMode = needsActions(userText, messages.slice(1, -1));
       let rewriteUsed = false;
       this.d.log.info('conversation context loaded', { approvedMemories: this.d.memories().length, memoryEnabled: s.memory.enabled, route: needsActions(userText, messages.slice(1, -1)) ? 'actions' : 'chat', inputCharacters: messages.reduce((n, m) => n + m.content.length, 0) });
@@ -167,13 +176,15 @@ export class Conversation {
             } else actions.push(p);
           }
         };
-        const stream = provider.stream(messages, {
-          agentic: actionMode, temperature: s.ai.temperature, maxTokens: s.ai.maxTokens, timeoutMs: s.ai.requestTimeoutSec * 1000, signal: ctrl.signal,
-        });
+        const session: ModelSession = {id:replyId,revision:round,dependencies:[...sources]};
+        if (!this.privateTurn) this.d.onModelSession?.(session);
+        const runtime = new LegacyModelSessions(provider, () => ({agentic:actionMode,temperature:s.ai.temperature,maxTokens:s.ai.maxTokens,timeoutMs:s.ai.requestTimeoutSec*1000}));
+        const stream = this.d.sessions ? this.d.sessions.respond(provider,messages,{agentic:actionMode,temperature:s.ai.temperature,maxTokens:s.ai.maxTokens,timeoutMs:s.ai.requestTimeoutSec*1000,signal:ctrl.signal},{private:this.privateTurn,dependencies:sources,instructions:buildCharacterInstructions(s),model:actionMode?s.ai.codex.taskModel||s.ai.codex.chatModel:s.ai.codex.chatModel}) : runtime.respond(session,{text:'',evidence:[],messages},ctrl.signal);
         for await (const chunk of stream) {
           if (ctrl.signal.aborted) throw new ProviderError('aborted', 'aborted');
           handle(parser.push(chunk));
         }
+        if (ctrl.signal.aborted) throw new ProviderError('Stopped.','aborted');
         handle(parser.end());
         if (rewriteUsed) actions.length = 0;
         if (hold) {
@@ -191,6 +202,8 @@ export class Conversation {
           actionMode = true;
           messages[0] = this.buildMessages(userText, true)[0];
           if (longTerm) messages[0].content += longTerm;
+          sources = [...new Set([...sources, ...(this.d.contextSources?.() ?? [])])];
+          tainted ||= sources.length > 0;
           this.d.log.info('conversation route upgraded', { route: 'actions' });
           continue;
         }
@@ -199,8 +212,8 @@ export class Conversation {
         const results: string[] = [];
         let allCosmetic = true;
         for (const a of actions.slice(0, MAX_ACTIONS_PER_ROUND)) {
-          const r = await this.execute(a, tainted, ctrl.signal);
-          if (r.untrusted) tainted = true;
+          const r = await this.execute(a, tainted, ctrl.signal, sources);
+          if (r.untrusted) { tainted = true; sources = [...new Set([...sources,'action:untrusted'])]; }
           if (!r.cosmetic) allCosmetic = false;
           results.push(r.line);
         }
@@ -217,7 +230,7 @@ export class Conversation {
         if (fallback) { visible = fallback; this.d.emit('chat:delta', { messageId: replyId, delta: fallback }); if (speak) this.say(replyId, utterance++, fallback); }
       }
       this.d.onProviderResult?.(true, provider.name);
-      const msg: ChatMessage = { id: replyId, role: 'assistant', content: visible.trim(), ts: Date.now(), meta: { provider: provider.name, private: this.privateTurn, contextSources: this.d.contextSources?.() } };
+      const msg: ChatMessage = { id: replyId, role: 'assistant', content: visible.trim(), ts: Date.now(), meta: { provider: provider.name, private: this.privateTurn, contextSources: sources } };
       this.d.history.append(msg);
       this.d.emit('chat:done', { message: msg });
       this.d.onAssistantMessage?.(msg, userMessageId);
@@ -231,7 +244,7 @@ export class Conversation {
       const err = aborted ? undefined : friendlyError(e);
       if (!aborted) { this.d.log.warn('turn failed', { provider: provider?.name ?? s.ai.provider, error: e as Error }); this.d.onProviderResult?.(false, provider?.name ?? s.ai.provider, e); }
       const content = visible.trim() || (aborted ? '' : err!);
-      const msg: ChatMessage = { id: replyId, role: 'assistant', content, ts: Date.now(), meta: { provider: provider?.name ?? s.ai.provider, error: err, interrupted: aborted, private: this.privateTurn, contextSources: this.d.contextSources?.() } };
+      const msg: ChatMessage = { id: replyId, role: 'assistant', content, ts: Date.now(), meta: { provider: provider?.name ?? s.ai.provider, error: err, interrupted: aborted, private: this.privateTurn, contextSources: sources } };
       if (content) this.d.history.append(msg);
       this.d.emit('chat:done', { message: msg });
       this.setPhase(aborted ? 'idle' : 'error', err);
@@ -268,7 +281,7 @@ export class Conversation {
     if (!this.ctrl && this.phase === 'speaking') this.setPhase('idle');
   }
 
-  private async execute(a: { parsed: unknown; error?: string }, tainted: boolean, signal: AbortSignal): Promise<{ line: string; untrusted: boolean; cosmetic?: boolean }> {
+  private async execute(a: { parsed: unknown; error?: string }, tainted: boolean, signal: AbortSignal, dependencies: string[]): Promise<{ line: string; untrusted: boolean; cosmetic?: boolean }> {
     if (a.error) return { line: `- invalid failed: could not parse action (${a.error})`, untrusted: false };
     let prepared;
     try {
@@ -296,7 +309,13 @@ export class Conversation {
         return { line: `- ${req.tool} failed: the user declined this action`, untrusted: false };
       }
     }
-    const result = await runAction(prepared, this.d.actionCtx, prepared.policy === 'confirm' && approved);
+    // Permission changes while a confirmation is open must take effect before dispatch.
+    if (signal.aborted) throw new ProviderError('aborted','aborted');
+    const current = prepareAction(a.parsed,this.d.actionCtx,tainted);
+    const explicitlyApproved = prepared.policy === 'confirm' && approved;
+    if (current.policy === 'deny' || current.policy === 'confirm' && !explicitlyApproved) throw new Error('Action permission changed before execution');
+    const result = await runAction(current, this.d.actionCtx, explicitlyApproved);
+    if (!this.privateTurn) this.d.onExecutionReceipt?.({id:newId('receipt'),requestId:req.id,at:Date.now(),outcome:result.ok?'completed':'failed',detail:req.tool,dependencies:[...dependencies,...(result.untrusted?['action:untrusted']:[])]});
     const ar: ActionResult = { id: req.id, ok: result.ok, summary: result.summary, data: result.data };
     this.d.emit('action:result', ar);
     if (!(result.cosmetic && result.ok)) this.record(req.tool, result.ok ? 'done' : 'failed', `${req.summary} → ${result.summary}`);

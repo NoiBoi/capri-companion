@@ -1,3 +1,23 @@
+# Stage 4 update: semantic reading in product 0.9.0
+
+The Chrome extension now supports metadata, explicitly enabled passive reading per
+approved site, and deeper reading once on request. Existing pairing and optional
+host grants remain. Reload the existing extension directory; do not rotate pairing
+merely to upgrade. The app still independently requires exact origins and content
+permission. Structured rendered sections are bounded to 18,000 characters passively
+or 48,000 on request, with up to 24 local snapshots under source retention controls.
+Only relevant sections enter model context. New developments carry a bounded section
+selection, never a whole page. Private forms and hidden content are excluded.
+YouTube media samples establish playback state, not user watching duration.
+
+The same Life checkpoint owns the deferred attention queue and source revocation.
+Important developments can wait through games/focus; related facts are combined.
+World projections preserve evidence status, and unchanged semantic subjects saturate
+before optional model calls. No second cognitive loop was introduced. Full current
+architecture and continuation are docs/architecture/STAGE4.md and STAGE5_HANDOFF.md
+in the source checkout. Earlier integration details below remain supporting records;
+older one-time-only excerpt descriptions are superseded by this section.
+
 # Unified Life Context: Stages 1-3
 
 Release 0.6.0. The existing Electron main process owns this subsystem. There is no second agent, scheduler, memory migration, graph database, or model call during ingestion.

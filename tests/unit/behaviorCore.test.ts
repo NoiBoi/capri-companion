@@ -25,6 +25,16 @@ function setup() {
     noPersistence() { persistent = false; }, fail() { fail = true; } };
 }
 describe('integrated behavioral decision lifecycle', () => {
+  it('saturates one semantic observation across changed capture hashes and restarts, and reopens on a content revision',async()=>{
+    const s=setup();let core=s.make();const first={...s.trigger(),direct:false,context:{perceptionFingerprint:'content-v1'}};
+    await core.dispatch(first);expect(s.calls).toBe(1);s.advance(60000);
+    expect(core.perceptionSaturated(first.observation!.process,first.observation!.title,'content-v1')).toBe(true);
+    const second={...first,observation:{...first.observation!,id:'another-capture',at:START+60000,detail:'Changed capture pixels, same document semantics.'}};
+    expect((await core.dispatch(second)).action).toBe('silent');expect(s.calls).toBe(1);
+    core=s.make();expect((await core.dispatch(second)).action).toBe('silent');expect(s.calls).toBe(1);
+    await core.dispatch({...first,context:{perceptionFingerprint:'content-v2'}});expect(s.calls).toBe(2);
+    s.advance(60000);await core.dispatch({...s.trigger('question'),context:{perceptionFingerprint:'content-v1'}});expect(s.calls).toBe(3);
+  });
   it('retains visual understanding while converting crowded speech into a real nonverbal decision', async () => {
     const s=setup(); s.answer({ ...hold, action:'speak', line:'The violet swatch is the sharper choice.', gesture:'none' });
     const expressions: Expression[]=[];

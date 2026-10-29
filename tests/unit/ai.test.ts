@@ -151,6 +151,14 @@ function harness(provider: LLMProvider, confirm: (r: ActionRequest) => Promise<b
 }
 
 describe('Conversation orchestrator', () => {
+  it('rechecks a permission revoked while confirmation was open', async () => {
+    const h = harness(scripted(['Opening. <action>{"tool":"open_url","args":{"url":"example.com"}}</action>']), async () => {
+      h.s.actions.policies.open_url = 'deny'; return true;
+    });
+    await h.c.send('Open example.com'); await h.c.settle();
+    expect(h.confirmSpy).toHaveBeenCalledTimes(1);
+    expect((h.ctx as unknown as {opened:string[]}).opened).toEqual([]);
+  });
   it('observes accepted typed and voice messages once each, never empty input or replies', async () => {
     const h = harness(scripted(['Hello.', 'Yeah?']));
     await h.c.send('Hi'); await h.c.settle();
@@ -216,6 +224,7 @@ describe('Conversation orchestrator', () => {
     await h.c.settle();
     expect(h.confirmSpy).toHaveBeenCalledWith(expect.objectContaining({ tool: 'start_timer', tainted: true, policy: 'confirm' }));
     expect(h.ctx.reminders.active()).toHaveLength(0);
+    expect(h.history.recent(1)[0].meta?.contextSources).toContain('action:untrusted');
   });
   it('rejects malformed and unknown actions without executing anything', async () => {
     const seen: LLMMessage[][] = [];

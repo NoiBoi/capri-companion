@@ -48,7 +48,7 @@ describe('environmental judgment over desktop events', () => {
     }
     expect(c.context('0', 60000)).toBeUndefined();
   });
-  it('recognizes a return and carries a dated open curiosity into a later investigation', () => {
+  it('recognizes a return but only investigates to check for changed evidence', () => {
     const c = new EnvironmentalCuriosity(); dwell(c, 'diagram', 0);
     c.choose(32000, allowed); c.choose(32000, allowed);
     c.record('diagram', { facts: ['A loop ends outside the border.'], interpretation: 'Might be a deliberate escape route.', curiosity: 'Does the outside end reconnect?' }, 32000);
@@ -56,7 +56,7 @@ describe('environmental judgment over desktop events', () => {
     dwell(c, 'diagram', 640000);
     expect(c.context('diagram', 672000)).toMatchObject({ familiarity: 'returned to previously observed metadata', hypothesis: 'Might be a deliberate escape route.', evidence: { ageSeconds: 640 } });
     expect(c.choose(672000, allowed).action).toBe('look');
-    expect(c.choose(672000, allowed)).toMatchObject({ action: 'inspect', reason: expect.stringContaining('unresolved') });
+    expect(c.choose(672000, allowed)).toMatchObject({ action: 'inspect', reason: expect.stringContaining('changed') });
   });
   it('preserves interest through touch but never spends an inspection while blocked or quiet', () => {
     const c = new EnvironmentalCuriosity(); dwell(c, 'a', 0);

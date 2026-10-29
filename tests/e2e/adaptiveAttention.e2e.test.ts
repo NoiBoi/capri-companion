@@ -65,23 +65,23 @@ describe('adaptive desktop attention',()=>{
     expect(await a.evaluate(()=>(globalThis as any).__capri.bubble.state.text)).not.toContain('That branch');
     expect(await a.evaluate(()=>(globalThis as any).__capri.lastInspection)).toBeNull();
   });
-  it('reacts to an actual new exposed window and inspects it despite old interval, recent touch, staying and ledge rest',async()=>{
+  it('honors a durable stay when a new exposed window appears',async()=>{
     const {a,requests}=await boot({active:true});
-    await a.evaluate(({screen},seat)=>{const g=globalThis as any,a=g.__capri,b=a.charWin.getBounds(),area=screen.getPrimaryDisplay().workArea;
+    await a.evaluate(async({screen},seat)=>{const g=globalThis as any,a=g.__capri,b=a.charWin.getBounds(),area=screen.getPrimaryDisplay().workArea;
       a.settings.update({voice:{interactionLines:false}});a.charWin.setBounds({...b,x:area.x+50,y:Math.round(area.y+area.height-b.height*seat)});a.settleAfterDrop();
-      a.conversationScene.record({id:'touch-fixture',role:'user',text:'[The user pats Capri.]',at:Date.now(),event:'pat'});a.company.apply({kind:'stay'});
+      a.conversationScene.record({id:'touch-fixture',role:'user',text:'[The user pats Capri.]',at:Date.now(),event:'pat'});await a.applyCompanyControl({kind:'stay'});
       g.__capriWindowsOverride=[];g.__capriForegroundHandle=0n;a.presenceTick();
       a.settings.update({voice:{interactionLines:true}});
       g.__openNotice=false;const send=a.charWin.webContents.send.bind(a.charWin.webContents);a.charWin.webContents.send=(channel:string,...args:any[])=>{if(channel==='cue'&&args[0]?.type==='life'&&args[0]?.event==='window')g.__openNotice=true;return send(channel,...args);};
       const rect={x:100,y:150,width:700,height:500};g.__capriWindowsOverride=[{handle:777n,rect}];g.__capriForegroundHandle=777n;a.presenceTick();
     },SEAT_RATIO);
-    expect(await a.evaluate(()=>(globalThis as any).__openNotice)).toBe(true);expect(requests).toHaveLength(0);
-    await expect.poll(()=>requests.length,{timeout:15000}).toBe(1);
-    expect(requests[0].input.detail).toContain('newly opened');
+    expect(await a.evaluate(()=>(globalThis as any).__openNotice)).toBe(false);expect(requests).toHaveLength(0);
+    await new Promise(r=>setTimeout(r,1500));expect(requests).toHaveLength(0);
+
     await expect.poll(()=>a.evaluate(()=>(globalThis as any).__capri.behavior.busy)).toBe(false);
     expect(await a.evaluate(()=>(globalThis as any).__capri.conversationScene.active())).toBe(true);
     expect(await a.evaluate(()=>(globalThis as any).__capri.company.staying)).toBe(true);
-    expect(await a.evaluate(()=>(globalThis as any).__capri.lastInspection?.points.length)).toBe(1);
+    expect(await a.evaluate(()=>(globalThis as any).__capri.lastInspection?.points.length)).toBeUndefined();
   });
   it('allows a spontaneous spoken screenshot reaction when the speaking lane is clear',async()=>{
     const {a,requests}=await boot();

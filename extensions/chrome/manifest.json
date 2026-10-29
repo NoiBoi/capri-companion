@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Capri Life Context",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "minimum_chrome_version": "120",
   "description": "Share bounded evidence from explicitly allowed, focused pages with your local Capri companion.",
   "permissions": ["activeTab", "scripting", "storage", "alarms"],

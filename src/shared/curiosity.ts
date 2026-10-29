@@ -68,7 +68,7 @@ export class EnvironmentalCuriosity {
       item.lookedAt = now;
       return { action: 'look', reason: item.returning ? 'a familiar subject returned' : 'a sustained unfamiliar view, content still unknown' };
     }
-    const followup = item.returning && !!item.curiosity && now - (item.inspectedAt ?? 0) < EVIDENCE_AGE;
+    const followup = false; // Returning to the same unresolved view is not novelty.
     // A failed capture is not familiarity. Accepted views can change without a title change.
     const failed = item.inspectedAt === undefined && (item.failures ?? 0) > 0;
     const changedView = item.inspectedAt !== undefined && now - (item.checkedAt ?? item.inspectedAt) >= (item.curiosity ? 120000 : 240000);

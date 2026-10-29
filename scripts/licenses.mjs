@@ -18,6 +18,7 @@ const shipped = [
   { ...read('koffi'), why: 'Win32 FFI for fullscreen detection and drag release (runtime dependency)' },
   { ...read('@koromix/koffi-win32-x64'), why: 'koffi native binary for Windows x64' },
   { ...read('zod'), why: 'Settings and IPC validation (bundled into the app code)' },
+  { ...read('xstate'), why: 'Durable intention and behavioral actors (bundled into the main process)' },
   { ...read('@google/genai'), why: 'Official Google Gemini SDK (bundled into the main process)' },
 ];
 const dev = Object.keys(pkg.devDependencies).filter((n) => !shipped.some((s) => s.name === n)).map(read);

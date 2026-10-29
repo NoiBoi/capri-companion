@@ -35,10 +35,13 @@ it('shows controls and evidence, shares semantic context in chat, then revokes e
   expect(await a.evaluate(()=>(globalThis as any).__capri.history.recent(1)[0].meta.contextSources)).toEqual(['chrome']);
   await panel.locator('section.group').filter({has:panel.getByText('Chrome',{exact:true})}).getByRole('button',{name:'Disconnect and forget',exact:true}).click();
   expect(await a.evaluate(()=>(globalThis as any).__capri.life.ledger.current())).toEqual([]);
-  expect(await a.evaluate(()=>(globalThis as any).__capri.conversationScene.snapshot().entries)).toEqual([]);
+  const retained = await a.evaluate(()=>(globalThis as any).__capri.conversationScene.snapshot().entries);
+  expect(retained.map((e:any)=>e.role)).toEqual(['user']);
+  expect(retained[0].text).toBe('What is displayed for Arbor numerical tools?');
   await a.evaluate(async()=>{const a=(globalThis as any).__capri;await a.convo.send('Hello again.');await a.convo.settle();});
   expect(requests.at(-1).messages[0].content).not.toContain('LIFE CONTEXT EVIDENCE');
   expect(JSON.stringify(requests.at(-1).messages)).not.toContain('API headings: fitting constraints');
+  expect(await a.evaluate(()=>(globalThis as any).__capri.history.recent(1)[0].meta.contextSources)).toEqual([]);
   expect(await a.evaluate(()=>(globalThis as any).__capri.history.recent(10).some((m:any)=>m.meta?.contextSources?.includes('chrome')))).toBe(true);
 });
 it('uses the existing ambient lane, cancels its pending output for direct chat, and never learns source-derived dialogue',async()=>{
@@ -84,6 +87,14 @@ it('selects a fresh opportunity in presence arbitration and consumes only its de
   await expect.poll(()=>a.evaluate(()=>(globalThis as any).__capri.life.ledger.view().candidates.at(-1)?.status),{timeout:15000}).toBe('delivered');
   await a.evaluate(()=>{const a=(globalThis as any).__capri;const e=a.life.ledger.current()[0];a.life.ledger.ingest({...e,revision:e.revision+1,receivedAt:Date.now(),occurredAt:Date.now()});a.behavior.resumeInitiative();a.presenceTick();});
   expect(requests.filter(r=>r.messages[0].content.includes('Choose one desktop-companion decision'))).toHaveLength(1);
+});
+it('supplies bounded approved sections to an actual optional semantic-development model request',async()=>{
+ const {app:a,requests}=await boot();
+ await a.evaluate(()=>{const a=(globalThis as any).__capri,life=a.life.ledger,at=Date.now();a.life.configure({...life.source('chrome'),sites:['https://docs.example.com'],permissions:{collect:true,live:true,proactive:true,retain:true,content:true,learn:false}});
+ a.life.chrome.accept({recordId:'active-page',revision:at,occurredAt:at,url:'https://docs.example.com/beam',title:'Beam reference',headings:[],mode:'semantic',sections:[{kind:'paragraph',level:0,path:'',text:'The pin joint reaction is 12 N.'},{kind:'code',level:0,path:'',text:'bounded example '.repeat(180)+'UNSUPPLIED_DOCUMENT_TAIL'}],incognito:false,focused:true,visible:true});life.now=()=>Date.now()+21000;a.settings.update({behavior:{idleRemarks:true}});a.behavior.resumeInitiative();a.presenceTick();});
+ await expect.poll(()=>requests.some(r=>r.messages[1]?.content.includes('semanticSections')),{timeout:15000}).toBe(true);
+ const request=requests.find(r=>r.messages[1]?.content.includes('semanticSections')),payload=JSON.parse(request.messages[1].content);expect(payload.input.context.semanticSections[0].text).toContain('12 N');expect(payload.input.context.semanticSections.reduce((n:number,s:any)=>n+s.text.length,0)).toBeLessThanOrEqual(1200);expect(JSON.stringify(payload)).not.toContain('UNSUPPLIED_DOCUMENT_TAIL');
+ await expect.poll(()=>a.evaluate(()=>(globalThis as any).__capri.life.ledger.view().candidates.at(-1)?.status),{timeout:15000}).toBe('delivered');
 });
 it('autosaves typed website setup before Apply and flushes ordinary setting input on immediate panel close',async()=>{
   const{app:a,char,dir}=await boot();await char.evaluate(()=>(window as any).capri.invoke('panel:open','connections'));

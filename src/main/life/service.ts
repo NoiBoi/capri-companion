@@ -9,13 +9,14 @@ import { Stage2 } from './stage2';
 import { ProjectAdapter } from './projects';
 import { LifeSource, safePage } from '../../shared/lifeContext';
 import type { SecretStore } from '../store/secrets';
+import type { Checkpoints } from '../../core/contracts';
 export class LifeService {
   readonly ledger: LifeContext; readonly assembler: ContextAssembler; readonly chrome: ChromeBridge; readonly stage2: Stage2; readonly stage3: Stage3;
   private projects = new Map<string,ProjectAdapter>();
   private projectSignatures=new Map<string,string>();private chromeSignature='';
   private generation = 0;
-  constructor(dir: string, private secrets: SecretStore, invalidated: () => void, private enabled: () => boolean, persist: () => boolean) {
-    this.ledger=new LifeContext(dir,Date.now,source=>{invalidated();this.stage2?.invalidateLearning(source);},persist); this.assembler=new ContextAssembler(this.ledger);
+  constructor(dir: string, private secrets: SecretStore, invalidated: (source?: string) => void, private enabled: () => boolean, persist: () => boolean, checkpoints?: Checkpoints) {
+    this.ledger=new LifeContext(dir,Date.now,source=>{invalidated(source);this.stage2?.invalidateLearning(source);},persist,checkpoints); this.assembler=new ContextAssembler(this.ledger);
     this.stage2=new Stage2(dir,this.ledger,secrets,persist,enabled);
     this.stage3=new Stage3(dir,this.ledger,secrets,enabled,persist,this.stage2);
     this.chrome=new ChromeBridge(this.ledger,()=>{try {return JSON.parse(secrets.get('lifeBridge')??'{}');}catch{return {token:'',extensionId:''};}});

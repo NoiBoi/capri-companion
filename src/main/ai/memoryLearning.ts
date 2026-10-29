@@ -1,3 +1,4 @@
+import { retainedConversation } from '../../core/conversation';
 import { z } from 'zod';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -123,7 +124,8 @@ export class MemoryLearning {
     const provider = this.d.provider(); if (provider.name === 'offline') { this.retryDelay = 120000; return; }
     const snapshot = structuredClone(this.d.memory.list());
     const relationshipSnapshot = this.d.relationship?.snapshot();
-    const sceneSnapshot = this.d.scene?.snapshot();
+    const rawScene = this.d.scene?.snapshot();
+    const sceneSnapshot = rawScene ? retainedConversation(rawScene) : undefined;
     const episodeRevision = this.d.episodes?.checkpoint();
     const personalLearningContext = this.d.personalContext?.learningContext();
     const personalRevision = personalLearningContext?.revision;

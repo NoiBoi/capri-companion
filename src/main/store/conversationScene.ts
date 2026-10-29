@@ -4,6 +4,9 @@ import { z } from 'zod';
 import { readJson, writeJsonAtomic } from './jsonFile';
 import { dialoguePatterns, type ConversationSceneState, type SceneEntry, type SceneReading } from '../../shared/conversationScene';
 import { isContact } from '../../shared/dialogueContinuity';
+import type { Checkpoints } from '../../core/contracts';
+import { retainedConversation } from '../../core/conversation';
+import { readLegacyCheckpoint } from './checkpointImport';
 
 export const SceneReadingSchema = z.object({ topic: z.string().max(180), position: z.string().max(260), intention: z.string().max(200), openQuestion: z.string().max(240), tone: z.enum(['ordinary', 'playful', 'quiet', 'serious']), evidence: z.string().min(3).max(500), sourceId: z.string().max(100) });
 const Entry = z.object({ id: z.string().max(100), role: z.enum(['user', 'assistant']), text: z.string().max(1200), at: z.number().finite(), event: z.string().max(40).optional(), contextSources:z.array(z.string().max(100)).max(40).optional() });
@@ -21,12 +24,21 @@ export class ConversationScene {
   private privateIds = new Set<string>();
   private wasEnabled: boolean;
   private wasPersistent: boolean;
-  constructor(dir: string, private enabled: () => boolean, private persistent: () => boolean, private now = () => Date.now()) {
+  constructor(dir: string, private enabled: () => boolean, private persistent: () => boolean, private now = () => Date.now(), private checkpoints?: Checkpoints) {
     this.file = path.join(dir, 'conversation-scene.json');
     this.wasEnabled = enabled(); this.wasPersistent = persistent();
     if (!persistent()) { this.removeFile(); return; }
-    const parsed = State.safeParse(readJson(this.file, null).value);
-    if (parsed.success) this.state = parsed.data;
+    const saved = checkpoints?.load<ConversationSceneState>('conversation-scene');
+    const migrated = checkpoints?.load<boolean>('conversation-scene-imported');
+    const raw = saved ?? (migrated ? null : checkpoints ? readLegacyCheckpoint(this.file) : readJson(this.file, null).value);
+    const parsed = State.safeParse(raw);
+    if (saved !== undefined && !parsed.success) throw Error('Invalid conversation checkpoint; database preserved.');
+    if (checkpoints && raw !== null && !parsed.success) throw Error('Invalid legacy conversation checkpoint; file preserved.');
+    if (parsed.success) this.state = saved === undefined ? retainedConversation(parsed.data) : parsed.data;
+    if (checkpoints && !migrated) {
+      // Import and marker share one host transaction. Keep legacy JSON for rollback.
+      this.save(); checkpoints.save('conversation-scene-imported', true);
+    }
     this.prune();
   }
   private prune() {
@@ -36,8 +48,14 @@ export class ConversationScene {
     if (before !== this.state.entries.length || reading !== this.state.reading) this.save();
   }
   snapshot() { this.prune(); return structuredClone(this.state); }
-  private removeFile() { try { fs.rmSync(this.file, { force: true }); } catch {} }
-  private save() { try { if (this.persistent()) writeJsonAtomic(this.file, this.state); } catch { /* Keep the session usable if persistence is temporarily unavailable. */ } }
+  private removeFile() { this.checkpoints?.removeCheckpoint('conversation-scene'); try { fs.rmSync(this.file, { force: true }); } catch {} }
+  private save() {
+    if (!this.persistent()) return;
+    // External evidence remains session-only, even when ordinary history is retained.
+    const state = retainedConversation(this.state);
+    if (this.checkpoints) this.checkpoints.save('conversation-scene', state);
+    else writeJsonAtomic(this.file, state);
+  }
   record(entry: SceneEntry, replyTo?: string) {
     if (!this.enabled()) return;
     if (privateText(entry.text) || replyTo && this.privateIds.has(replyTo)) {
@@ -77,6 +95,13 @@ export class ConversationScene {
     this.state.entries = this.state.entries.filter(e => !ids.has(e.id));
     if (this.state.reading && ids.has(this.state.reading.sourceId)) this.state.reading = undefined;
     this.state.revision++; this.save();
+  }
+  invalidateContext(source?: string) {
+    const ids = new Set(this.state.entries.filter(e => e.contextSources?.some(id => !source || id === source)).map(e => e.id));
+    this.removeSources(ids);
+    // A rollback must not resurrect a revoked source from the retained import file.
+    const legacy = State.safeParse(readJson(this.file, null).value);
+    if (legacy.success) writeJsonAtomic(this.file, retainedConversation(legacy.data));
   }
   privacyChanged() {
     const enabled = this.enabled(), persistent = this.persistent();
