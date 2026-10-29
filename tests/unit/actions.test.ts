@@ -81,7 +81,8 @@ describe('executors', () => {
     expect(r.untrusted).toBe(true);
   });
   it('remember stays pending unless the user approved the action', async () => {
-    const { ctx } = makeCtx();
+    const { ctx,s } = makeCtx();
+    s.actions.policies.remember='allow';
     await runAction(prepareAction({ tool: 'remember', args: { text: 'likes tea' } }, ctx, false), ctx, false);
     expect(ctx.memory.list()[0].status).toBe('pending');
     await runAction(prepareAction({ tool: 'remember', args: { text: 'likes coffee' } }, ctx, false), ctx, true);

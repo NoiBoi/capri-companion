@@ -92,7 +92,7 @@ function settle(step: Step, last: boolean) {
   return last ? 300 : 120;
 }
 
-export async function runTask(task: string, d: AgentDeps, signal: AbortSignal, opts: { explore?: boolean; maxSteps?: number } = {}): Promise<{ ok: boolean; summary: string; steps: number }> {
+export async function runTask(task: string, d: AgentDeps, signal: AbortSignal, opts: { explore?: boolean; maxSteps?: number } = {}): Promise<{ ok: boolean; summary: string; steps: number; verified?:boolean }> {
   const explore = !!opts.explore, maxSteps = opts.maxSteps ?? LIMITS.steps;
   const history: string[] = [];
   const t0 = Date.now();
@@ -125,7 +125,7 @@ export async function runTask(task: string, d: AgentDeps, signal: AbortSignal, o
       d.onStep?.(step, at);
       d.log?.('agent: step', { i: n, action: step.action, keys: step.keys, chars: step.text?.length });
       switch (step.action) {
-        case 'done': return { ok: true, summary: step.result || 'Done.', steps: n + 1 };
+        case 'done': return { ok: true, verified:false, summary: `Model-reported outcome (not independently verified): ${step.result || 'Workflow ended.'}`, steps: n + 1 };
         case 'fail': return { ok: false, summary: step.result || 'Could not do that.', steps: n + 1 };
         case 'click': case 'double_click': case 'right_click': case 'move':
           if (!at) { history.push(`${step.action} without a point (ignored)`); continue; }

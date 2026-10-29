@@ -28,6 +28,26 @@ export class RelationshipStore {
     if (parsed.success) this.state = parsed.data;
   }
   snapshot(): RelationshipState { return structuredClone(this.state); }
+  /** Immediate, narrowly parsed correction. Model extraction cannot race a
+   * named user status update and leave an old project follow-up eligible. */
+  reconcileUserStatus(source:RelationshipSource) {
+    if(!this.enabled()||source.role!=='user')return [];
+    const text=source.evidence.trim().replace(/^(?:actually[, ]+)?/i,'').replace(/[.!]+$/,'');
+    const changed:ProjectThread[]=[];
+    for(const thread of this.state.threads){
+      const names=[thread.title,...thread.aliases??[]].filter(n=>n.length>=3);
+      let status:ThreadStatus|undefined;
+      for(const name of names){
+        const n=name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+        if(new RegExp(`^(?:the )?${n}(?: project)? is (?:done|complete|completed)$|^I (?:finished|completed) (?:the )?${n}(?: project)?$`,'i').test(text))status='done';
+        else if(new RegExp(`^(?:the )?${n}(?: project)? is (?:cancelled|canceled)$|^I (?:cancelled|canceled) (?:the )?${n}(?: project)?$`,'i').test(text))status='dismissed';
+        else if(new RegExp(`^(?:the )?${n}(?: project)? is paused$|^I paused (?:the )?${n}(?: project)?$`,'i').test(text))status='paused';
+        else if(new RegExp(`^I resumed (?:the )?${n}(?: project)?$`,'i').test(text))status='active';
+      }
+      if(status&&source.at>=thread.source.at)changed.push(this.setThread({...thread,status,summary:source.evidence},source));
+    }
+    return changed;
+  }
   private save() { if (this.persistent()) writeJsonAtomic(this.file, this.state); }
   privacyChanged() { if (!this.persistent()) { this.state = { version: 1, tastes: [], threads: [] }; try { fs.rmSync(this.file, { force: true }); } catch {} } }
   clear() { this.state = { version: 1, tastes: [], threads: [] }; this.save(); }

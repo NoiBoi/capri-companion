@@ -1,3 +1,9 @@
+# Capri 1.1 Stage 2/3 continuation
+
+Current execution and world-model ownership is documented in [CAPRI_1_1_STAGE23.md](CAPRI_1_1_STAGE23.md), with validation in [CAPRI_1_1_STAGE23_VALIDATION.md](CAPRI_1_1_STAGE23_VALIDATION.md). This supersedes historical statements below that describe the action registry and Agency skill checks as separate production gateways or world status as only a transient projection. Continue the established CognitiveRuntime, AgencyRuntime and provider-session implementations. Product version remains 1.0.0 pending release; the installed application and normal profile have not been replaced by this source checkpoint.
+
+---
+
 # Stages 5/6 compatibility
 
 No production profile reset or credential migration is required. SQLite schema remains version 2; the new performance-feedback checkpoint and optional conversational closure fields are additive. Existing identity, conversation history, Honcho state, integrations, encrypted secrets and artwork retain their owners. Old source caches and migration backups are preserved except when the user explicitly revokes/clears their content through existing controls.

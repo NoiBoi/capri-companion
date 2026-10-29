@@ -38,7 +38,7 @@ export async function dayInLife(dir:string){
   await agency.submit('stay_at_window',{query:'Codex'},{id:'lost',durationMs:hour});agency.recover('lost');verified=false;await agency.retry('lost');check('window loss fails safely',()=>assert.equal(agency.get('lost')?.state,'failed'));verified=true;
   await agency.submit('hold_position',{}, {id:'release',durationMs:hour});agency.cancelWhere(i=>i.id==='release','explicit release or user drag');check('explicit release and interruption relinquish movement',()=>assert(!agency.movementHeld()));
   life.ingest(event('cad','bracket','file-modified','Glass Finch Lab bracket.step','Filename only, no geometry.', ['lab']));
-  check('CAD association never establishes geometry',()=>{assert(life.world().some(f=>f.kind==='project'&&f.value.includes('Geometry and success unknown')));});
+  check('CAD association never establishes geometry',()=>{assert(life.world().some(f=>f.kind==='document'&&f.value.includes('Geometry and success unknown')));});
   const cadCandidate=life.view().candidates.find(c=>c.source==='cad')!;life.settle(cadCandidate.id,'delivered');
   for(let revision=2;revision<80;revision++)life.ingest(event('cad','bracket','file-modified','Glass Finch Lab bracket.step','Filename only, no geometry.', ['lab'],revision));
   check('unchanged CAD does not create another pending topic',()=>assert(!life.view().candidates.some(c=>c.source==='cad'&&['pending','deferred'].includes(c.status))));

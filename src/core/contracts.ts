@@ -8,9 +8,9 @@ export type Intention = import('./agency').DurableIntention;
 export interface CognitiveState { revision: number; intentions: Intention[]; attention: string[] }
 export interface ModelSession { id: string; revision: number; dependencies: string[] }
 export interface ModelSessions { respond(session: ModelSession, context: ContextPacket, signal: AbortSignal): AsyncIterable<string>; invalidate(source: string): void }
-export interface CapabilityRequest { id: string; capability: string; arguments: unknown; evidence: string[]; permissionRevision: number }
-export interface ExecutionReceipt { id: string; requestId: string; at: number; outcome: 'completed' | 'failed' | 'cancelled'; detail: string; dependencies: string[] }
-export interface CapabilityExecutor { execute(request: CapabilityRequest, signal: AbortSignal): Promise<ExecutionReceipt> }
+export type CapabilityRequest = import('./capabilities').CapabilityCall;
+export interface ExecutionReceipt { id: string; requestId: string; at: number; outcome: import('./capabilities').CapabilityOutcome; detail: string; dependencies: string[] }
+export type CapabilityExecutor = import('./capabilities').TypedCapabilityExecutor;
 export interface Clock { now(): number }
 export interface Scheduler extends Clock { schedule(deadline: number, run: () => void): () => void }
 export interface Permissions { revision: number; allows(source: string, use: 'collect' | 'context' | 'retain' | 'learn'): boolean; revoke(source: string): void }

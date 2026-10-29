@@ -42,7 +42,7 @@ describe('computer control', () => {
       '{"action":"done","result":"Notepad is open."}',
     ]);
     const r = await runTask('open notepad', deps, new AbortController().signal);
-    expect(r).toMatchObject({ ok: true, summary: 'Notepad is open.', steps: 5 });
+    expect(r).toMatchObject({ ok: true, verified:false, summary: 'Model-reported outcome (not independently verified): Notepad is open.', steps: 5 });
     expect(did).toEqual(['keys win', 'type notepad', 'keys enter', 'move 384,108', 'click left x1']);
   }, 20_000);
 
@@ -81,7 +81,7 @@ describe('exploring on her own (read only)', () => {
       '{"action":"done","result":"Nice wiki page."}',
     ]);
     const r = await runTask('look around', deps, new AbortController().signal, { explore: true });
-    expect(r).toMatchObject({ ok: true, summary: 'Nice wiki page.' });
+    expect(r).toMatchObject({ ok: true, verified:false, summary: 'Model-reported outcome (not independently verified): Nice wiki page.' });
     expect(did).toEqual(['keys pagedown', 'scroll -3', 'move 960,540', 'click left x1']);
   }, 30_000);
 

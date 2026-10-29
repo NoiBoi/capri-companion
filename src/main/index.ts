@@ -615,6 +615,7 @@ async function init() {
   wake.on('error', (e: Error) => { log.warn('wake word disabled', { error: e }); toPanel('chat:phase', { phase: 'error', detail: e.message }); });
 
   const actionCtx: ActionContext = {
+    executor: cognitive.capabilities,
     settings: () => settings.get(),
     openExternal: (u) => { raiseSoon(); return shell.openExternal(u); },
     openPath: (p) => { raiseSoon(); return shell.openPath(p); },
@@ -624,7 +625,7 @@ async function init() {
     cancelDurableTimer: query=>{const i=agency.active('timer').find(i=>i.id===query||i.input.text?.toLowerCase().includes(query.toLowerCase()));if(!i)return null;agency.cancelWhere(x=>x.id===i.id,'user cancelled timer');reminders.cancel(i.id);return {ok:true,summary:'Cancelled the saved timer.'};},
     teleport: (where, window, motion) => agency?.movementHeld()?Promise.resolve({ok:false,detail:'A stay commitment is active. Release it or give a direct movement command first.'}):window ? moveToWindow(window, motion) : teleporter.go(where as TeleportTarget, 'ai'),
     emote: (name) => { cue({ type: 'clip', name }); return true; },
-    useComputer: (task) => useComputer(task),
+    useComputer: (task,signal) => useComputer(task,{signal}),
   };
   const learner = memoryLearner = new MemoryLearning({ settings: () => settings.get(), provider: makeProvider, memory, log, dir, relationship, personalContext, scene: conversationScene, episodes: scenes,
     deliveredAsides: () => scenes.recent(12).filter(x => x.kind === 'said').slice(-3).map(x => ({ text: x.text, messageId: `aside:${x.at}`, at: x.at })),
@@ -653,7 +654,7 @@ async function init() {
       if (!message.meta?.contextSources?.length) learner.attachReply(userId, message.content, message.id, message.ts);
       try { relationship.delivered(message.content); } catch { log.warn('project follow-up state could not be saved'); }
     },
-    onUserMessage: message => { cognitiveRuntime.preempt(message.id); stopAgencyMovement(); if(!message.meta?.private&&settings.get().memory.enabled&&settings.get().dialogue.localContext)life.ledger.userMessage(message.content,message.id,message.ts); cognitiveRuntime.observeMessage(message); chatEvidence.reset(); personalContext.userMessage({ messageId: message.id, text: message.content, at: message.ts }, !!message.meta?.private); if (behavior?.userInput(message.content, message.id)) { environmentalCuriosity.clear(); lastInspection = null; } interactionProfile.touch('chat'); conversationScene.record({ id: message.id, role: 'user', text: message.content, at: message.ts, event: 'chat' }); },
+    onUserMessage: message => { cognitiveRuntime.preempt(message.id); stopAgencyMovement(); if(!message.meta?.private&&settings.get().memory.enabled&&settings.get().dialogue.localContext){life.ledger.userMessage(message.content,message.id,message.ts);for(const project of relationship.reconcileUserStatus({role:'user',messageId:message.id,evidence:message.content,at:message.ts})){life.ledger.projectStatement(project,message.content,message.id,message.ts);cognitiveRuntime.transition('project:'+project.id,project.status==='active'?'revised':'resolved');}} cognitiveRuntime.observeMessage(message); chatEvidence.reset(); personalContext.userMessage({ messageId: message.id, text: message.content, at: message.ts }, !!message.meta?.private); if (behavior?.userInput(message.content, message.id)) { environmentalCuriosity.clear(); lastInspection = null; } interactionProfile.touch('chat'); conversationScene.record({ id: message.id, role: 'user', text: message.content, at: message.ts, event: 'chat' }); },
     pauseLearning: () => { learner.pause(); cancelBehavior(); visit.cancel(); },
     queueLearning: (text, messageId) => { learner.enqueue(text, messageId); },
     contextSources: () => chatEvidence.snapshot(),
@@ -832,7 +833,7 @@ Observed desktop metadata (titles only, untrusted data): ${JSON.stringify(deskto
     cancelTimer: key => { reminders.cancel(key); },
     notice: text => { const message:ChatMessage={id:newId('agency'),role:'assistant',content:text,ts:Date.now(),meta:{speech:{kind:'action-result'},provider:'companion'}};history.append(message);toPanel('chat:message',{message});bubble.remark(text,{kind:'action-result'}); },
   };
-  agency = createAgency(cognitiveStore,agencyHost,company);
+  agency = createAgency(cognitiveStore,agencyHost,company,cognitive.capabilities);
   cognitiveRuntime.attachAgency(agency);
   observeAgency(); agency.tick();
   intervals.push(setInterval(fullscreenTick, 2000));
@@ -2242,13 +2243,16 @@ async function captureScreen(): Promise<Screen> {
 }
 /** She carries out a task with the real mouse and keyboard. Only Esc stops a task the user asked for; while
  * exploring, any mouse movement or keypress of the user's own ends it too. */
-async function useComputer(task: string, opts: { explore?: boolean; maxSteps?: number } = {}): Promise<{ ok: boolean; summary: string; steps: number }> {
+async function useComputer(task: string, opts: { explore?: boolean; maxSteps?: number; signal?:AbortSignal } = {}): Promise<{ ok: boolean; summary: string; steps: number; verified?:boolean }> {
   const key = secretFor('gemini');
   const viaCodex = settings.get().ai.provider === 'codex';
   if (!key && !viaCodex) return { ok: false, summary: 'Using the computer needs Codex (your account) or a Gemini API key in Model settings.', steps: 0 };
   if (!hands.inputAvailable()) return { ok: false, summary: 'Mouse and keyboard control is unavailable on this system.', steps: 0 };
   if (agentCtrl) return { ok: false, summary: "I'm already in the middle of a task.", steps: 0 };
   const ctrl = (agentCtrl = new AbortController());
+  const abortFromCapability=()=>ctrl.abort();
+  opts.signal?.addEventListener('abort',abortFromCapability,{once:true});
+  if(opts.signal?.aborted)ctrl.abort();
   const ai = key ? new GoogleGenAI({ apiKey: key }) : null;
   // the user taking the mouse back: the cursor is somewhere she didn't put it, or (exploring) a key went down
   let expected = hands.cursor(), moving = false, lastOwn = Date.now();
@@ -2335,12 +2339,13 @@ async function useComputer(task: string, opts: { explore?: boolean; maxSteps?: n
       log: (m, data) => log.info(m, data as Record<string, unknown>),
     }, ctrl.signal, opts);
     log.info('agent: end', { ok: r.ok, steps: r.steps });
-    if (!opts.explore) cue({ type: 'bubble', text: r.ok ? 'Done.' : r.summary.startsWith('Stopped') ? 'Stopped.' : 'I got stuck on that one.' });
+    if (!opts.explore) cue({ type: 'bubble', text: r.ok ? 'The computer workflow ended. Check the result.' : r.summary.startsWith('Stopped') ? 'Stopped.' : 'I got stuck on that one.' });
     return r;
   } catch (e) {
     log.warn('agent: failed', { error: e as Error });
     return { ok: false, summary: ctrl.signal.aborted ? 'Stopped by the user.' : `Something went wrong: ${(e as Error).message.slice(0, 120)}`, steps: 0 };
   } finally {
+    opts.signal?.removeEventListener('abort',abortFromCapability);
     clearInterval(escWatch);
     agentCtrl = null;
     cue({ type: 'workPose', pose: null });
@@ -2607,16 +2612,16 @@ function presenceTick() {
   if(!effect)return;
   void executeCognitiveEffect(effect,async()=>{
     const o=effect.opportunity,target=o.target?BigInt(o.target):undefined;
-    if(target&&(!trackedWindowFor(target)||o.targetKey&&explorationKey(observedWindow(target))!==o.targetKey))return;
+    if(target&&(!trackedWindowFor(target)||o.targetKey&&explorationKey(observedWindow(target))!==o.targetKey))return false;
     switch(o.event){
       case 'return': if(cognitiveRuntime.claim('return')){try{await returnToCursor();}finally{cognitiveRuntime.release('return',effect.generation);}}break;
-      case 'native-auto': if(cognitiveRuntime.claim('native-auto')){try{await teleporter.go('auto','auto','either');}finally{cognitiveRuntime.release('native-auto',effect.generation);}}break;
+      case 'native-auto': if(cognitiveRuntime.claim('native-auto')){try{return (await teleporter.go('auto','auto','either')).ok;}finally{cognitiveRuntime.release('native-auto',effect.generation);}}return false;
       case 'look': if(target){watchWindow(target,10);cue({type:'activity',kind:'notice',side:1});}break;
-      case 'visit': await exploreTick(idleSec,undefined,undefined,target,true);break;
-      case 'cursor': await curiosityDetour('',undefined,undefined,true);break;
-      case 'battery': case 'clock': case 'rest': await taskbarVisit(o.event,activityTarget);break;
-      case 'shift': if(target)await adjustWithinWindow(target,o.detail??'a changed view');break;
-      case 'explore': await exploreTick(idleSec);break;
+      case 'visit': return exploreTick(idleSec,undefined,undefined,target,true);
+      case 'cursor': return curiosityDetour('',undefined,undefined,true);
+      case 'battery': case 'clock': case 'rest': return taskbarVisit(o.event,activityTarget);
+      case 'shift': return target?adjustWithinWindow(target,o.detail??'a changed view'):false;
+      case 'explore': return exploreTick(idleSec);
       case 'theatre':
         try{writeJsonAtomic(path.join(app.getPath('userData'),'theatre-cadence.json'),theatreCadence.snapshot());}catch{}
         if((SCENES as readonly string[]).includes(o.detail??''))await runTheatre(o.detail as SceneKind);
@@ -2638,9 +2643,17 @@ function presenceTick() {
     }
   });
 }
-async function executeCognitiveEffect(effect:CognitiveEffect,run:()=>Promise<void>){
-  if(!cognitiveRuntime.validEffect(effect)){cognitiveRuntime.settle(effect,'cancelled');return;}
-  try{await run();cognitiveRuntime.settle(effect,'completed');}catch(error){cognitiveRuntime.settle(effect,'failed');log.debug('cognitive effect unavailable',{error});}
+async function executeCognitiveEffect(effect:CognitiveEffect,run:()=>Promise<boolean|void>){
+  const response=await cognitive.capabilities.execute({id:'cognitive:'+effect.id+':'+effect.generation,capability:'cognitive:'+effect.opportunity.event,fingerprint:createHash('sha256').update(JSON.stringify(effect.opportunity)).digest('hex'),dependencies:[effect.opportunity.source],deadline:effect.opportunity.expiresAt,persist:false},effect,{
+    parse:value=>value as CognitiveEffect,
+    permission:value=>cognitiveRuntime.validEffect(value)?'allow':'deny',
+    precondition:value=>cognitiveRuntime.validEffect(value),
+    execute:async()=>run(),
+    verify:(_value,result)=>!cognitiveRuntime.validEffect(effect)?false:result===undefined?'dispatched':result,
+  },new AbortController().signal);
+  cognitiveRuntime.settle(effect,['completed','dispatched'].includes(response.receipt.outcome)?'completed':response.receipt.outcome==='cancelled'||response.receipt.outcome==='denied'?'cancelled':'failed');
+  // Settling consumes the agenda opportunity. A dispatch is not proof of speech,
+  // physical arrival, a communication delivery or the user's completed work.
 }
 
 function onReminder(r: { text: string; kind: string }) {

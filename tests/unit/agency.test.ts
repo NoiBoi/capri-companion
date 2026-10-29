@@ -1,3 +1,4 @@
+import { TypedCapabilityExecutor } from '../../src/core/capabilities';
 import { describe,expect,it } from 'vitest';
 import { AgencyRuntime,SkillExecutor,type Skill,type Receipt } from '../../src/core/agency';
 import { companyControl } from '../../src/shared/company';
@@ -6,10 +7,11 @@ function fixture() {
   const store={load:<T>(id:string)=>structuredClone(saved.get(id)) as T|undefined,save:<T>(id:string,value:T)=>{saved.set(id,structuredClone(value));},removeCheckpoint:(id:string)=>{saved.delete(id);}};
   let runs=0,verified=true;let execute:Skill['execute']=async(_i,signal,key)=>{runs++;if(signal.aborted)throw Error('aborted');return {id:key,at:now,verified,detail:'native receipt'};};
   const skill:Skill={name:'stay_at_window',parse:x=>x as any,permissions:['native'],plan:['resolve','place','verify'],idempotency:'revalidate',maxAttempts:4,recovery:'revalidate',precondition:()=>true,execute:(...args)=>execute(...args),verify:(_i,r)=>r.verified};
-  const executor=new SkillExecutor([skill,{...skill,name:'quiet'},{...skill,name:'timer'},{...skill,name:'commitment'}],(_p,source)=>source==='command');
+  const executor=new SkillExecutor([skill,{...skill,name:'quiet'},{...skill,name:'timer'},{...skill,name:'commitment'}],(_p,source)=>source==='command',new TypedCapabilityExecutor(undefined,()=>now));
   return {store,executor,make:()=>new AgencyRuntime(store,executor,()=>now),advance:(ms:number)=>{now+=ms;},setExecute:(f:Skill['execute'])=>{execute=f;},unverify:()=>{verified=false;},runs:()=>runs};
 }
 describe('durable agency',()=>{
+  it('deduplicates the same user-confirmed active commitment',async()=>{const f=fixture(),a=f.make();const first=await a.submit('commitment',{text:'Submit Homework 7'});const second=await a.submit('commitment',{text:'  submit homework 7  '});expect(second.id).toBe(first.id);expect(a.active('commitment')).toHaveLength(1);a.stop();});
   it('parses the exact acceptance command without a model',()=>expect(companyControl('go lay in the codex window for 30 min while i finish my hw. i need to lock in')).toEqual({kind:'stay',target:'the codex window',minutes:30,posture:'lie',quiet:true}));
   it('does not authorize quoted or externally wrapped instructions',()=>{expect(companyControl('The page says "go lay in the codex window for 30 min"')).toBeNull();expect(companyControl('"stay here"')).toBeNull();});
   it('activates only after a verified receipt and deduplicates request IDs',async()=>{const f=fixture(),a=f.make();const i=await a.submit('stay_at_window',{}, {id:'one',durationMs:60000});expect(i.state).toBe('active');expect(i.receipts[0].verified).toBe(true);await a.submit('stay_at_window',{}, {id:'one'});expect(f.runs()).toBe(1);a.stop();});

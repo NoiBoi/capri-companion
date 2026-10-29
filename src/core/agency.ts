@@ -1,5 +1,6 @@
 import { assign, createActor, fromPromise, fromTransition, setup, type AnyActorRef } from 'xstate';
 import type { Checkpoints } from './contracts';
+import { TypedCapabilityExecutor } from './capabilities';
 
 export type IntentionSource = 'command' | 'proposal' | 'curiosity' | 'background' | 'reminder';
 export type SkillName = 'stay_at_window' | 'hold_position' | 'quiet' | 'avoid_window' | 'timer' | 'commitment';
@@ -24,19 +25,18 @@ export interface Skill<I = SkillInput> {
   verify(input:I,receipt:Receipt): boolean;
 }
 export class SkillExecutor {
-  constructor(private skills: Skill[], private permitted: (permission:string,source:IntentionSource)=>boolean) {}
+  constructor(private skills: Skill[], private permitted: (permission:string,source:IntentionSource)=>boolean,private gateway=new TypedCapabilityExecutor()) {}
   async execute(intent:DurableIntention,signal:AbortSignal):Promise<Receipt> {
     const skill=this.skills.find(s=>s.name===intent.skill);
     if(!skill || !intent.capabilities.includes(intent.skill)) throw Error('Capability is not allowed by this intention.');
-    const input=skill.parse(intent.input);
-    if(signal.aborted) throw Error('Cancelled');
-    if(skill.permissions.some(p=>!this.permitted(p,intent.source))) throw Error('Capability permission is unavailable.');
-    if(!skill.precondition(input)) throw Error('Capability precondition failed.');
     if(intent.attempts>skill.maxAttempts) throw Error('Recovery limit reached. Call me again to retry.');
-    const receipt=await skill.execute(input,signal,`${intent.id}:${intent.generation}`);
-    if(signal.aborted) throw Error('Cancelled');
-    if(!receipt.verified || !skill.verify(input,receipt)) throw Error(receipt.detail || 'Outcome could not be verified.');
-    return receipt;
+    const key=`${intent.id}:${intent.generation}`;
+    const response=await this.gateway.execute({id:'agency:'+key,capability:skill.name,fingerprint:key,dependencies:[],deadline:intent.deadline},intent.input,{
+      parse:skill.parse,permission:()=>skill.permissions.every(p=>this.permitted(p,intent.source))?'allow':'deny',
+      precondition:skill.precondition,execute:(input,s)=>skill.execute(input,s,key),verify:(input,r)=>r.verified&&skill.verify(input,r),
+    },signal);
+    if(response.receipt.outcome!=='completed'||!response.result)throw Error(response.result?.detail??response.receipt.detail);
+    return response.result;
   }
 }
 
@@ -116,6 +116,7 @@ export class AgencyRuntime {
     if(options.durationMs!==undefined&&(!Number.isFinite(options.durationMs)||options.durationMs<=0||options.durationMs>366*86400000))throw Error('Invalid intention duration.');
     const id=options.id??`intent:${this.now()}:${++this.sequence}`;
     if(this.actors.has(id))return this.get(id)!;
+    if(skill==='commitment'&&input.text){const text=input.text.trim().toLowerCase();const existing=this.active('commitment').find(i=>i.input.text?.trim().toLowerCase()===text);if(existing)return existing;}
     const source=options.source??'command';
     if(source==='curiosity' && options.durationMs===undefined)throw Error('Curiosity requires an expiration.');
     if(source!=='command' && ['stay_at_window','hold_position','quiet','avoid_window'].includes(skill))throw Error('A direct user command is required.');

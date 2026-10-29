@@ -1,0 +1,13 @@
+{
+  "files": 66,
+  "matches": 66,
+  "main": {
+    "path": "dist\\main\\index.js",
+    "match": true,
+    "sha256": "7ade16d10686d0e81c3ff052a4d0ff2abb4c92d074e56c1d9e761855c1f7a5c3"
+  },
+  "native": true,
+  "privateFilesListed": [],
+  "installerBytes": 141353472,
+  "installerSha256": "7ea4bd3ea6b50ba28b1b3f0044dd82668ec8f1a8c69c2f728a5ee613b3cef803"
+}

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { AgencyRuntime, SkillExecutor, type Receipt, type Skill, type SkillInput, type SkillName, type Target } from '../../core/agency';
 import type { Checkpoints } from '../../core/contracts';
 import type { Company, CompanyControl } from '../../shared/company';
+import { TypedCapabilityExecutor } from '../../core/capabilities';
 
 const inputSchema=z.object({target:z.object({handle:z.string(),process:z.string(),title:z.string(),pid:z.number().int().positive().optional()} ).optional(),query:z.string().max(300).optional(),posture:z.enum(['lie','sit']).optional(),quiet:z.boolean().optional(),position:z.object({x:z.number().finite(),y:z.number().finite()}).optional(),text:z.string().max(300).optional()});
 export interface AgencyHost {
@@ -18,7 +19,7 @@ export interface AgencyHost {
   canMove():boolean;
   notice(text:string):void;
 }
-export function createAgency(store:Checkpoints,host:AgencyHost,company:Company) {
+export function createAgency(store:Checkpoints,host:AgencyHost,company:Company,gateway=new TypedCapabilityExecutor(store)) {
   let runtime:AgencyRuntime;
   const skills:Skill[]=(['stay_at_window','hold_position','quiet','avoid_window','timer','commitment'] as SkillName[]).map(name=>({
     name,parse:value=>inputSchema.parse(value),permissions:['user:'+name],
@@ -38,7 +39,7 @@ export function createAgency(store:Checkpoints,host:AgencyHost,company:Company) 
     },
     verify:(input,receipt)=>name==='stay_at_window'?host.verify(input,receipt):receipt.verified,
   }));
-  runtime=new AgencyRuntime(store,new SkillExecutor(skills,(p,source)=>p.startsWith('user:')&&source==='command'&&(p!=='user:stay_at_window'||host.canMove())),Date.now,()=>{
+  runtime=new AgencyRuntime(store,new SkillExecutor(skills,(p,source)=>p.startsWith('user:')&&source==='command'&&(!['user:stay_at_window','user:hold_position','user:avoid_window'].includes(p)||host.canMove()),gateway),Date.now,()=>{
     for(const i of runtime?.list()??[]) {
       if(i.state==='cancelled'&&i.skill==='timer')host.cancelTimer(i.id);
       if(i.state==='failed'&&!i.failureNotified){runtime.markFailureNotified(i.id);host.notice(i.receipts.at(-1)?.detail??'The commitment could not be recovered.');}

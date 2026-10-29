@@ -4,9 +4,12 @@ import { z } from 'zod';
 import type { Settings, ToolName, Policy } from '../../shared/settings';
 import type { MemoryItem, Note, Reminder } from '../../shared/ipc';
 import { formatDuration } from './timeParse';
+import { createHash, randomUUID } from 'node:crypto';
+import { TypedCapabilityExecutor, type CapabilityReceipt } from '../../core/capabilities';
 
 /** Everything an executor may touch. Injected so tests can run without Electron. */
 export interface ActionContext {
+  executor?: TypedCapabilityExecutor;
   settings(): Settings;
   openExternal(url: string): Promise<void>;
   openPath(p: string): Promise<string>; // returns error string or ''
@@ -24,7 +27,7 @@ export interface ActionContext {
   /** One harmless prank, on request. */
   mischief?(kind: MischiefKind): Promise<boolean>;
   /** Carry out a task with the real mouse and keyboard (screen → model → input loop). */
-  useComputer?(task: string): Promise<{ ok: boolean; summary: string; steps: number }>;
+  useComputer?(task: string, signal?:AbortSignal): Promise<{ ok: boolean; summary: string; steps: number; verified?:boolean }>;
 }
 export const MISCHIEF_KINDS = ['glitch', 'cursor', 'note'] as const;
 export type MischiefKind = (typeof MISCHIEF_KINDS)[number];
@@ -43,13 +46,13 @@ export function studyPlan(focus: number, rest: number, rounds: number, start: nu
   return out;
 }
 
-export interface ToolResult { ok: boolean; summary: string; data?: unknown; untrusted?: boolean; cosmetic?: boolean }
+export interface ToolResult { ok: boolean; summary: string; data?: unknown; untrusted?: boolean; cosmetic?: boolean; receipt?:CapabilityReceipt; verification?:'unknown' }
 
 interface ToolDef<S extends z.ZodTypeAny> {
   description: string; // shown to the model
   schema: S;
   describe(args: z.infer<S>, ctx: ActionContext): string; // shown to the user before running
-  run(args: z.infer<S>, ctx: ActionContext, opts: { userApproved: boolean }): Promise<ToolResult>;
+  run(args: z.infer<S>, ctx: ActionContext, opts: { userApproved: boolean; signal?:AbortSignal }): Promise<ToolResult>;
 }
 const def = <S extends z.ZodTypeAny>(d: ToolDef<S>) => d;
 
@@ -98,7 +101,7 @@ export const EMOTES = ['happy', 'laugh', 'wink', 'tease', 'grin', 'smug', 'mania
 
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
-export const TOOLS = {
+const TOOLS = {
   open_url: def({
     description: 'Open a web page in the default browser. args: {"url": string}',
     schema: z.object({ url: z.string().min(3).max(2048) }),
@@ -219,7 +222,7 @@ export const TOOLS = {
     describe: (a) => `Capri: ${a.emotion}`,
     async run(a, ctx) {
       const ok = ctx.emote?.(a.emotion) ?? false;
-      return { ok, summary: ok ? `(${a.emotion})` : 'emote unavailable', cosmetic: true };
+      return { ok, summary: ok ? `Requested expression: ${a.emotion}` : 'emote unavailable', cosmetic: true };
     },
   }),
   read_screen: def({
@@ -239,7 +242,10 @@ export const TOOLS = {
     describe: (a) => `Study timer: ${a.rounds} × ${a.focus} min focus, ${a.rest} min breaks`,
     async run(a, ctx) {
       const plan = studyPlan(a.focus, a.rest, a.rounds, ctx.now());
-      for (const p of plan) ctx.reminders.add(p.text, p.at, 'timer');
+      for (const p of plan) {
+        if(ctx.durableTimer){const result=await ctx.durableTimer(p.text,p.at);if(!result.ok)return {ok:false,summary:'Study plan only partially saved: '+result.summary};}
+        else ctx.reminders.add(p.text, p.at, 'timer');
+      }
       return { ok: true, summary: `Study timer running: ${a.rounds} × ${a.focus} min, first break at ${new Date(plan[0].at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` };
     },
   }),
@@ -256,10 +262,10 @@ export const TOOLS = {
     description: 'Use the computer yourself to do a task the user asked for: you look at the screen and use the mouse and keyboard (open apps, browse, click, type, scroll). args: {"task": a clear, complete description of what to do}. Use it when the user asks you to do something on their PC that no other tool covers.',
     schema: z.object({ task: z.string().min(3).max(500) }),
     describe: (a) => `Use your mouse and keyboard to: ${a.task} (press Esc to stop her)`,
-    async run(a, ctx) {
+    async run(a, ctx, opts) {
       if (!ctx.useComputer) return { ok: false, summary: 'Computer control is unavailable' };
-      const r = await ctx.useComputer(a.task);
-      return { ok: r.ok, summary: `${r.summary} (${r.steps} step${r.steps === 1 ? '' : 's'})` };
+      const r = await ctx.useComputer(a.task,opts.signal);
+      return { ok: r.ok&&r.verified===true,...r.ok&&r.verified!==true?{verification:'unknown' as const}:{}, summary: `${r.ok&&r.verified!==true?'Completion unverified. ':''}${r.summary} (${r.steps} step${r.steps === 1 ? '' : 's'})` };
     },
   }),
 } satisfies Record<ToolName, ToolDef<z.ZodTypeAny>>;
@@ -280,27 +286,65 @@ export function toolCatalogForPrompt(): string {
   return Object.entries(TOOLS).map(([name, d]) => `- ${name}: ${d.description}`).join('\n');
 }
 
-export interface PreparedAction { tool: ToolName; args: Record<string, unknown>; summary: string; policy: Policy }
+export interface PreparedAction { tool: ToolName; args: Record<string, unknown>; summary: string; policy: Policy; tainted?:boolean }
 
 /** Validate a raw request from the model. Throws with a reason the model can read. */
 export function prepareAction(raw: unknown, ctx: ActionContext, tainted: boolean): PreparedAction {
   if (!raw || typeof raw !== 'object') throw new Error('Action must be a JSON object');
   const { tool, args } = raw as { tool?: unknown; args?: unknown };
-  if (typeof tool !== 'string' || !(tool in TOOLS)) throw new Error(`Unknown tool "${String(tool)}"`);
+  if (typeof tool !== 'string' || !Object.hasOwn(TOOLS,tool)) throw new Error(`Unknown tool "${String(tool)}"`);
   const t = tool as ToolName;
   const parsed = TOOLS[t].schema.safeParse(args ?? {});
   if (!parsed.success) throw new Error(`Invalid args for ${t}: ${parsed.error.issues.map((i) => `${i.path.join('.')} ${i.message}`).join('; ')}`);
   let policy = ctx.settings().actions.policies[t] ?? 'confirm';
+  if(t==='use_computer'&&policy!=='deny')policy='confirm';
   // After untrusted content (file names, notes) entered this turn, nothing consequential runs without the user.
   if (tainted && policy === 'allow' && !['get_time', 'list_notes', 'emote', 'teleport'].includes(t)) policy = 'confirm';
   const summary = (TOOLS[t].describe as (a: unknown, c: ActionContext) => string)(parsed.data, ctx);
-  return { tool: t, args: parsed.data as Record<string, unknown>, summary, policy };
+  return { tool: t, args: parsed.data as Record<string, unknown>, summary, policy, tainted };
 }
 
-export async function runAction(p: PreparedAction, ctx: ActionContext, userApproved: boolean): Promise<ToolResult> {
-  try {
-    return await (TOOLS[p.tool].run as (a: unknown, c: ActionContext, o: { userApproved: boolean }) => Promise<ToolResult>)(p.args, ctx, { userApproved });
-  } catch (e) {
-    return { ok: false, summary: (e as Error).message };
+const executors=new WeakMap<ActionContext,TypedCapabilityExecutor>();
+/** Contracts for the migrated tools. The registry remains the only catalog;
+ * there is no second set of model tools or executable public tool definitions. */
+export function capabilityContract(tool:ToolName) {
+  return {permission:`actions.policies.${tool}`,approval:tool==='use_computer'?'explicit-every-call':'current-policy',
+    idempotency:'request-id',cancellation:'cooperative; otherwise settle and report partial effects',
+    recovery:'never replay an interrupted one-shot; reconcile or make a fresh authorized request',
+    verification:tool==='emote'?'renderer-dispatch':tool==='use_computer'?'independent-result-required':'adapter-result'} as const;
+}
+function actionPrecondition(tool:ToolName,args:Record<string,unknown>,ctx:ActionContext){
+  switch(tool){
+    case 'launch_app':return !!findApp(String(args.name),ctx);
+    case 'search_files':return ctx.settings().actions.searchRoots.some(r=>fs.existsSync(r));
+    case 'set_reminder':return dueOf(args as {at?:string;in_minutes?:number},ctx)>ctx.now();
+    case 'create_note':return !!ctx.notes?.add;
+    case 'list_notes':return !!ctx.notes?.list;
+    case 'remember':return !!ctx.memory?.add;
+    case 'teleport':return !!ctx.teleport;
+    case 'emote':return !!ctx.emote;
+    case 'read_screen':return !!ctx.readScreen;
+    case 'mischief':return !!ctx.mischief;
+    case 'use_computer':return !!ctx.useComputer;
+    default:return true;
   }
+}
+export async function runAction(p: PreparedAction, ctx: ActionContext, userApproved: boolean, options:{id?:string;signal?:AbortSignal;dependencies?:string[];deadline?:number;private?:boolean}={}): Promise<ToolResult> {
+  let executor=ctx.executor??executors.get(ctx);if(!executor){executor=new TypedCapabilityExecutor();executors.set(ctx,executor);}
+  const response=await executor.execute({id:options.id??randomUUID(),capability:p.tool,fingerprint:createHash('sha256').update(JSON.stringify(p.args)).digest('hex'),dependencies:options.dependencies??[],approved:userApproved,deadline:options.deadline??ctx.now()+(p.tool==='use_computer'?240000:ctx.settings().ai.requestTimeoutSec*1000),persist:!options.private},p.args,{
+    parse:args=>prepareAction({tool:p.tool,args},ctx,!!p.tainted).args,
+    permission:args=>prepareAction({tool:p.tool,args},ctx,!!p.tainted).policy,
+    precondition:args=>{
+      // These legacy sinks have no source-dependency deletion contract. Explicit
+      // tool confirmation is not a substitute for revocable provenance. Keep
+      // ordinary user-authored writes available and fail closed for derived ones.
+      if((p.tainted||options.dependencies?.length)&&['remember','create_note','set_reminder','start_timer','study_timer'].includes(p.tool))throw Error('This request used source-derived context. Saving it here would lose revocable attribution. Use the source-aware Life Context follow-through or state the content in an independent user request.');
+      return actionPrecondition(p.tool,args,ctx);
+    },
+    execute:(args,signal)=>(TOOLS[p.tool].run as ToolDef<z.ZodTypeAny>['run'])(args,ctx,{userApproved,signal}),
+    verify:(_args,result)=>result.verification==='unknown'?'unknown':result.ok?(p.tool==='emote'?'dispatched':true):false,
+  },options.signal??new AbortController().signal);
+  const {receipt,result}=response;
+  if(receipt.replayed)return {ok:receipt.outcome==='completed',summary:receipt.outcome==='completed'?'This request already completed; it was not repeated.':receipt.detail,receipt};
+  return ['completed','dispatched'].includes(receipt.outcome)&&result?{...result,receipt}:{ok:false,summary:receipt.outcome==='cancelled'?receipt.detail:result?.summary??receipt.detail,receipt};
 }

@@ -151,12 +151,28 @@ function harness(provider: LLMProvider, confirm: (r: ActionRequest) => Promise<b
 }
 
 describe('Conversation orchestrator', () => {
+  it('does not duplicate a timer when the model repeats it in a later action round',async()=>{
+    const action='<action>{"tool":"start_timer","args":{"seconds":60,"label":"Fixture timer"}}</action>';
+    const h=harness(scripted([action,action,'The saved timer is running.']));
+    await h.c.send('Start a 60 second timer called Fixture timer.');await h.c.settle();
+    expect(h.ctx.reminders.active()).toHaveLength(1);expect(h.history.recent(1)[0].content).toBe('The saved timer is running.');h.ctx.reminders.stop();
+  });
+  it('withholds proposed success narration and delivers the executor failure without a model rewrite',async()=>{
+    const seen:LLMMessage[][]=[];
+    const h=harness(scripted(['Done, I opened it. <action>{"tool":"open_url","args":{"url":"example.com"}}</action>','Done!'],seen));
+    h.ctx.openExternal=async()=>{throw Error('Fixture provider unavailable');};
+    await h.c.send('Open example.com');await h.c.settle();
+    expect(h.history.recent(1)[0].content).toContain('Fixture provider unavailable');
+    expect(h.history.recent(1)[0].content).not.toContain('Done');expect(seen).toHaveLength(1);
+    expect(h.cues.filter(c=>c.type==='speak').every(c=>!('text' in c)||!String(c.text).includes('Done'))).toBe(true);
+  });
   it('rechecks a permission revoked while confirmation was open', async () => {
     const h = harness(scripted(['Opening. <action>{"tool":"open_url","args":{"url":"example.com"}}</action>']), async () => {
       h.s.actions.policies.open_url = 'deny'; return true;
     });
     await h.c.send('Open example.com'); await h.c.settle();
     expect(h.confirmSpy).toHaveBeenCalledTimes(1);
+    expect(h.confirmSpy.mock.calls[0][0].id.length).toBeLessThanOrEqual(64);
     expect((h.ctx as unknown as {opened:string[]}).opened).toEqual([]);
   });
   it('observes accepted typed and voice messages once each, never empty input or replies', async () => {
@@ -231,8 +247,9 @@ describe('Conversation orchestrator', () => {
     const h = harness(scripted(['<action>{"tool":"powershell","args":{"cmd":"rm -rf"}}</action><action>{bad</action>', 'Sorry.'], seen));
     await h.c.send('do it');
     await h.c.settle();
-    expect(seen[1].at(-1)!.content).toMatch(/Unknown tool "powershell"/);
-    expect(seen[1].at(-1)!.content).toMatch(/could not parse/);
+    expect(h.history.recent(1)[0].content).toMatch(/Unknown tool "powershell"/);
+    expect(seen).toHaveLength(1);
+    expect(h.history.recent(1)[0].content).toMatch(/could not parse/);
   });
   it('caps action rounds (no infinite tool loops)', async () => {
     const seen: LLMMessage[][] = [];

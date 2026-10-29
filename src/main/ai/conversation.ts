@@ -13,6 +13,7 @@ import { newId } from '../store/jsonFile';
 import type { Logger } from '../log';
 import { LegacyModelSessions } from '../cognitive/runtime';
 import type { ExecutionReceipt, ModelSession } from '../../core/contracts';
+import { createHash } from 'node:crypto';
 
 export interface ConversationDeps {
   sessions?: ConversationSessions;
@@ -162,7 +163,9 @@ export class Conversation {
         const chunker = new SentenceChunker();
         const actions: { parsed: unknown; error?: string }[] = [];
         let roundText = '';
-        const hold = !!this.d.filterReply || !!this.d.hasRetiredLines?.();
+        // An action can appear at the end of a response. Buffer its narration
+        // until execution establishes an outcome, even without a persona filter.
+        const hold = actionMode || !!this.d.filterReply || !!this.d.hasRetiredLines?.();
         if(hold && round===0)this.d.emit('chat:delta',{messageId:replyId,delta:''});
         const deliver = (text: string) => {
           visible += text;
@@ -195,7 +198,7 @@ export class Conversation {
             messages.push({ role: 'system', content: 'Your draft was withheld by presentation validation. Answer the original user message with completely fresh wording. Do not repeat closed topics or claim unverified physical actions. No extra action requests for this rewrite.' });
             round--; continue;
           }
-          roundText = accepted; if (accepted) deliver(accepted);
+          roundText = accepted; if (accepted && !actions.length) deliver(accepted);
         }
         if (speak) for (const sentence of chunker.end()) this.say(replyId, utterance++, sentence);
         if (!actions.length) break;
@@ -208,19 +211,22 @@ export class Conversation {
           this.d.log.info('conversation route upgraded', { route: 'actions' });
           continue;
         }
-        if (round === MAX_ACTION_ROUNDS) { this.d.log.warn('action round limit reached'); break; }
+        if (round === MAX_ACTION_ROUNDS) { this.d.log.warn('action round limit reached'); deliver('I reached the action limit. Those last requests were not executed.'); break; }
 
         const results: string[] = [];
+        const failures:string[]=[];
         let allCosmetic = true;
         for (const a of actions.slice(0, MAX_ACTIONS_PER_ROUND)) {
-          const r = await this.execute(a, tainted, ctrl.signal, sources);
+          const r = await this.execute(a, tainted, ctrl.signal, sources,userMessageId);
           if (r.untrusted) { tainted = true; sources = [...new Set([...sources,'action:untrusted'])]; }
           if (!r.cosmetic) allCosmetic = false;
           results.push(r.line);
+          if(r.ok===false)failures.push(r.summary??r.line);
         }
         if (actions.length > MAX_ACTIONS_PER_ROUND) results.push(`- (ignored ${actions.length - MAX_ACTIONS_PER_ROUND} extra actions: limit ${MAX_ACTIONS_PER_ROUND} per reply)`);
         // pure body language (emote/teleport) that succeeded needs no follow-up model round
-        if (allCosmetic && actions.length <= MAX_ACTIONS_PER_ROUND) break;
+        if(failures.length){deliver(failures.join('\n'));break;}
+        if (allCosmetic && actions.length <= MAX_ACTIONS_PER_ROUND) {if(roundText)deliver(roundText);break;}
         messages.push({ role: 'assistant', content: roundText || '(requested actions)' });
         messages.push({ role: 'user', content: `[action results]\n${results.join('\n')}` });
         if (!visible.endsWith('\n') && visible) { visible += '\n'; this.d.emit('chat:delta', { messageId: replyId, delta: '\n' }); }
@@ -282,20 +288,24 @@ export class Conversation {
     if (!this.ctrl && this.phase === 'speaking') this.setPhase('idle');
   }
 
-  private async execute(a: { parsed: unknown; error?: string }, tainted: boolean, signal: AbortSignal, dependencies: string[]): Promise<{ line: string; untrusted: boolean; cosmetic?: boolean }> {
-    if (a.error) return { line: `- invalid failed: could not parse action (${a.error})`, untrusted: false };
+  private async execute(a: { parsed: unknown; error?: string }, tainted: boolean, signal: AbortSignal, dependencies: string[],turnId:string): Promise<{ line: string; untrusted: boolean; cosmetic?: boolean; ok?:boolean; summary?:string }> {
+    if (a.error) return { line: `- invalid failed: could not parse action (${a.error})`, untrusted: false,ok:false };
     let prepared;
     try {
       prepared = prepareAction(a.parsed, this.d.actionCtx, tainted);
     } catch (e) {
       const toolName = (a.parsed as { tool?: string })?.tool ?? 'unknown';
-      this.record(toolName, 'rejected', (e as Error).message);
-      return { line: `- ${toolName} failed: ${(e as Error).message}`, untrusted: false };
+      this.record(toolName, 'rejected', (e as Error).message,dependencies);
+      return { line: `- ${toolName} failed: ${(e as Error).message}`, untrusted: false,ok:false };
     }
-    const req: ActionRequest = { id: newId('act'), tool: prepared.tool, args: prepared.args, summary: prepared.summary, policy: prepared.policy, tainted };
+    // A model repeating the same request in another round of this user turn
+    // must not create a second note, timer or reminder. A new user turn is a
+    // new authorization scope, so intentional repeated timers remain possible.
+    const requestId=`action:${createHash('sha256').update(JSON.stringify([turnId,prepared.tool,prepared.args])).digest('hex').slice(0,56)}`;
+    const req: ActionRequest = { id: requestId, tool: prepared.tool, args: prepared.args, summary: prepared.summary, policy: prepared.policy, tainted };
     if (prepared.policy === 'deny') {
-      this.record(req.tool, 'blocked', `${req.summary} — blocked by your permission settings`);
-      return { line: `- ${req.tool} failed: blocked by user permission settings`, untrusted: false };
+      this.record(req.tool, 'blocked', `${req.summary} — blocked by your permission settings`,dependencies);
+      return { line: `- ${req.tool} failed: blocked by user permission settings`, summary:'That action is blocked by your permission settings.',untrusted: false,ok:false };
     }
     let approved = prepared.policy === 'allow';
     if (prepared.policy === 'confirm') {
@@ -306,8 +316,8 @@ export class Conversation {
       ]);
       if (signal.aborted) throw new ProviderError('aborted', 'aborted');
       if (!approved) {
-        this.record(req.tool, 'declined', `${req.summary} — you declined`);
-        return { line: `- ${req.tool} failed: the user declined this action`, untrusted: false };
+        this.record(req.tool, 'declined', `${req.summary} — you declined`,dependencies);
+        return { line: `- ${req.tool} failed: the user declined this action`,summary:'The action was declined and did not run.',untrusted: false,ok:false };
       }
     }
     // Permission changes while a confirmation is open must take effect before dispatch.
@@ -315,18 +325,18 @@ export class Conversation {
     const current = prepareAction(a.parsed,this.d.actionCtx,tainted);
     const explicitlyApproved = prepared.policy === 'confirm' && approved;
     if (current.policy === 'deny' || current.policy === 'confirm' && !explicitlyApproved) throw new Error('Action permission changed before execution');
-    const result = await runAction(current, this.d.actionCtx, explicitlyApproved);
-    if (!this.privateTurn) this.d.onExecutionReceipt?.({id:newId('receipt'),requestId:req.id,at:Date.now(),outcome:result.ok?'completed':'failed',detail:req.tool,dependencies:[...dependencies,...(result.untrusted?['action:untrusted']:[])]});
+    const result = await runAction(current, this.d.actionCtx, explicitlyApproved,{id:req.id,signal,dependencies,private:this.privateTurn});
+    if (!this.privateTurn) this.d.onExecutionReceipt?.({id:newId('receipt'),requestId:req.id,at:Date.now(),outcome:result.receipt?.outcome??(result.ok?'completed':'failed'),detail:req.tool,dependencies:[...dependencies,...(result.untrusted?['action:untrusted']:[])]});
     const ar: ActionResult = { id: req.id, ok: result.ok, summary: result.summary, data: result.data };
     this.d.emit('action:result', ar);
-    if (!(result.cosmetic && result.ok)) this.record(req.tool, result.ok ? 'done' : 'failed', `${req.summary} → ${result.summary}`);
+    if (!(result.cosmetic && result.ok)) this.record(req.tool, result.ok ? 'done' : 'failed', `${req.summary} → ${result.summary}`,[...dependencies,...result.untrusted?['action:untrusted']:[]]);
     this.d.log.info('action', { tool: req.tool, ok: result.ok, policy: prepared.policy });
     const data = result.data === undefined ? '' : `\n${result.untrusted ? '<untrusted>' : ''}${JSON.stringify(result.data).slice(0, 4000)}${result.untrusted ? '</untrusted>' : ''}`;
-    return { line: `- ${req.tool} ${result.ok ? 'ok' : 'failed'}: ${result.summary}${data}`, untrusted: !!result.untrusted, cosmetic: !!result.cosmetic && result.ok };
+    return { line: `- ${req.tool} ${result.ok ? 'ok' : 'failed'}: ${result.summary}${data}`, summary:result.summary,ok:result.ok,untrusted: !!result.untrusted, cosmetic: !!result.cosmetic && result.ok };
   }
 
-  private record(tool: string, status: string, text: string) {
-    const m: ChatMessage = { id: newId('x'), role: 'action', content: text, ts: Date.now(), meta: { speech:{kind:'action-result'}, actionStatus: status, private: this.privateTurn } };
+  private record(tool: string, status: string, text: string, contextSources:string[]=[]) {
+    const m: ChatMessage = { id: newId('x'), role: 'action', content: text, ts: Date.now(), meta: { speech:{kind:'action-result'}, actionStatus: status, private: this.privateTurn, contextSources } };
     this.d.history.append(m);
     this.d.emit('chat:message', { message: m });
   }
