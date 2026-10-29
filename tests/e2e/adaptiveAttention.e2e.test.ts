@@ -121,9 +121,9 @@ describe('adaptive desktop attention',()=>{
     await a.evaluate(async()=>{const a=(globalThis as any).__capri;await a.generatedRemark('inspect','Initial observation.',{target:777n});});
     expect(requests).toHaveLength(1);
     const outcome=await a.evaluate(async()=>{const g=globalThis as any,a=g.__capri,native=Date.now;Date.now=()=>native()+31000;try{await a.generatedRemark('inspect','Return to the same view.',{target:777n});return a.lastDialogueOutcome;}finally{Date.now=native;}});
-    expect(requests).toHaveLength(1);expect(outcome).toContain('unchanged');
+    expect(requests).toHaveLength(1);expect(outcome).toContain('same semantic subject');
   });
-  it('admits changed pixels under the same title as new evidence, without spending allowance on an unchanged image',async()=>{
+  it('does not revive an investigated semantic subject merely because pixels changed',async()=>{
     const {a,requests}=await boot();
     const result=await a.evaluate(async()=>{const g=globalThis as any,a=g.__capri,native=Date.now;let offset=0;Date.now=()=>native()+offset;
       try {
@@ -134,7 +134,7 @@ describe('adaptive desktop attention',()=>{
         return a.behavior.snapshot().facts.filter((f:any)=>f.evidence==='visual');
       } finally {Date.now=native;}
     });
-    expect(requests).toHaveLength(2);expect(result).toHaveLength(2);expect(result[0].id).not.toBe(result[1].id);expect(result[0].detail).not.toBe(result[1].detail);
+    expect(requests).toHaveLength(1);expect(result).toHaveLength(1);
   });
   it('does not spend optional request allowance when an exposed capture is temporarily unavailable',async()=>{
     const {a,requests}=await boot();

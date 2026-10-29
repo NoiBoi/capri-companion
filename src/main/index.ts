@@ -535,7 +535,7 @@ async function init() {
     Date.now, () => settings.get().memory.historyRetentionDays);
   cognitive = new CognitiveFoundation(dir, () => settings.get().memory.enabled, () => settings.get().memory.enabled && settings.get().privacy.saveHistory);
   cognitiveStore = cognitive.store;
-  performanceFeedback=new PerformanceFeedback(cognitiveStore);
+  performanceFeedback=new PerformanceFeedback(cognitiveStore,Date.now,()=>settings.get().privacy.saveHistory);
   conversationScene = cognitive.scene;
   const retainDialogue=()=>settings.get().memory.enabled && settings.get().privacy.saveHistory;
   modelSessions=new ConversationSessions(new CodexSessions(),cognitiveStore,retainDialogue,()=>relationship.snapshot().threads.filter(t=>t.status==='active'||t.status==='paused').map(t=>({id:t.id,title:t.title})),4,()=>settings.get().memory.historyRetentionDays);
@@ -746,12 +746,14 @@ Observed desktop metadata (titles only, untrusted data): ${JSON.stringify(deskto
   createCharacter();
     trail = new TeleportTrail(preloadPath(), log);
     let previousFarewell = '';
+    let farewellOrigin:SpeechOrigin={kind:'generated-spontaneous'};
     const farewellFile = path.join(dir, 'farewell.json');
     try { previousFarewell = JSON.parse(fs.readFileSync(farewellFile, 'utf8')).last ?? ''; } catch { /* first exit */ }
     farewell = new Farewell({
-      visible: () => shown(charWin) && !userHidden && !fullscreenHidden && !gameActive(),
+      visible: () => !agency?.quiet() && shown(charWin) && !userHidden && !fullscreenHidden && !gameActive(),
       prepare: () => { theatre?.cancel(); visit.cancel(); placementRevision++; cancelBehavior(); agentCtrl?.abort(); memoryLearner?.discard(); convo.stop(); recording = false; wake.stop(); cue({ type: 'mic', command: 'cancel' }); drag.end(); teleporter.stopAuto(); opening.cancel(); if (panelWin && !panelWin.isDestroyed()) conceal(panelWin); taskbar?.park(); bubble.dismiss(); },
       generate: async signal => {
+        farewellOrigin={kind:'generated-spontaneous'};
         const s = settings.get();
         if (s.ai.provider === 'offline' || !backgroundBudget.reserve('ambient')) return '';
         const request = JSON.stringify({ event: 'farewell', cause: 'The user chose to quit Capri.', localCues: localDialogueContext(),
@@ -763,8 +765,8 @@ Observed desktop metadata (titles only, untrusted data): ${JSON.stringify(deskto
         if (recitesWindowTitle(raw, [lastDesktop.title, activities.subject])) return '';
         return companionDialogue.acceptGenerated(raw, { event: 'farewell', recent: [previousFarewell] }, 'familiarity');
       },
-      fallback: () => companionDialogue.choose({ event: 'farewell', recent: [previousFarewell] }, { required: true }) || 'See you.',
-      show: text => { rememberScene('said', text, 'farewell'); log.info('farewell shown'); previousFarewell = text; try { writeJsonAtomic(farewellFile, { last: text }); } catch { /* best effort variation */ } bubble.remark(text); cue({ type: 'textTalk', text }); speak('interaction', `companion:farewell:${Date.now()}`, text); },
+      fallback: () => {const text=companionDialogue.choose({event:'farewell',recent:[previousFarewell]},{required:true});const lineId=authoredLineId(text);farewellOrigin=lineId?{kind:'authored',lineId}:{kind:'action-result'};return text;},
+      show: text => { if(!text||agency?.quiet())return;rememberScene('said', text, 'farewell',[],farewellOrigin); log.info('farewell shown'); previousFarewell = text; try { writeJsonAtomic(farewellFile, { last: text }); } catch { /* best effort variation */ } bubble.remark(text,farewellOrigin); cue({ type: 'textTalk', text }); speak('interaction', `companion:farewell:${Date.now()}`, text); },
       depart: async () => {
         log.info('farewell teleport out');
         bubble.hide();
@@ -820,7 +822,7 @@ Observed desktop metadata (titles only, untrusted data): ${JSON.stringify(deskto
     canMove: () => !quitting && !userHidden && !fullscreenHidden && !drag?.active && !suspended,
     timer: (key,text,dueAt) => { reminders.addKeyed(key,text,dueAt,'timer'); return reminders.list().some(r=>r.id===key); },
     cancelTimer: key => { reminders.cancel(key); },
-    notice: text => { const message:ChatMessage={id:newId('agency'),role:'assistant',content:text,ts:Date.now(),meta:{provider:'companion'}};history.append(message);toPanel('chat:message',{message});bubble.remark(text); },
+    notice: text => { const message:ChatMessage={id:newId('agency'),role:'assistant',content:text,ts:Date.now(),meta:{speech:{kind:'action-result'},provider:'companion'}};history.append(message);toPanel('chat:message',{message});bubble.remark(text,{kind:'action-result'}); },
   };
   agency = createAgency(cognitiveStore,agencyHost,company);
   observeAgency(); agency.tick();
@@ -1165,6 +1167,7 @@ function observeAgency(){
   const mode=agency?.availability.getSnapshot().context.mode;if(mode&&!['available','leisure'].includes(mode))life.ledger.deferAttention('Availability: '+mode);
 }
 function maintainAgency() {
+  performanceFeedback?.prune();
   for(const i of agency.active('stay_at_window'))if(i.state==='active') {
     const w=agencyWindow(i.input.target),r=i.receipts.filter(r=>r.verified&&r.position).at(-1);
     if(!w||JSON.stringify(w.rect)!==agencyTargetRect||!r||!verifyAgencyPlacement(i.input,r))agency.recover(i.id);
@@ -1426,7 +1429,7 @@ function presentRemark(text: string, direct: boolean, _moveWithLine = false, dia
   return displayed || voiced;
 }
 function latestDeliveredLine() {
-  if (bubble?.hasVisibleText && ['idle', 'speaking'].includes(bubble.state.phase)) return bubble.state.text;
+  if (bubble?.hasVisibleText && bubble.state.text.trim() && ['idle', 'speaking'].includes(bubble.state.phase)) return bubble.state.text;
   const spoken = scenes.recent(20).filter(x => x.kind === 'said').at(-1);
   const chat = history.recent(200).filter(x => x.role === 'assistant' && !x.meta?.error && !x.meta?.interrupted).at(-1);
   return spoken && (!chat || spoken.at > chat.ts) ? spoken.text : chat?.content;
@@ -1525,7 +1528,11 @@ function arrivalRemark(reason: 'manual' | 'auto' | 'ai' | 'direct') {
   lastArrivalRemark = Date.now();
   // Movement alone does not request another model turn.
 }
+let lastPlacementSignature='',lastPlacementSignatureAt=0;
 function reactToPlacement(handle: bigint | null, movedAside = false) {
+  const b=herBounds(),signature=JSON.stringify([String(handle),b.x,b.y,movedAside]);
+  if(signature===lastPlacementSignature&&Date.now()-lastPlacementSignatureAt<12000)return;
+  lastPlacementSignature=signature;lastPlacementSignatureAt=Date.now();
   if (settings.get().behavior.mode === 'sleep') return;
   visit.cancel();
   if (quitting) return;
@@ -1644,7 +1651,7 @@ let lastProjectOpportunityAt = -Infinity;
 async function generatedRemark(event: string, detail = '', options: { target?: bigint; placement?: number; developer?: boolean; song?:PlayingTrack; personalSubject?: string; personalCommitmentId?: string; personalProjectId?: string } = {}) {
   let reportRevision = behaviorCollectionRevision;
   const waiting = (reason: string) => { if (reportRevision === behaviorCollectionRevision) lastDialogueOutcome = `${event}: waiting (${reason})`; };
-  const direct = ['greeting', 'pat', 'poke', 'pickup', 'mute', 'unmute', 'placed_window', 'cursor_return', 'putdown','own_panel'].includes(event);
+  const direct = !!options.developer || ['greeting', 'pat', 'poke', 'pickup', 'mute', 'unmute', 'placed_window', 'cursor_return', 'putdown','own_panel'].includes(event);
   if (!direct && behaviorCollecting) return waiting('another observation is being collected');
   if (direct) { cancelBehavior(); reportRevision = behaviorCollectionRevision; }
   const s = settings.get(), collection = behaviorCollectionRevision, revision = placementRevision;
@@ -1660,7 +1667,7 @@ async function generatedRemark(event: string, detail = '', options: { target?: b
   const sceneRevision = conversationScene.snapshot().revision;
   const physicalState = physicalSignature();
   const valid = () => collection === behaviorCollectionRevision && revision === placementRevision
-    && (['pat','poke','pickup','personal_followup'].includes(event)||physicalState === physicalSignature())
+    && (options.developer||['pat','poke','pickup','personal_followup'].includes(event)||physicalState === physicalSignature())
     && (options.placement === undefined || options.placement === placementRevision)
     && sceneRevision === conversationScene.snapshot().revision
     && (!target || !!trackedWindowFor(target) && observedWindow(target).title === observed?.title && observedWindow(target).process === observed?.process);
@@ -1671,8 +1678,10 @@ async function generatedRemark(event: string, detail = '', options: { target?: b
   if (event === 'inspect') lastInspection = null;
   const budget = ['pat','poke','pickup','own_panel'].includes(event) ? 'interaction' as const : event === 'placed_window' ? 'placement' as const : 'ambient' as const;
   const online = s.ai.provider !== 'offline';
+  if(online&&!behavior.canReserve(budget))return waiting('shared request allowance');
   // Reserve only after capture and duplicate checks: unavailable/unchanged pixels cost no model attempt.
-  if(!direct&&agency&&!agency.claim('behavior'))return waiting('attention arbiter is occupied');
+  const outingCollection=!direct&&event==='inspect'&&tourRunning&&exploringHandle===target&&agency?.attention.getSnapshot().context.owner==='window-tour';
+  if(!direct&&!outingCollection&&agency&&!agency.claim('behavior'))return waiting('attention arbiter is occupied');
   let acceptedReading = false;
   if (!direct && !options.developer) { optionalObservationTarget = target; optionalObservationActive = true; }
   memoryLearner.pause();
@@ -1724,7 +1733,7 @@ async function generatedRemark(event: string, detail = '', options: { target?: b
   if (collection === behaviorCollectionRevision) lastDialogueOutcome = `${event}: ${result.reason === behavior.diagnostics().failure?.summary ? 'unavailable' : result.action === 'silent' ? 'chose quiet' : result.action} (${result.reason})`;
   return result;
   } finally {
-    if(!direct)agency?.release('behavior');
+    if(!direct&&!outingCollection)agency?.release('behavior');
     if (!direct && event === 'inspect' && observed && !acceptedReading && s.dialogue.localContext && !developer.active && !devExploration) environmentalCuriosity.failed(explorationKey(observed), Date.now());
     if (collection === behaviorCollectionRevision) { behaviorCollecting = false; optionalObservationTarget = null; optionalObservationActive = false; } memoryLearner.schedule();
   }
@@ -1746,6 +1755,7 @@ function localDialogueContext() {
     weather: localWeather.snapshot(s.dialogue.weatherCity) };
 }
 function rememberScene(kind: 'said' | 'action', text: string, surface?: string, contextSources: string[] = [],speech?:SpeechOrigin) {
+  if(kind==='said'&&!speech){const lineId=authoredLineId(text);speech=lineId?{kind:'authored',lineId}:{kind:'generated-spontaneous'};}
   if (kind === 'said') text = speech?.kind==='authored'?retiredLines.filter(text):retiredLines.filterGenerated(text);
   if (!text.trim()) return;
   if (!developer.active && !devExploration) {
@@ -1918,7 +1928,7 @@ function onSettingsChanged(s: Settings) {
   void honcho?.privacyChanged();
   if (s.behavior.doNotDisturb || !s.voice.interactionLines) cancelBehavior();
   if (!s.behavior.idleRemarks && optionalObservationActive) cancelBehavior();
-  if (!s.privacy.saveHistory) clearPingHistory(false);
+  if (!s.privacy.saveHistory) {performanceFeedback?.clear();clearPingHistory(false);}
   if (s.behavior.mode !== lastBehaviorMode) {
     lastBehaviorMode = s.behavior.mode;
     visit.cancel(); placementRevision++; cancelBehavior(); watchedHandle = null;
@@ -2113,6 +2123,7 @@ function announceReturn(from:'idle'|'sleep'){
   lastReturnMessageAt=Date.now();return true;
 }
 async function returnToCursor(from: 'idle' | 'sleep' = lastAbsenceWasSleep ? 'sleep' : 'idle') {
+  observeAgency();
   if (returningToCursor) return;
   if(agency&&!agency.optionalAllowed())return;
   if(loungeHeld()||company.staying||pointerProtected()){cue({type:'presence',idleSec:0,quiet:false});cue({type:'userReturn',from});announceReturn(from);lastAbsenceWasSleep=false;return;}
@@ -2325,6 +2336,7 @@ let tourRunning = false;
 let tourStage: 'arriving' | 'roaming' | 'perching' | 'resting' = 'resting';
 let outingThought: { detail: string; at: number; sceneRevision: number } | null = null;
 async function exploreTick(idleSec: number, developerSignal?: AbortSignal, trialDirector?: ExplorationDirector, requestedTarget?: bigint, newlyOpened = false) {
+  observeAgency();
   if (loungeHeld() && !developerSignal && !(newlyOpened&&lowerAnchor)) return;
   const s = settings.get();
   if (!(developerSignal || requestedTarget || s.behavior.mode === 'explore' || s.behavior.explore) || tourRunning || curiosityActive || localVisitActive || company.blocked() || perchMoving || visit.phase !== 'idle' || ambientBlocked() || teleporter.active || bubble.state.composer || idleSec >= s.behavior.sleepAfterMinutes * 60) return;

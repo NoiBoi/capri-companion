@@ -163,6 +163,7 @@ export class Conversation {
         const actions: { parsed: unknown; error?: string }[] = [];
         let roundText = '';
         const hold = !!this.d.filterReply || !!this.d.hasRetiredLines?.();
+        if(hold && round===0)this.d.emit('chat:delta',{messageId:replyId,delta:''});
         const deliver = (text: string) => {
           visible += text;
           this.d.emit('chat:delta', { messageId: replyId, delta: text });

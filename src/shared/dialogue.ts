@@ -319,7 +319,7 @@ export function recitesWindowTitle(text: string, titles: readonly string[]) {
   return titles.some(title => {
     const t = words(title);
     if (!t.length) return false;
-    const receipt=/\b(?:i see|window (?:says|title)|titled|a seat for)\b/.test(spoken);
+    const receipt=/\b(?:i see|you (?:put|placed|moved) me (?:on|in)|window (?:says|title)|titled|a seat for)\b/.test(spoken);
     if(receipt&&spoken.includes(t.slice(0,Math.min(3,t.length)).join(' ')))return true;
     return t.length>=6&&/google chrome|microsoft edge|mozilla firefox/i.test(title)&&spoken.includes(t.join(' '));
   });

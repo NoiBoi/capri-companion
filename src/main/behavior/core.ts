@@ -172,6 +172,7 @@ export class BehaviorCore {
   get busy() { return !!this.active; }
   diagnostics() { return { busy: this.busy, privateExchange: this.privateExchange, saturated:this.state.saturation.length, retrySeconds: Math.max(0, Math.ceil((this.optionalAfter - this.now()) / 1000)), failure: this.failure }; }
   perceptionSaturated(process:string,title:string,fingerprint=''){const key=createHash('sha256').update(JSON.stringify([process,title,fingerprint])).digest('hex');return this.state.saturation.some(s=>s.key===key&&this.now()-s.at<2*3600000);}
+  canReserve(budget:'ambient'|'placement'|'interaction'){return (this.budget.snapshot().find(b=>b.purpose===budget)?.retrySeconds??1)===0;}
   reserve(budget: 'ambient' | 'placement' | 'interaction') { return this.budget.reserve(budget); }
   resumeInitiative() { this.optionalAfter = this.now(); if (this.state.quiet) { this.state.quiet = false; this.save(); } }
   cancel() { this.active?.abort(); this.active = null; this.revision++; }
@@ -259,7 +260,7 @@ export class BehaviorCore {
     const e = event.kind === 'trigger' ? event : undefined;
     const song=(e?.context as {playingTrack?:{title?:string;artist?:string}}|undefined)?.playingTrack;
     const video=(e?.context as {youtube?:{title?:string;channel?:string}}|undefined)?.youtube;
-    return dialogueQuery([video?.channel,video?.title,song?.title,song?.artist,e?.observation?.title, e?.observation?.process].filter(Boolean).join(' '), this.d.scene.snapshot().entries.filter(entry=>!entry.contextSources?.some(id=>this.d.excludedContextSources?.(event.kind==='interact'||event.kind==='trigger'&&event.direct?'chat':'proactive').has(id))));
+    return dialogueQuery([video?.channel,video?.title,song?.title,song?.artist,e?.observation?.title, e?.observation?.process,e?.direct?e.detail.slice(0,400):''].filter(Boolean).join(' '), this.d.scene.snapshot().entries.filter(entry=>!entry.contextSources?.some(id=>this.d.excludedContextSources?.(event.kind==='interact'||event.kind==='trigger'&&event.direct?'chat':'proactive').has(id))));
   }
   async dispatch(event: BehaviorEvent) {
     this.prune();

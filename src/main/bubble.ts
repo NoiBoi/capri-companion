@@ -1,4 +1,4 @@
-import { screen, type BrowserWindow, type Rectangle } from 'electron';
+import { screen, BrowserWindow, type Rectangle } from 'electron';
 import { createBubbleWindow, reveal, conceal, OFFSCREEN } from './windows';
 import type { BubbleState, AssistantPhase, ChatMessage } from '../shared/ipc';
 import type { Logger } from './log';
@@ -61,7 +61,15 @@ export class BuddyBubble {
   private collapseTimer:NodeJS.Timeout|null=null;
   private hasDraft=false;
   private previousFocus=0n;
-  escape(){this.dismiss();if(!OFFSCREEN)restoreChatFocus(this.previousFocus);this.previousFocus=0n;}
+  escape(){
+    const previous=this.previousFocus;this.previousFocus=0n;this.dismiss();
+    if(!OFFSCREEN&&previous){
+      restoreChatFocus(previous);
+      // Electron-owned windows also need their webContents focus restored.
+      const owned=BrowserWindow.getAllWindows().find(w=>!w.isDestroyed()&&handleToBigint(w.getNativeWindowHandle())===previous);
+      if(owned){owned.focus();owned.webContents.focus();}
+    }
+  }
   draft(present:boolean){this.hasDraft=present;this.scheduleCollapse();}
   private scheduleCollapse(){
     if(this.collapseTimer)clearTimeout(this.collapseTimer);
@@ -179,3 +187,4 @@ export class BuddyBubble {
   }
   close() { this.disposed = true; if (this.timer) clearTimeout(this.timer);if(this.stackTimer)clearTimeout(this.stackTimer);if(this.collapseTimer)clearTimeout(this.collapseTimer); this.window?.destroy(); this.window = null; }
 }
+

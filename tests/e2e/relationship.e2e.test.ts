@@ -8,7 +8,7 @@ let app: ElectronApplication | undefined;
 const dirs: string[] = [];
 function profile() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'capri-relationship-e2e-')); dirs.push(dir);
-  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ firstRunComplete: true, ai: { provider: 'offline' }, memory: { enabled: true, autoLearn: false }, dialogue: { localContext: false }, voice: { ttsEnabled: false }, behavior: { quietHours: { enabled: false } }, teleport: { auto: false } })); return dir;
+  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ firstRunComplete: true, character:{startupIntro:false}, ai: { provider: 'offline' }, memory: { enabled: true, autoLearn: false }, dialogue: { localContext: false }, voice: { ttsEnabled: false }, behavior: { quietHours: { enabled: false } }, teleport: { auto: false } })); return dir;
 }
 async function launch(dir: string) {
   app = await electron.launch({ ...(process.env.CAPRI_EXE ? { executablePath: process.env.CAPRI_EXE, args: [] } : { args: [root] }), env: { ...process.env, CAPRI_TEST: '1', CAPRI_OFFSCREEN: '1', CAPRI_USER_DATA: dir, CAPRI_NO_DEV_KEY: '1', GEMINI_API_KEY: '' } });
@@ -69,15 +69,15 @@ describe('lasting relationship in the real app', () => {
     const a = await launch(profile());
     const result = await a.evaluate(async () => {
       const a = (globalThis as any).__capri;
-      a.presentRemark('Mm. Stay there a second.', true, false);
+      const sent=a.presentRemark('Mm. Stay there a second.', true, false);const before=a.history.recent(2);const bubbleBefore={...a.bubble.state};
       await a.convo.send("Don't say that again."); await a.convo.settle();
       const p = a.relationship.setThread({ title: 'Ceramic fox', summary: 'Trying cobalt glaze.', status: 'active', nextAskAt: Date.now() - 1000 });
       const greeting = a.convo.buildMessages('Hey')[0].content;
       const task = a.convo.buildMessages('What is seventeen times twenty-four?')[0].content;
       a.relationship.delivered('How did the ceramic fox glaze turn out?');
-      return { retired: a.retiredLines.list(), reply: a.history.recent(1)[0], greeting, task, next: a.relationship.candidate('', true), projectId: p.id };
+      return { sent,before,bubbleBefore,retired: a.retiredLines.list(), reply: a.history.recent(1)[0], greeting, task, next: a.relationship.candidate('', true), projectId: p.id };
     });
-    expect(result.retired[0].text).toBe('Mm. Stay there a second.'); expect(result.reply.meta.provider).toBe('companion');
+    expect(result.retired[0],JSON.stringify({sent:result.sent,before:result.before,bubble:result.bubbleBefore,reply:result.reply})).toBeDefined();expect(result.retired[0].text).toBe('Mm. Stay there a second.'); expect(result.reply.meta.provider).toBe('companion');
     expect(result.greeting).toContain('"followUp":{"id":'); expect(result.greeting).toContain('Ceramic fox');
     expect(result.task).toContain('"followUp":null'); expect(result.next).toBeUndefined();
   });

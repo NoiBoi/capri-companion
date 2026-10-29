@@ -105,7 +105,7 @@ it('uses YouTube creator and title without a screenshot and avoids re-commenting
   await a.evaluate(async()=>{const g=globalThis as any,a=g.__capri;g.__capriWindowInfo['17']={title:'Building a tiny engine - YouTube',process:'chrome.exe'};g.__capriDesktopOverride=g.__capriWindowInfo['17'];g.__capriYouTubeMetadata={title:'Building a tiny engine',channel:'Known Maker',source:'Windows media metadata'};Object.defineProperty(g,'__capriObservationOverride',{get(){throw Error('A creator/title comment should not capture a screenshot.');},configurable:true});await a.generatedRemark('inspect','New YouTube subject.',{target:17n});});
   expect(requests).toHaveLength(1);const payload=JSON.parse(requests[0].messages.at(-1).content);expect(payload.input.context.youtube.channel).toBe('Known Maker');expect(payload.input.observation.evidence).toBe('metadata');
   const second=await a.evaluate(async()=>{const a=(globalThis as any).__capri,native=Date.now;Date.now=()=>native()+100000;try{await a.generatedRemark('inspect','Same video.',{target:17n});return a.lastDialogueOutcome;}finally{Date.now=native;}});
-  expect(requests).toHaveLength(1);expect(second).toContain('already commented');
+  expect(requests).toHaveLength(1);expect(second).toContain('same semantic subject');
 });
 it('reacts to actual settings and developer navigation without repeating every tab, and respects quiet',async()=>{
   const {a,char}=await boot();

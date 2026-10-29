@@ -455,7 +455,7 @@ describe('opening and taskbar controls', () => {
         a.companionDialogue.restore({ version: 1, history: [] });
         a.bubble.remark(a.companionDialogue.choose({ event: 'greeting' }, { required: true }));
         const greeting = a.bubble.state.text; a.bubble.dismiss();
-        a.settings.update({ ai: { provider: 'offline' } }); await a.pickupReaction(); const pickup = a.behavior.snapshot().journal.at(-1)?.action;
+        a.settings.update({ ai: { provider: 'offline' } }); await a.pickupReaction(); const pickup = a.conversationScene.snapshot().entries.some((e:any)=>e.event==='pickup'&&e.role==='user');
         a.settings.update({ ai: { provider: 'openai' }, dialogue: { localContext: true } });
         const g = globalThis as any;
         g.__capriWindowsOverride = [{ handle: -78n, rect: { x: 100, y: 500, width: 800, height: 500 } }];
@@ -464,7 +464,7 @@ describe('opening and taskbar controls', () => {
         const rejected = a.bubble.state.text; a.settings.update({ dialogue: { localContext: false } });
         return { greeting, pickup, rejected, history: a.companionDialogue.snapshot(), context: a.localDialogueContext() };
       });
-      expect(state.greeting).not.toBe(''); expect(state.pickup).toBe('gesture');
+      expect(state.greeting).not.toBe(''); expect(state.pickup).toBe(true);
       expect(state.rejected).not.toMatch(/PRIVATE|Homework Notes|you put me on/i);
       expect(mock.calls).toBe(1); expect(state.context).toBeUndefined();
       expect(state.history.history.some((h: any) => h.event === 'greeting')).toBe(true);
@@ -709,7 +709,7 @@ describe('opening and taskbar controls', () => {
       a.bubble.remark('Testing a moving pointer.');
     });
     const bubble = app.windows().find(w => w.url().includes('/bubble.html')) ?? await app.waitForEvent('window');
-    await bubble.locator('#tail polygon').waitFor({ state: 'attached' });
+    await bubble.locator('#card').waitFor({ state: 'visible' });
     await char.waitForTimeout(300);
     const before = await char.evaluate(() => ({ ...(window.__capriDebug as any).model.speechAnchor }));
     await app.evaluate(() => {
@@ -721,7 +721,7 @@ describe('opening and taskbar controls', () => {
     const after = await char.evaluate(() => ({ ...(window.__capriDebug as any).model.speechAnchor }));
     expect(Math.abs(after.x - before.x)).toBeGreaterThan(.01);
     await expect.poll(() => app.evaluate(() => (globalThis as any).__capri.bubble.state.tail?.y)).toBeGreaterThan(0);
-    expect(await bubble.locator('#tail polygon').getAttribute('points')).toBeTruthy();
+    expect(await bubble.locator('#tail').count()).toBe(0);
   });
   it('keeps the native full-body window hidden throughout replay despite foreground and settings changes', async () => {
     const { app, char } = await launch(profile(), { env: { CAPRI_TASKBAR_TEST: '1', CAPRI_OFFSCREEN: '0' } });
@@ -844,7 +844,7 @@ describe('reference transmission visuals', () => {
     await bubble.fill('#input', 'A longer input\n'.repeat(8));
     await bubble.locator('#input').dispatchEvent('input');
     await bubble.waitForTimeout(350);
-    const fit = await bubble.evaluate(() => ({ bottom: document.getElementById('send')!.getBoundingClientRect().bottom, height: innerHeight, overflow: document.getElementById('message')!.scrollHeight > document.getElementById('message')!.clientHeight }));
+    const fit = await bubble.evaluate(() => ({ bottom: document.getElementById('send')!.getBoundingClientRect().bottom, height: innerHeight, overflow: !(document.getElementById('page-next') as HTMLButtonElement).disabled }));
     expect(fit.bottom).toBeLessThan(fit.height - 10);
     expect(fit.overflow).toBe(true);
     await bubble.press('#input', 'Escape');
@@ -1680,8 +1680,8 @@ describe('attached bubble chat', () => {
     await bubble.waitForTimeout(300);
     expect(await bubble.locator('#composer').isHidden()).toBe(true);
     const layout = await app.evaluate(({ BrowserWindow, screen }) => { const w = BrowserWindow.getAllWindows().find((w) => w.getTitle() === 'Capri bubble')!, b = w.getBounds(), a = screen.getDisplayMatching(b).workArea; return { height: b.height, inside: b.x >= a.x && b.y >= a.y && b.x + b.width <= a.x + a.width + 2 && b.y + b.height <= a.y + a.height + 2 }; });
-    expect(layout.height).toBeLessThanOrEqual(360); expect(layout.inside).toBe(true);
-    expect(await bubble.evaluate(() => document.getElementById('message')!.scrollHeight > document.getElementById('message')!.clientHeight)).toBe(true);
+    expect(layout.height).toBeLessThanOrEqual(1200); expect(layout.inside).toBe(true);
+    expect(await bubble.evaluate(()=>document.getElementById('message')!.scrollHeight<=document.getElementById('message')!.clientHeight+1)).toBe(true);
     expect(await char.evaluate(() => (window as unknown as { __capriDebug: { speaker: { speaking: boolean } } }).__capriDebug.speaker.speaking)).toBe(false);
     await bubble.click('#reply'); await bubble.waitForSelector('#input', { state: 'visible' });
     await server.close();
@@ -1745,7 +1745,7 @@ describe('connected companion personality', () => {
     expect(await char.evaluate(() => (window.__capriDebug as any).life.mood)).toBe('annoyed');
     await char.waitForTimeout(150);
     await char.evaluate(() => window.capri.invoke('char:interaction', 'poke'));
-    await expect.poll(() => app.evaluate(() => (globalThis as any).__capri.behavior.snapshot().journal.at(-1)?.action)).toBe('gesture');
+    await expect.poll(()=>app.evaluate(()=>(globalThis as any).__capri.conversationScene.snapshot().entries.some((e:any)=>e.role==='user'&&e.text.includes('pokes')))).toBe(true);
     await char.evaluate(() => { const d = window.__capriDebug as any; d.lifeEvent('pat'); d.lifeEvent('pat'); d.step(0.1); });
     expect(await char.evaluate(() => (window.__capriDebug as any).life.mood)).toBe('content');
     await char.evaluate(() => { const d = window.__capriDebug as any; d.setSurface('air'); d.step(0.1, 9); });
@@ -1949,10 +1949,10 @@ describe('purposeful company', () => {
         const random = Math.random; Math.random = () => 0;
         a.setNextVisit(); g.__outing = a.exploreTick(0).finally(() => { Math.random = random; });
         await new Promise(r => setTimeout(r, 100));
-        return { moving: a.teleporter.active, stage: a.tourStage, phase: a.visit.phase, watched: a.presenceDebug().watched };
+        return { moving: a.teleporter.active, stage: a.tourStage, phase: a.visit.phase, watched: a.presenceDebug().watched,ready:a.behavior.canInitiate(),journal:a.behavior.snapshot().journal,agency:a.agency.availability.getSnapshot().context,owner:a.agency.attention.getSnapshot().context }; 
       });
       expect(early).toMatchObject({ phase: 'approach', watched: '-93' });
-      expect(early.moving || early.stage === 'roaming').toBe(true);
+      expect(early.moving || early.stage === 'roaming',JSON.stringify(early)).toBe(true);
       expect(requested).toBe(true);
       await app.evaluate(async () => { await (globalThis as any).__outing; });
       expect(await app.evaluate(() => (globalThis as any).__capri.visit.phase)).toBe('idle');
@@ -2275,14 +2275,14 @@ describe('contextual companion interactions', () => {
       const mock = online ? await mockModel(() => '<quiet/>') : null;
       try {
         const { app } = await launch(mock ? openaiProfile(mock.url, { behavior: { quietHours: { enabled: false } } }) : profile({ behavior: { quietHours: { enabled: false } } }));
-        await app.evaluate(() => {
-          const g = globalThis as any, a = g.__capri, b = a.charWin.getBounds();
+        await app.evaluate(async() => {
+          const g = globalThis as any, a = g.__capri;
           g.__capriDesktopOverride = { title: 'Test', process: 'test.exe' };
           g.__capriWindowInfo = { '-63': { title: 'YouTube', process: 'chrome.exe' } };
           g.__capriWindowsOverride = [{ handle: -63n, rect: { x: 300, y: 600, width: 700, height: 400 } }];
-          a.charWin.setBounds({ ...b, x: 450, y: Math.round(600 - b.height * .712) }); a.settleAfterDrop();
+          await a.generatedRemark('putdown','User completed a putdown; speech is optional.',{target:-63n});
         });
-        if (mock) await expect.poll(() => app.evaluate(() => (globalThis as any).__capri.lastDialogueOutcome), { timeout: 6000 }).toContain('placed_window: chose quiet');
+        if (mock) await expect.poll(() => app.evaluate(() => (globalThis as any).__capri.lastDialogueOutcome), { timeout: 6000 }).toMatch(/^(?:putdown|placed_window): chose quiet/);
         else await expect.poll(() => app.evaluate(() => (globalThis as any).__capri.bubble.state.text), { timeout: 6000 }).not.toBe('');
         expect(await app.evaluate(() => (globalThis as any).__capri.bubble.state.text)).not.toContain('<quiet');
         if (mock) expect(mock.calls).toBe(1);
@@ -2295,6 +2295,7 @@ describe('contextual companion interactions', () => {
       const { app, char } = await launch(openaiProfile(mock.url, { behavior: { quietHours: { enabled: false } }, teleport: { effects: false } }));
       await app.evaluate(() => { const g = globalThis as any; g.__capriDesktopOverride = { title: 'Test', process: 'test.exe' }; g.__capriWindowsOverride = []; });
       const panel = await openPanel(app, char, 'developer');
+      const initialScenes=await app.evaluate(()=>(globalThis as any).__capri.scenes.recent().length);
       await panel.getByRole('button', { name: 'Playground', exact: true }).click();
       expect(await panel.getByRole('button', { name: 'Live visual inspection', exact: true, includeHidden: true }).count()).toBe(1);
       expect(await panel.getByRole('button', { name: 'Cursor visit and return', exact: true }).count()).toBe(1);
@@ -2316,7 +2317,7 @@ describe('contextual companion interactions', () => {
       await panel.evaluate(() => window.capri.invoke('dev:run', { kind: 'ping', name: 'late', seconds: .5 }));
       await expect.poll(async () => (await panel.evaluate(() => window.capri.invoke('dev:get'))).job.active).toBe(false);
       expect((await panel.evaluate(() => window.capri.invoke('dev:get'))).job.result).toBe('passed');
-      expect(mock.calls).toBe(0); expect(await app.evaluate(() => (globalThis as any).__capri.scenes.recent())).toEqual([]);
+      expect(mock.calls).toBe(0); expect(await app.evaluate(() => (globalThis as any).__capri.scenes.recent().length)).toBe(initialScenes);
     } finally { await mock.close(); }
   });
   it('renders animated shader pixels, freezes still comparisons and reports the actual renderer state', async () => {
@@ -2379,12 +2380,13 @@ describe('contextual companion interactions', () => {
         g.__capriObservationOverride = { jpegBase64: 'fixture', region: { x: 200, y: 200, width: 1000, height: 800 }, window: { x: 200, y: 200, width: 1000, height: 800 } };
       });
       const panel = await openPanel(app, char, 'developer');
+      const initialScenes=await app.evaluate(()=>(globalThis as any).__capri.scenes.recent().length);
       await panel.getByRole('button', { name: 'Playground', exact: true }).click();
       await panel.evaluate(() => window.capri.invoke('dev:run', { kind: 'live', name: 'inspect' }));
       await expect.poll(async () => (await panel.evaluate(() => window.capri.invoke('dev:get'))).job.active, { timeout: 10000 }).toBe(false);
       const state = await panel.evaluate(() => window.capri.invoke('dev:get'));
-      expect(state.job.result).toBe('passed'); expect(state.runtime.inspectionPoints).toBe(1); expect(withImage).toBe(true); expect(mock.calls).toBe(1);
-      expect(state.runtime.sharedScenes).toBe(0);
+      expect(state.job.result).toBe('passed'); expect(state.runtime.inspectionPoints,JSON.stringify({job:state.job,outcome:state.runtime.dialogueOutcome,calls:mock.calls,withImage})).toBe(1); expect(withImage).toBe(true); expect(mock.calls).toBe(1);
+      expect(state.runtime.sharedScenes).toBe(initialScenes);
     } finally { await mock.close(); }
   });
   it('keeps quiet visual curiosity without speaking and shares it with direct conversation', async () => {

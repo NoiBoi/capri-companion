@@ -80,5 +80,5 @@ export async function agencyControl(runtime:AgencyRuntime,host:AgencyHost,contro
   if(skill==='avoid_window')return 'That window is off limits until the deadline or you release it.';
   if(skill==='timer')return 'Timer saved and running.';
   if(skill==='commitment')return 'I have recorded that commitment. Tell me when it is done or cancelled.';
-  return 'Quiet company is on. You can still talk to me.';
+  return durationMs?`I'll keep you quiet company for ${durationMs/60000} minutes. You can still talk to me.`:'Quiet company is on. You can still talk to me.';
 }

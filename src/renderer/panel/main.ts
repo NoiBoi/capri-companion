@@ -298,7 +298,7 @@ api.on('chat:done', (p) => {
   streamBubbles.delete(message.id);
   if (tab !== 'chat' || !messagesEl) return;
   const fresh = msgEl(message);
-  if (b) { if (message.content) b.el.replaceWith(fresh); else b.el.remove(); }
+  if (b) { if (message.content||message.meta?.interrupted) b.el.replaceWith(fresh); else b.el.remove(); }
   else if (message.content) messagesEl.append(fresh);
   scrollDown();
 });
