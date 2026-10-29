@@ -1,0 +1,101 @@
+{
+  "stage": "Capri 1.1 Stage 1",
+  "date": "2026-10-29",
+  "baseline": "e593c51",
+  "typecheck": "passed",
+  "productionBuild": "passed",
+  "unit": {
+    "files": 68,
+    "passed": 713,
+    "failed": 0,
+    "newRuntimeSequenceCases": 24
+  },
+  "desktop": {
+    "lastBroadRun": {
+      "passed": 232,
+      "failed": 7,
+      "skipped": 10
+    },
+    "lastBroadFailures": [
+      "opening and taskbar controls draws a short directional teleport ray in an unfocusable temporary window",
+      "teleportation autonomous teleport is held back without AI, and runs once the AI is genuinely connected",
+      "teleportation the AI can make her teleport and emote through validated actions (no extra model round)",
+      "contextual companion interactions comments on the focused window after a cursor trip rather than the old perch target",
+      "contextual companion interactions floats toward a cursor curiosity cue, lingers and teleports back to her perch",
+      "contextual companion interactions roams a visible window before perching and resting",
+      "construct life and desktop spectacles completes a real scene clock and restores a hidden possession body on interruption"
+    ],
+    "finalAffectedRun": {
+      "passed": 18,
+      "failed": 0,
+      "skipped": 128
+    },
+    "finalAffectedCases": [
+      "opening and taskbar controls returns from ordinary inactivity on keyboard/system input without requiring a mouse move",
+      "opening and taskbar controls simulates idle and sleep without changing saved mode and returns with a teleport from each",
+      "opening and taskbar controls does not let a routine ambient decision postpone a stable visual inspection for the full remark interval",
+      "opening and taskbar controls returns near the cursor after inactivity with a text greeting and no model request",
+      "teleportation autonomous teleport is held back without AI, and runs once the AI is genuinely connected",
+      "contextual companion interactions comments on the focused window after a cursor trip rather than the old perch target",
+      "contextual companion interactions shares actual desktop remarks with regular chat and chat with generated asides",
+      "contextual companion interactions keeps shared asides across a full restart and clears them with chat history",
+      "contextual companion interactions floats toward a cursor curiosity cue, lingers and teleports back to her perch",
+      "wires one cognitive owner into actual chat, optional delivery and native movement admission",
+      "construct life and desktop spectacles dissolves into her mask, keeps a real hit region, and reforms completely",
+      "construct life and desktop spectacles runs every visual scene without capturing content, changing focus or moving the pointer",
+      "construct life and desktop spectacles clips possession away from covering windows and restores Capri if the target vanishes or moves",
+      "construct life and desktop spectacles cancels on chat, sleep and hide, and refuses scenes during settled lounging",
+      "construct life and desktop spectacles completes a real scene clock and restores a hidden possession body on interruption",
+      "construct life and desktop spectacles falls safely to another ledge after its supporting window closes",
+      "construct life and desktop spectacles previews every flourish and mask from the developer panel and stops without leftover windows",
+      "construct life and desktop spectacles honors reduced motion and renders distinct original-art gestures with a neutral recovery"
+    ],
+    "finalFocusedIntegration": {
+      "passed": 62,
+      "failed": 0,
+      "skipped": 0
+    },
+    "finalSourceValidityRun": {
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0
+    },
+    "finalCapabilityRun": {
+      "passed": 28,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "baselineComparison": {
+    "method": "Pristine git archive of e593c51, separate production build, isolated synthetic profiles, same dependencies, serial native tests",
+    "selectedRun": {
+      "passed": 2,
+      "failed": 3,
+      "skipped": 140
+    },
+    "failuresReproduced": [
+      "opening and taskbar controls draws a short directional teleport ray in an unfocusable temporary window",
+      "teleportation the AI can make her teleport and emote through validated actions (no extra model round)",
+      "contextual companion interactions roams a visible window before perching and resting"
+    ]
+  },
+  "limits": [
+    "No single all-green full desktop run is claimed. Later focused reruns cover the repaired migration failures.",
+    "Live paid-provider/Luna acceptance and packaged installation were not performed.",
+    "Production profiles, account connections and installed executable were not replaced."
+  ],
+  "commands": [
+    "npm run typecheck",
+    "npm test",
+    "npm run test:cognitive",
+    "npm run build:prod",
+    "npm run test:e2e"
+  ],
+  "remainingAdapters": [
+    "BehaviorCore standalone admission fallback and JSON checkpoint adapter",
+    "generatedRemark native collection and legacy model-event adapter",
+    "physical execution claim/release adapters and cadence diagnostic aliases",
+    "dormant TeleportController automatic timer API",
+    "main/cognitive/dialogue import-path re-export"
+  ]
+}

@@ -1,3 +1,68 @@
+# Capri 1.1 Stage 1: authoritative cognitive orchestration
+
+This section supersedes the historical ownership descriptions below. Baseline is
+`capri-lachy-integration` / `e593c51` (1.0.0). This is the first of three 1.1 stages;
+the installed application and production profile are not replaced by this source migration.
+
+| Owner | Responsibility | Boundary |
+|---|---|---|
+| `src/core/cognitiveRuntime.ts` | Cognitive state, event admission, bounded deferred agenda, subject lifecycle, initiative timing, priority selection, preemption generations and execution leases | Uses DomainEvent, Evidence, CognitiveState and Checkpoints; no Electron/native/browser/renderer imports |
+| `src/core/presencePolicy.ts` | Environmental curiosity, new-window/video/cursor visits, return from AFK, physical/context cues, music novelty, auto teleport cadence, theatre and small activities | Converts one physical/evidence sample into proposals; the runtime selects one effect |
+| `src/core/dialogueCognition.ts` | Shared operational conversational subject, attributed position, corrections, questions and closure | Constructed and owned by CognitiveRuntime; previous main path is a compatibility re-export |
+| Existing `AgencyRuntime` | XState durable commitments, availability, attention and physical ownership actors, deadlines and verified skill execution | No second intention/availability state machine; runtime leases claim this existing attention actor |
+| `BehaviorCore` | Bounded model inference, grounded evidence validation, provider budgets and compatibility checkpoint import | Its working situation is owned by CognitiveRuntime. Production initiation and cooldown delegate to that authority; optional dispatch without an admitted attention lease is rejected |
+| `Conversation`, ConversationSessions | Direct/voice model transport and persistent Luna session delivery | User input preempts runtime effects and cancels optional physical work; direct and ambient prompts consume the same runtime and dialogue state |
+| ConversationScene, CompanionScenes, RelationshipStore, PersonalContext, Life ledger | Attributed exchange, episodic evidence, tastes/projects, sourced personal opportunities and source validity | Supply evidence/projections; do not execute autonomous actions. Current source validity is checked again at delivery |
+| Electron main and native adapters | Sampling, IPC, physical geometry, capability/permission observations, collection, effect execution, renderer delivery and receipts | No presence-policy selection; no native frame/cursor physics in the core |
+
+Flow: host sample -> PresencePolicy proposals -> CognitiveRuntime evidence/revision
+admission -> bounded priority agenda -> one typed effect -> host revalidation and
+execution -> settlement. Periodic observations alone create no model opportunity.
+Duplicate event/source/revision pairs are rejected, source timestamps and expiry
+are validated, and newer evidence explicitly revises/reopens an existing subject.
+Subject phases are introduced, investigated, discussed, revised, resolved and
+abandoned. Dialogue closures and model decision outcomes update that same state.
+
+Queued effects are rechecked against the current permitted capabilities, so disabling optional speech, inspection or a movement category defers its already queued work. Verified physical completion can create a subsequent optional context opportunity; it never directly starts another model request.
+
+The runtime holds at most 32 subjects, 128 deduplication keys, 16 deferred
+opportunities and 8 recent conclusions. Only one effect is pending. Direct
+interaction invalidates its generation, releases optional attention, stops native
+optional work, and preserves unrelated Agency commitments. Game/call, quiet/stay,
+AFK, suspend, physical instability and host availability constrain the same gate.
+Deferred evidence expires; restart restores valid cognitive state and deduplication
+but never blindly replays an in-flight effect. Model failure settles once and does
+not create an internal retry loop. Source-derived conclusions are labeled without
+copying source content into the runtime checkpoint.
+
+Compatibility paths to remove before all of 1.1 is complete:
+
+- BehaviorCore still imports/exports `behavior-state.json` and owns evidence parsing,
+  saturation, provider request budgeting and the model adapter. Its standalone
+  initiative fallback remains for old isolated callers without a CognitiveRuntime.
+  The production composition always supplies the runtime.
+- The host's `claim`/`release` adapters for existing outings and physical executors
+  remain, routed exclusively through CognitiveRuntime. Convert these to full
+  capability request/receipt adapters in later stages; do not restore direct host
+  Agency attention claims or independent ambient schedulers.
+- `generatedRemark` still collects native screenshots/media, constructs the legacy
+  model event and revalidates geometry, exchange revision and source permissions.
+  It delegates eligibility and initiative timing to the core. Native route/landing
+  feasibility and ongoing movement cancellation stay in the host.
+- TeleportController still exposes dormant startAuto/rearm/autoTick compatibility APIs. Production does not start their timer, and the native adapter rejects automatic movement without a CognitiveRuntime execution lease. Remove the dormant scheduler API before the complete 1.1 release.
+- Host aliases expose core-owned cadence objects to existing physical executors
+  and diagnostics. `src/main/cognitive/dialogue.ts` is a compatibility import path.
+- Stage 3 character-performance overhaul, release packaging/installation and live
+  account/model acceptance are separate work. Existing PerformanceDirector,
+  renderer animation, integrations, persistent providers and profile formats remain.
+
+Outing goal, target ranking and manner selection use the core-owned ExplorationDirector through CognitiveRuntime.chooseOuting; native geometry is supplied as feasible place descriptors. A model-requested investigation queues a later typed movement opportunity instead of moving from the model callback. Delayed placement continuations carry their original interaction generation and cannot preempt a newer approved activity.
+
+The CPU-sensitive cursor loop now samples pointer/input only. AFK return and
+native auto teleport scheduling were removed from their second host paths.
+Optional presentation without a runtime effect/lease is refused, and an optional
+BehaviorCore request without admitted cognitive attention cannot call a model.
+
 # Stages 5/6 current ownership
 
 The Stage 1-4 descriptions below are historical implementation records. Current ownership adds a host-independent PerformanceDirector and specific entity-mention resolver in src/core. DialogueCognition remains portable operational state over the Checkpoints contract; its location under main is a composition detail, with no Electron/provider imports. Electron main composes persistence, native adapters, source services and character delivery. Host-specific movement, focus and renderer lifecycle still necessarily live there; this is not a claim that the file is minimal.

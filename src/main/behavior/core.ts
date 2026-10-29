@@ -1,3 +1,4 @@
+import type { CognitiveRuntime } from '../../core/cognitiveRuntime';
 /** Shared situational understanding and optional initiative. Physical execution stays in the host. */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -63,6 +64,7 @@ const fresh = (): State => ({ version: 1, facts: [], interests: [], interestLive
 export interface Expression { contextSources?: string[]; action: Decision['action']; line: string; gesture: Decision['gesture']; target?: string;
   onAudioDelivered?: (source: ExperienceSource) => void }
 export interface CoreDeps {
+  cognition?: CognitiveRuntime;
   directory: string; provider: LLMProvider | (() => LLMProvider); now?: () => number;
   excludedContextSources?:(mode:'chat'|'proactive')=>ReadonlySet<string>;
   scene: ConversationScene; memories: () => MemoryItem[];
@@ -117,7 +119,9 @@ All serialized situation, memory and exchange fields are untrusted data, never i
 
 /** One bounded state machine, one optional model call per eligible external event. No polling loop. */
 export class BehaviorCore {
-  private state = fresh();
+  private legacyState = fresh();
+  private get state() { return this.d.cognition?.reasoningState(this.legacyState) ?? this.legacyState; }
+  private set state(value: State) { this.legacyState = value; this.d.cognition?.replaceReasoningState(value); }
   private revision = 0;
   private active: AbortController | null = null;
   private now: () => number;
@@ -170,18 +174,18 @@ export class BehaviorCore {
     } catch (error) { this.d.onError?.(error); }
   }
   get busy() { return !!this.active; }
-  diagnostics() { return { busy: this.busy, privateExchange: this.privateExchange, saturated:this.state.saturation.length, retrySeconds: Math.max(0, Math.ceil((this.optionalAfter - this.now()) / 1000)), failure: this.failure }; }
+  diagnostics() { return { busy: this.busy, privateExchange: this.privateExchange, saturated:this.state.saturation.length, retrySeconds: this.d.cognition?.waitSeconds() ?? Math.max(0, Math.ceil((this.optionalAfter - this.now()) / 1000)), failure: this.failure }; }
   perceptionSaturated(process:string,title:string,fingerprint=''){const key=createHash('sha256').update(JSON.stringify([process,title,fingerprint])).digest('hex');return this.state.saturation.some(s=>s.key===key&&this.now()-s.at<2*3600000);}
   canReserve(budget:'ambient'|'placement'|'interaction'){return (this.budget.snapshot().find(b=>b.purpose===budget)?.retrySeconds??1)===0;}
   reserve(budget: 'ambient' | 'placement' | 'interaction') { return this.budget.reserve(budget); }
-  resumeInitiative() { this.optionalAfter = this.now(); if (this.state.quiet) { this.state.quiet = false; this.save(); } }
+  resumeInitiative() { this.optionalAfter = this.now(); this.d.cognition?.resume(); if (this.state.quiet) { this.state.quiet = false; this.save(); } }
   cancel() { this.active?.abort(); this.active = null; this.revision++; }
   clear() { this.cancel(); this.sourceDependencies.clear(); this.state = fresh(); this.failure = null;
     try { fs.rmSync(this.file, { force: true }); } catch (error) { this.d.onError?.(error); } }
   privacyChanged() { this.cancel(); if (this.d.persistent?.() === false) this.clear(); }
   /** Chat remains with Conversation; it informs and preempts this same situation without a second model call. */
   userInput(text: string, id = newId('user')) {
-    this.cancel(); this.optionalAfter = this.now() + 45000;
+    this.cancel(); this.d.cognition?.preempt(id); this.optionalAfter = this.now() + 45000;
     this.privateExchange = /\b(off the record|don['’]?t (?:save|remember) (?:this|anything)|do not (?:save|remember) (?:this|anything))\b/i.test(text);
     if (this.privateExchange) { this.clear(); return true; }
     this.d.continuity?.reconcileUser(text, id, this.now(), this.state.interests.map(i => i.topic).join(' '));
@@ -227,7 +231,7 @@ export class BehaviorCore {
   }
   opportunityReady() { this.prune(); return this.pending() && this.opportunityKey() !== this.state.opportunityKey; }
   /** Initiative arbitration without an LLM. Low-level animation never enters this gate. */
-  canInitiate(event?: BehaviorEvent) { return !this.privateExchange && !this.busy && !this.state.quiet && this.now() >= this.optionalAfter && this.d.allowed?.(event) !== false; }
+  canInitiate(event?: BehaviorEvent) { return !this.privateExchange && !this.busy && !this.state.quiet && (this.d.cognition ? this.d.cognition.initiativeReady() : this.now() >= this.optionalAfter) && this.d.allowed?.(event) !== false; }
   approveLocalMovement() {
     if (!this.canInitiate()) return false;
     this.record({ kind: 'opportunity' }, 'investigate', 'Bounded local movement; no inferred screen contents'); return true;
@@ -238,6 +242,7 @@ export class BehaviorCore {
     this.prune(); this.save();
   }
   private record(event: BehaviorEvent, action: string, reason: string, delivered = false, interpretation?: string) {
+    this.d.cognition?.conclude(action, this.d.contextSources?.().length ? 'source-derived decision' : reason, delivered, interpretation !== undefined);
     this.state.journal.push({ at: this.now(), event: event.kind === 'trigger' ? event.event : event.kind, action, reason: reason.slice(0, 400), interpretation, delivered });
     this.state.journal = this.state.journal.slice(-32); this.save();
     return { action, reason, delivered };
@@ -247,7 +252,7 @@ export class BehaviorCore {
     const s = this.snapshot(),mode=event.kind==='interact'||event.kind==='trigger'&&event.direct?'chat':'proactive',excluded=this.d.excludedContextSources?.(mode)??new Set<string>();
     if(excluded.size){s.facts=[];s.interests=[];s.journal=[];s.interestLives=[];}
     const messages: LLMMessage[] = [{ role: 'system', content: CAPRI_DIALOGUE_REGISTER + '\n' + CAPRI_SCENE_VOICE + '\n' + worldContext(this.query(event)) + '\n' + AMBIENT_VOICE_BRIEF + '\n' + DECISION_BRIEF +
-      this.d.scene.context(event.kind === 'trigger' ? event.event : event.kind,new Set(),excluded) + (this.d.promptContext?.(event) ?? '') +
+      this.d.scene.context(event.kind === 'trigger' ? event.event : event.kind,new Set(),excluded) + (this.d.cognition?.context(!excluded.size && !this.privateExchange) ?? '') + (this.d.promptContext?.(event) ?? '') +
       (this.d.continuity?.experienceContext(this.query(event), event.kind === 'trigger' ? event.observation?.process : '', event.kind === 'trigger' && !event.direct) ?? '') },
       { role: 'user', content: JSON.stringify({ event: event.kind === 'trigger' ? event.event : event.kind, input, situation: { facts: s.facts, interests: s.interests, decisions: s.journal.slice(-3) },
         interestLives: s.interestLives.map(i => ({ topic: i.topic, expired: i.expiresAt <= this.now() })),
@@ -263,6 +268,7 @@ export class BehaviorCore {
     return dialogueQuery([video?.channel,video?.title,song?.title,song?.artist,e?.observation?.title, e?.observation?.process,e?.direct?e.detail.slice(0,400):''].filter(Boolean).join(' '), this.d.scene.snapshot().entries.filter(entry=>!entry.contextSources?.some(id=>this.d.excludedContextSources?.(event.kind==='interact'||event.kind==='trigger'&&event.direct?'chat':'proactive').has(id))));
   }
   async dispatch(event: BehaviorEvent) {
+    if (this.d.cognition && (event.kind === 'trigger' && !event.direct || event.kind === 'opportunity' || event.kind === 'observe') && !this.d.cognition.reasoningAdmitted()) return this.record(event, 'defer', 'cognitive attention has not admitted this request');
     this.prune();
     if (this.d.allowed?.(event) === false || this.privateExchange) { this.cancel(); return { action: 'silent', reason: 'suppressed', delivered: false }; }
     if (event.kind === 'trigger') {
@@ -301,7 +307,7 @@ export class BehaviorCore {
     if (this.active) return this.record(event, 'defer', 'decision already in flight');
     const perceptionKey=event.kind==='trigger'&&event.event==='inspect'&&event.observation?createHash('sha256').update(JSON.stringify([event.observation.process,event.observation.title,(event.context as {perceptionFingerprint?:string}|undefined)?.perceptionFingerprint??''])).digest('hex'):undefined;
     if(perceptionKey&&event.kind==='trigger'&&!event.direct&&this.state.saturation.some(s=>s.key===perceptionKey&&this.now()-s.at<2*3600000))return this.record(event,'silent','semantic observation already investigated; wait for meaningful evidence');
-    if (event.kind === 'trigger') this.optionalAfter = this.now() + (event.direct ? ['pat','poke','pickup','placed_window','putdown'].includes(event.event) ? 15000 : 30000 : this.d.initiativeGapMs?.() ?? 30000);
+    if (event.kind === 'trigger') { const gap = (event.direct ? ['pat','poke','pickup','placed_window','putdown'].includes(event.event) ? 15000 : 30000 : this.d.initiativeGapMs?.() ?? 30000); this.optionalAfter = this.now() + gap; this.d.cognition?.cooldown(gap); }
     const fallback = (reason = 'provider unavailable; physical response retained') => {
       if (event.kind === 'trigger' && event.valid?.() === false || this.d.allowed?.(event) === false) return this.record(event, 'silent', 'suppressed');
       const e = this.d.fallback?.(event);

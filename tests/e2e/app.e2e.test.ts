@@ -1253,7 +1253,7 @@ describe('teleportation', () => {
     await app.evaluate(() => { (globalThis as unknown as { __capriIdleOverride: number }).__capriIdleOverride = 0; return new Promise((r) => setTimeout(r, 800)); }); // as if someone is at the machine
     expect((await capri(app)).conn.state).toBe('connected');
     const before = await charPos(app);
-    expect(await tick(app)).toBeNull();
+    expect(await app.evaluate(async()=>{const a=(globalThis as any).__capri;a.observeAgency();a.cognitiveRuntime.resume();if(!a.cognitiveRuntime.claim('native-auto'))throw Error('Fixture requires cognitive attention');try{return await a.teleporter.autoTick();}finally{a.cognitiveRuntime.release('native-auto');}})).toBeNull();
     expect((await capri(app)).tp.count).toBe(1);
     expect(await charPos(app)).not.toEqual(before);
     await ollama.close();
@@ -2522,7 +2522,8 @@ describe('contextual companion interactions', () => {
       await app.evaluate(async () => {
         const g = globalThis as any, a = g.__capri;
         g.__capriDesktopOverride = { title: 'Test', process: 'test.exe' };
-        a.presentRemark('That bassline is trouble.', false, false);
+        a.observeAgency();a.cognitiveRuntime.resume(); if(!a.cognitiveRuntime.claim('behavior'))throw Error('Fixture requires cognitive attention');
+        a.presentRemark('That bassline is trouble.', false, false);a.cognitiveRuntime.release('behavior');
         await a.convo.send('You just called it trouble. Was that a compliment?'); await a.convo.settle();
       });
       const chatPrompt = requests[0].messages[0].content;
@@ -2567,7 +2568,7 @@ describe('contextual companion interactions', () => {
     try {
       const ud = openaiProfile(model.url, { memory: { autoLearn: false } });
       let { app, char } = await launch(ud);
-      await app.evaluate(() => { const a = (globalThis as any).__capri; a.presentRemark('That sketch has excellent little teeth.', false, false); });
+      await app.evaluate(() => { const a = (globalThis as any).__capri; a.observeAgency();a.cognitiveRuntime.resume();if(!a.cognitiveRuntime.claim('behavior'))throw Error('Fixture requires cognitive attention');a.presentRemark('That sketch has excellent little teeth.', false, false);a.cognitiveRuntime.release('behavior'); });
       await quit(app);
       ({ app, char } = await launch(ud));
       await app.evaluate(async () => { const a = (globalThis as any).__capri; await a.convo.send('What did you say about the teeth?'); await a.convo.settle(); });

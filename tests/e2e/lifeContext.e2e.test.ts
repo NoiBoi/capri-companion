@@ -46,7 +46,7 @@ it('shows controls and evidence, shares semantic context in chat, then revokes e
 });
 it('uses the existing ambient lane, cancels its pending output for direct chat, and never learns source-derived dialogue',async()=>{
   const{app:a,requests}=await boot();await evidence(a);
-  await a.evaluate(()=>{const a=(globalThis as any).__capri;a.behavior.resumeInitiative();void a.behavior.dispatch({kind:'trigger',event:'life_context',detail:'Consider the supplied bounded API detail, or remain silent.',direct:false,context:{evidence:a.life.ledger.current()[0]}});});
+  await a.evaluate(()=>{const a=(globalThis as any).__capri;a.presenceTick();a.behavior.resumeInitiative();if(!a.cognitiveRuntime.claim('behavior'))throw Error('Fixture requires cognitive attention');void a.behavior.dispatch({kind:'trigger',event:'life_context',detail:'Consider the supplied bounded API detail, or remain silent.',direct:false,context:{evidence:a.life.ledger.current()[0]}});});
   await expect.poll(()=>requests.some(r=>r.messages[0].content.includes('Choose one desktop-companion decision'))).toBe(true);
   await a.evaluate(async()=>{const a=(globalThis as any).__capri;await a.convo.send('Stop that thought. Answer me directly.');await a.convo.settle();});
   await new Promise(r=>setTimeout(r,1200));

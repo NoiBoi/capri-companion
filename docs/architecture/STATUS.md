@@ -1,3 +1,38 @@
+# Capri 1.1 Stage 1 source migration
+
+The baseline was verified clean on `capri-lachy-integration` at `e593c51`.
+The source now composes CognitiveRuntime as the single high-level initiative
+owner. PresencePolicy owns the previously host-scheduled curiosity, activity,
+movement, video, music, return, context and follow-up agenda. The existing XState
+Agency actors still own durable commitments and verified native skill recovery.
+Direct conversation and BehaviorCore share runtime-owned dialogue and reasoning
+state; optional reasoning without attention admission and optional presentation
+without an effect/lease are rejected. Automatic native movement also checks the
+runtime execution lease at the native adapter boundary.
+
+`ARCHITECTURE.md` contains the concrete ownership map and the compatibility paths
+that must be removed before all three 1.1 stages are complete. The package version
+remains 1.0.0 until the staged 1.1 release. No installed application, account login,
+production profile, Chrome extension registration or saved user data was replaced.
+
+Verification (2026-10-29): typecheck, the production build and all 713 unit tests
+pass, including 24 runtime sequence cases using real SQLite, XState and
+BehaviorCore. Final affected desktop reruns pass 18/18; focused integration passes
+62/62; the final source-validity/restart rerun passes 8/8.
+The final capability/attention/source regression run passes 28/28.
+
+The last broad desktop run recorded 232 passed, 7 failed and 10 skipped before the
+final corrections. The repaired migration cases pass in the later focused runs.
+Three remaining native failures were also reproduced on a pristine e593c51 build:
+directional teleport-ray window discovery, AI cosmetic teleport displacement, and
+an always-roaming phase expectation. The comparison ran the original tests from a
+separate git archive against its own production bundle. No single all-green broad
+run is claimed. Exact counts, test names and limits are retained in
+[COGNITIVE_RUNTIME_VALIDATION.json](COGNITIVE_RUNTIME_VALIDATION.json). Live
+paid-provider acceptance and packaged installation were not performed.
+
+---
+
 # Capri 1.0.0: Stages 5 and 6
 
 Character performance and long-horizon stabilization are implemented and installed. Read FINAL_REPORT.md for exact evidence and limitations. Final unit/type checks pass (689 tests). The accelerated 48-hour scenario passes 25 integrated assertions. Two actual-model sequences preserve 62 first generations. Final focused packaged checks pass 19 cases with 3 deliberate skips, including crash recovery and real native-model restart. The earlier broad package run was 232 passed/5 failed/10 skipped; failures and retests are retained, and a single all-green broad run is not claimed. Normal production launch preserves 40 memories, saved identity, provider connectivity and settings, with all 155 prelaunch profile files preserved. Actual external multi-day reliability remains unverified. The first hidden-style renderer startup stall and its successful ordinary-launch recovery are recorded, not hidden.

@@ -1,3 +1,60 @@
+# Capri 1.1 Stage 1 continuation
+
+Continue from the current branch, preserving the 1.0.0 baseline and its later
+history. Read the new ownership map at the start of `ARCHITECTURE.md`; the older
+stage entries below are historical. Product version is deliberately still 1.0.0:
+this source checkpoint is Stage 1 of the three-stage 1.1 migration, not an installed
+1.1 release.
+
+CognitiveRuntime is composed before BehaviorCore and Conversation. It owns the
+portable DialogueCognition instance, the model's shared working situation,
+bounded event/subject/agenda state, initiative clock and preemption generations.
+Outing goal/target/manner selection is core-owned. Model-requested investigation
+queues another typed effect; delayed user-placement reactions keep the original
+interaction generation. Do not turn such a continuation into a new user event.
+PresencePolicy owns pure cadence components; host aliases are for executor
+continuity and diagnostics. AgencyRuntime is attached after native adapters exist
+and remains the sole XState durable-intention and availability implementation.
+
+`presenceTick` samples current windows, permissions, native state, source
+candidates and playback, then executes one selected effect. High-frequency pointer
+tracking, physics, target geometry and skill verification remain native. Do not
+add another presence scheduler to cursorTick, restart TeleportController's dormant
+legacy auto timer, or claim Agency attention directly from a host callback.
+
+Compatibility work remaining before the complete 1.1 release:
+
+1. Replace legacy generatedRemark/model-event collection and the physical
+   claim/release entry adapters with full typed capability receipts. Preserve
+   source permission, scene/placement revision and geometry revalidation.
+2. Retire BehaviorCore's standalone admission fallback and JSON checkpoint adapter
+   once every standalone caller migrates. Production already supplies the cognitive
+   authority; its model state is a reference owned by that runtime.
+3. Remove the old DialogueCognition import-path shim and host cadence aliases when
+   diagnostics/executors move. Avoid a duplicate XState machine or second topic
+   lifecycle. ConversationScene and relationship/episodic stores remain evidence
+   projections and durable attributed records, not autonomous executors.
+4. Stage 3 may refine coordinated character performance. Keep the current
+   PerformanceDirector, renderer/native behavior and personality guide in place.
+5. Package/install only after the release workflow, stopped-profile backup and
+   rollback checks. This stage did not modify the installed app or reconnect any
+   account. Live persistent Luna/provider verification is separate from local
+   mocked-provider and offline integration evidence.
+
+Verification commands: `npm run typecheck`, `npm run test:cognitive`, `npm test`,
+`npm run build:prod`, and `npm run test:e2e`. New regression fixtures explicitly
+acquire cognitive attention before injecting optional delivery/model decisions;
+the separate negative tests verify that bypass calls are rejected. Keep these
+admissions visible in tests instead of disabling the runtime gate.
+
+Final verification: 713 unit tests and 24 runtime sequence cases pass; 18 affected
+desktop cases, 62 focused integration cases and 8 final source-validity/restart
+cases pass. Read COGNITIVE_RUNTIME_VALIDATION.json for the non-green broad run and
+three native failures reproduced on the untouched e593c51 baseline. Do not relabel
+the full desktop suite green or infer packaged/live-provider acceptance.
+
+---
+
 # Final Stage 5/6 handoff: Capri 1.0.0
 
 Implementation and release are complete with the verification scope in FINAL_REPORT.md. Use OPERATIONS.md for setup, privacy and rollback. Keep all earlier stage records as historical evidence. Do not restart from the 0.3.0 memory summary or assume AppData is the current profile: normal data is Documents/Capri Buddy. Architectural checkpoints: 289e34f baseline, 2c498ed Milestone A, dd90560 two-day corrections, da90aa8 stabilization. The final source/report checkpoint follows these. No private backup belongs in a public artifact.

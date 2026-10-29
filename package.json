@@ -15,7 +15,8 @@
     "behavior:replay": "node scripts/behavior-stage0.mjs",
     "continuity:recall": "node scripts/continuity-recall.mjs",
     "context:replay": "node scripts/personal-context-replay.mjs",
-    "context:honcho:check": "node scripts/verify-honcho-comparison.mjs"
+    "context:honcho:check": "node scripts/verify-honcho-comparison.mjs",
+    "test:cognitive": "vitest run tests/unit/cognitiveRuntime.test.ts"
   },
   "author": "Capri Companion contributors",
   "license": "MIT",

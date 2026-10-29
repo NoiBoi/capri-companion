@@ -15,6 +15,8 @@ export interface TeleportDeps {
   cursorProtected?(): boolean;
   cue(c: CharacterCue): void;
   aiConnected(): boolean;
+  /** Production automatic travel requires a cognitive execution lease. */
+  automaticAdmission?(): boolean;
   /** Reason autonomous behaviour must not run right now, or null. */
   blocked(): string | null;
   userIdleSec(): number;
@@ -47,6 +49,7 @@ export class TeleportController {
 
   get active() { return this.busy; }
   private automaticBlock() {
+    if (this.d.automaticAdmission?.() === false) return 'cognitive runtime has not admitted automatic movement';
     const reason = this.d.blocked();
     // The exploration owner may still request automatic travel itself.
     return reason === 'window exploration handles autonomous movement' ? null : reason;
@@ -124,6 +127,7 @@ export class TeleportController {
   }
 
   async go(target: TeleportTarget, reason: 'manual' | 'auto' | 'ai', how: 'teleport' | 'glide' | 'either' = 'teleport'): Promise<{ ok: boolean; detail: string; to?: Rect }> {
+    if (reason === 'auto' && this.d.automaticAdmission?.() === false) return {ok:false,detail:'Cognitive runtime has not admitted automatic movement.'};
     if (this.busy) return { ok: false, detail: 'Already teleporting' };
     if (target === 'near_cursor' && this.d.cursorProtected?.()) return {ok:false,detail:'Keeping clear of the video or avoided window under the pointer.'};
     const cur = this.d.bounds();
