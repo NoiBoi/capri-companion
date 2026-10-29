@@ -1,3 +1,13 @@
+# Stages 5/6 compatibility
+
+No production profile reset or credential migration is required. SQLite schema remains version 2; the new performance-feedback checkpoint and optional conversational closure fields are additive. Existing identity, conversation history, Honcho state, integrations, encrypted secrets and artwork retain their owners. Old source caches and migration backups are preserved except when the user explicitly revokes/clears their content through existing controls.
+
+New retired authored items add lineId. Existing retired expression records have no lineId and remain valid legacy exclusions until restored. The migration does not reinterpret generated phrases as authored templates or silently discard user preferences. New generated feedback never appends a text blacklist. Old chat messages without provenance remain visible but do not acquire an invented authored/generated classification. New messages persist explicit provenance through restart.
+
+Only the unused hostScheduler helper was retired. Stateless provider compatibility, existing movement/physics/pose executors, background request budgets and action authorization remain active and verified through their existing interfaces. Removal of those mechanisms would be a regression, not architectural cleanup.
+
+Use the stopped-profile backup and application rollback procedure in OPERATIONS.md. Exact final deployment and preservation evidence is recorded in FINAL_REPORT.md.
+
 # Current Stage 3 update: product 0.8.0
 
 Read [STAGE3.md](STAGE3.md), [STAGE3_VALIDATION.md](STAGE3_VALIDATION.md) and

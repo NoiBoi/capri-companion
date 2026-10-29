@@ -60,7 +60,7 @@ export type CharacterCue =
   | { type: 'attention'; point: { x: number; y: number } | null; seconds: number }
   | { type: 'life'; event: LifeEvent }
   | { type: 'phase'; phase: AssistantPhase }
-  | { type: 'react'; reaction: 'happy' | 'surprised' | 'annoyed' | 'curious' | 'wave' | 'nod' }
+  | { type: 'react'; performanceId?:number; reaction: 'happy' | 'surprised' | 'annoyed' | 'curious' | 'wave' | 'nod' }
   | { type: 'speak'; utteranceId: string; text: string }
   | { type: 'stopSpeech' }
   | { type: 'wake' }
@@ -245,6 +245,7 @@ export interface InvokeMap {
   'char:speechState': [{ utteranceId: string; state: 'start' | 'end' | 'error' | 'cancel' }, void];
   'char:audio': [{ wav: Uint8Array; durationMs: number }, void];
   'char:micError': [string, void];
+  'char:performance': [{id:number;status:'completed'|'interrupted'},void];
   'char:poseRenderer': [import('./developer').PoseRendererState, void];
   'char:fps': [number, void];
   'char:ready': [void, void];
@@ -281,7 +282,7 @@ export const INVOKE_CHANNELS: InvokeChannel[] = [
   'action:respond', 'provider:test', 'provider:models', 'claude:status', 'claude:signin', 'claude:code', 'claude:signout', 'diagnostics:get', 'logs:tail', 'app:openDataFolder',
   'app:resetAll', 'app:quit', 'app:restart', 'apps:pick', 'folders:pick', 'panel:open', 'panel:close', 'panel:ready', 'panel:viewed',
   'voice:ptt', 'char:hit', 'char:anchor', 'char:drag', 'char:click', 'char:menu', 'char:speechState', 'char:audio',
-  'char:micError', 'char:poseRenderer', 'char:fps', 'char:ready', 'tts:fetch', 'connection:get', 'connection:check', 'teleport:now', 'char:teleport',
+  'char:micError', 'char:performance', 'char:poseRenderer', 'char:fps', 'char:ready', 'tts:fetch', 'connection:get', 'connection:check', 'teleport:now', 'char:teleport',
   'char:personality', 'char:interaction', 'bubble:open', 'bubble:close', 'bubble:get', 'bubble:resize', 'bubble:escape', 'bubble:hover', 'bubble:draft',
 ];
 export const EVENT_CHANNELS = [

@@ -13,7 +13,12 @@ export interface PerformanceInput {
 export interface PerformancePlan { speech?:string; origin:SpeechOrigin; reaction?:Reaction; reason:string }
 export class PerformanceDirector {
   private feedback:{kind:FeedbackKind;at:number}[]=[];
+  private serial=0;
+  private animations:{id:number;reaction:Reaction;at:number;status:'requested'|'completed'|'interrupted'|'expired'}[]=[];
   constructor(private now=Date.now) {}
+  requestAnimation(reaction:Reaction) { const id=++this.serial;this.animations.push({id,reaction,at:this.now(),status:'requested'});this.animations=this.animations.slice(-32);return id; }
+  animationResult(id:number,status:'completed'|'interrupted') { const item=this.animations.find(a=>a.id===id);if(item?.status==='requested'&&this.now()-item.at<15000)item.status=status; }
+  animationState() {for(const a of this.animations)if(a.status==='requested'&&this.now()-a.at>=15000)a.status='expired';return this.animations.map(a=>({...a}));}
   feedbackGiven(kind:FeedbackKind) { this.feedback.push({kind,at:this.now()});this.feedback=this.feedback.slice(-32); }
   context() {
     const kinds=new Set(this.feedback.filter(f=>this.now()-f.at<10*60000).map(f=>f.kind));
@@ -25,7 +30,7 @@ export class PerformanceDirector {
     if(!i.direct && (i.quiet||!i.available))return {...base,reason:'quiet presence'};
     const line=i.line?.replace(/\s*[—–]\s*/g,', ').trim();
     // Physical actions execute through the capability host, never through prose.
-    const claims=/\bI(?:['’]ve| have)? (?:teleported|moved|landed|read your document|inspected the geometry)\b/i;
+    const claims=/\bI(?:['’]ve| have)? (?:teleported|(?:moved|landed)\s+(?:here|there|onto|into|to your|to the)|read your document|inspected the geometry)\b/i;
     if(line && claims.test(line) && !i.actionVerified)return {...base,reason:'unverified physical claim'};
     const intrusive=this.feedback.some(f=>f.kind==='intrusive'&&this.now()-f.at<10*60000);
     if(!i.direct&&intrusive)return {...base,reason:'temporary feedback quiet'};

@@ -114,7 +114,7 @@ export class CodexSessions implements PersistentSessions {
         if(delay!==null){codexRequests.limit(delay);failure=new ProviderError('Codex allowance exhausted.','rate_limit',429,delay);done=true;this.child?.kill();}
         else if(!p.willRetry){failure=new ProviderError(message,'server');done=true;}
       }
-      if(m.method==='turn/completed') { done=true;if(p.turn.status!=='completed')failure=new ProviderError(p.turn.error?.message??'Turn interrupted.','server'); }
+      if(m.method==='turn/completed') { done=true;if(p.turn.status!=='completed')failure??=new ProviderError(p.turn.error?.message??'Turn interrupted.','server'); }
       wake();
     };
     const died=(e:Error)=>{failure??=e;done=true;wake();};

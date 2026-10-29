@@ -162,7 +162,7 @@ export class Conversation {
         const chunker = new SentenceChunker();
         const actions: { parsed: unknown; error?: string }[] = [];
         let roundText = '';
-        const hold = !!this.d.hasRetiredLines?.();
+        const hold = !!this.d.filterReply || !!this.d.hasRetiredLines?.();
         const deliver = (text: string) => {
           visible += text;
           this.d.emit('chat:delta', { messageId: replyId, delta: text });
@@ -191,7 +191,7 @@ export class Conversation {
           const accepted = this.d.filterReply?.(roundText) ?? roundText;
           if (roundText.trim() && !accepted.trim() && !actions.length && !rewriteUsed) {
             rewriteUsed = true;
-            messages.push({ role: 'system', content: 'Your draft repeated a user-retired line and was withheld. Answer the original user message with completely fresh wording. Do not quote or explain the retired phrasing. No extra action requests for this rewrite.' });
+            messages.push({ role: 'system', content: 'Your draft was withheld by presentation validation. Answer the original user message with completely fresh wording. Do not repeat closed topics or claim unverified physical actions. No extra action requests for this rewrite.' });
             round--; continue;
           }
           roundText = accepted; if (accepted) deliver(accepted);

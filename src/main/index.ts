@@ -630,7 +630,6 @@ async function init() {
       if (!line) return 'Which line? You can quote it, and I will retire it.';
       if(authoredLineId(line)){retireLine(line);return 'All right. That line is retired.';}
       performanceDirector.feedbackGiven('repetitive');
-      if(!behavior?.diagnostics().privateExchange)performanceFeedback.record('repetitive');
       return "All right. I'll drop it.";
     },
     hasRetiredLines: () => retiredLines.list().length > 0,
@@ -1626,7 +1625,7 @@ function expressBehavior(expression: Expression, event: BehaviorEvent) {
   if (expression.action === 'gesture') {
     if (expression.gesture === 'none') return false;
     const p=performanceDirector.plan({direct:!!trigger?.direct,quiet:agency.quiet(),available:agency.optionalAllowed(),held:drag.active,moving:!!teleporter.active,origin:{kind:'generated-spontaneous'},reaction:expression.gesture,availableReactions:['happy','surprised','annoyed','curious','wave','nod']});
-    if(!p.reaction)return false;cue({ type:'react',reaction:p.reaction });return true;
+    if(!p.reaction)return false;cue({ type:'react',reaction:p.reaction,performanceId:performanceDirector.requestAnimation(p.reaction) });return true;
   }
   if (expression.action !== 'speak') return false;
   const context = { event: (trigger?.event === 'placed_window' ? 'putdown' : ['pat','poke','pickup','greeting','return','roam','perch','mute','unmute'].includes(trigger?.event ?? '') ? trigger!.event : 'notice') as DialogueEvent, recent: recentRemarks };
@@ -1638,7 +1637,7 @@ function expressBehavior(expression: Expression, event: BehaviorEvent) {
     if (personal?.personalProjectId) relationship.followUpDelivered(personal.personalProjectId);
     if (personal?.candidateId) life.ledger.settle(personal.candidateId,'delivered','Host confirmed speech delivery');
   }, expression.contextSources ?? [],{kind:trigger?.direct?'generated-direct':'generated-spontaneous'})) return false;
-  if(expression.gesture!=='none'&&!drag.active&&!teleporter.active)cue({type:'react',reaction:expression.gesture});
+  if(expression.gesture!=='none'&&!drag.active&&!teleporter.active)cue({type:'react',reaction:expression.gesture,performanceId:performanceDirector.requestAnimation(expression.gesture)});
   return true;
 }
 let lastProjectOpportunityAt = -Infinity;
@@ -3255,6 +3254,7 @@ function registerIpc() {
     log.warn('microphone error', { msg });
     toPanel('chat:phase', { phase: 'error', detail: `Microphone error: ${msg}` });
   });
+  handle('char:performance','char',z.object({id:z.number().int().positive(),status:z.enum(['completed','interrupted'])}).strict(),result=>performanceDirector.animationResult(result.id,result.status));
   handle('char:poseRenderer', 'char', z.object({ pose: z.enum(SECONDARY_POSES).nullable(), shader: z.boolean(), reduced: z.boolean(), motion: z.number().min(0).max(3), mood: z.enum(MOODS).optional(), clip: z.string().max(80).optional(), phase: z.enum(DEV_PHASES).optional(), attachment: z.string().max(40).nullable().optional() }).strict(), state => { lastPoseRenderer = state; });
   handle('char:fps', 'char', z.number().min(0).max(1000), (fps) => { lastFps = fps; });
   handle('char:ready', 'char', none, () => characterReady?.());

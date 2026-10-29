@@ -1,4 +1,4 @@
-import type { ContextPacket, ModelSession, ModelSessions, Scheduler } from '../../core/contracts';
+import type { ContextPacket, ModelSession, ModelSessions } from '../../core/contracts';
 import type { GenOptions, LLMProvider } from '../ai/providers';
 
 /** Compatibility adapter: retains existing authentication/routing and sends the
@@ -18,12 +18,3 @@ export class LegacyModelSessions implements ModelSessions {
   }
   invalidate(source: string) { for (const [controller,dependencies] of this.active) if (dependencies.includes(source)) controller.abort(); }
 }
-
-export const hostScheduler: Scheduler = {
-  now: Date.now,
-  schedule(deadline,run) {
-    let stopped=false, timer: ReturnType<typeof setTimeout>;
-    const tick=()=>{if(stopped)return;const delay=deadline-Date.now();if(delay>0)timer=setTimeout(tick,Math.min(delay,3600000));else run();};
-    tick();return()=>{stopped=true;clearTimeout(timer);};
-  },
-};

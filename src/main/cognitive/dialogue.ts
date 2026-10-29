@@ -68,7 +68,7 @@ export class DialogueCognition {
     return (text.match(/[^.!?\n]+(?:[.!?]+|\n|$)/g)??[text]).filter(sentence=>{
       const words:string[]=Array.from(sentence.toLowerCase().match(/[a-z]{3,}/g)??[]);
       return !closed.some(c=>c.terms.some(t=>words.includes(t)));
-    }).join(' ').trim();
+    }).join(' ').replace(/\s+/g,' ').trim();
   }
   context() {
     if(!this.retain())return '';

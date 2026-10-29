@@ -1,3 +1,15 @@
+# Stages 5/6 current ownership
+
+The Stage 1-4 descriptions below are historical implementation records. Current ownership adds a host-independent PerformanceDirector and specific entity-mention resolver in src/core. DialogueCognition remains portable operational state over the Checkpoints contract; its location under main is a composition detail, with no Electron/provider imports. Electron main composes persistence, native adapters, source services and character delivery. Host-specific movement, focus and renderer lifecycle still necessarily live there; this is not a claim that the file is minimal.
+
+PerformanceDirector receives the existing validated cognitive expression plus quiet/availability/motion state. It can admit speech, admit an available gesture without speech, or remain silent. No separate model call is required. Renderer reaction clips report completed/interrupted execution through a char-only validated IPC channel, correlated to host request IDs; missing receipts expire rather than claim success. Completed native movement receipts and current renderer body/pose remain authoritative. All direct generated replies are withheld until presentation validation, including when the retired-line list is empty.
+
+Speech provenance belongs to ChatMessage/bubble delivery metadata. Authored templates have stable exact IDs; generated-direct and generated-spontaneous remain distinct from action-result and system-error. RetiredLines owns authored ID exclusions and read-only-compatible historical expression preferences. PerformanceFeedback owns bounded category/time diagnostics through the same transactional SQLite checkpoint owner. It does not own permanent user facts or Capri tastes. Temporary delivery feedback expires and never grants capabilities. DialogueCognition owns bounded explicit conversational closures; RelationshipStore continues to own separately attributed Capri opinions and project threads.
+
+LifeContext remains the evidence and deferred-attention owner. Project aliases resolve using the most specific overlapping span; distinct mentions can return distinct entities. Reported submission reconciles recognized assignment callbacks and unambiguous matching calendar/page titles without promoting a user report to platform confirmation. New contradictory evidence/correction can reopen follow-through. No new polling orchestrator, framework or state store was introduced. Unused hostScheduler was removed after confirming no runtime references. LegacyModelSessions is still used by nonnative/fallback providers, so removing it would break supported integrations.
+
+See STAGE5.md, SCENARIO_RESULTS.md, OPERATIONS.md and FINAL_REPORT.md for behavior, evidence, migration and release limits.
+
 # Current Stage 4 update: product 0.9.0
 
 Read [STAGE4.md](STAGE4.md), [STAGE4_VALIDATION.md](STAGE4_VALIDATION.md) and

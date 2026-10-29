@@ -92,6 +92,8 @@ function modelPose(): PoseName {
 }
 const anim = new Animator();
 const behavior = new Behavior();
+let directedAnimation:{id:number;clip:NonNullable<Behavior['clip']>}|undefined;
+function finishDirectedAnimation(status:'completed'|'interrupted'){if(directedAnimation){void api.invoke('char:performance',{id:directedAnimation.id,status});directedAnimation=undefined;}}
 const blinker = new Blinker();
 const mic = new MicRecorder();
 const speaker = new Speaker(() => settings, (id, state) => void api.invoke('char:speechState', { utteranceId: id, state }), (text, mood) => api.invoke('tts:fetch', mood ? { text, mood } : text));
@@ -132,7 +134,7 @@ function loop(now: number) {
 function setPaused(p: boolean) {
   if (p === paused) return;
   paused = p;
-  if (p) cancelAnimationFrame(raf);
+  if (p) {finishDirectedAnimation('interrupted');cancelAnimationFrame(raf);}
   else if (characterBooted) { last = performance.now(); raf = requestAnimationFrame(loop); }
 }
 // Main pauses genuinely hidden pets explicitly. Covering the native window must
@@ -195,6 +197,7 @@ function tick(dt: number) {
     model.speechAnchor = { x: .5, y: .45 }; model.speechBody = undefined;
   }
   model.hitOverride = deepSleep.amount > .8 ? (x,y) => deepSleep.hit(x,y,W,H) : undefined;
+  if(directedAnimation){if(directedAnimation.clip.done)finishDirectedAnimation('completed');else if(behavior.clip!==directedAnimation.clip||dragging||teleporting)finishDirectedAnimation('interrupted');}
   const rendererState = { ...model.secondaryRendererState, mood: devPreview?.mood ?? mood, clip: model.activeClip, phase: devPreview?.phase ?? phase, attachment: devPreview ? devPreview.attachment ?? null : attachment }, rendererKey = JSON.stringify(rendererState);
   if (rendererKey !== lastRendererState) { lastRendererState = rendererKey; void api.invoke('char:poseRenderer', rendererState); }
   const head = model.speechAnchor, now = performance.now(), bodyKey = JSON.stringify([model.speechBody,model.sceneHand]);
@@ -321,7 +324,7 @@ api.on('cue', (raw) => {
     case 'attention': if (c.point) attention.watch({ x: (c.point.x - model.speechAnchor.x * W) / (W * 0.45), y: (c.point.y - model.speechAnchor.y * H) / (H * 0.35) }, c.seconds); else attention.clear(); break;
     case 'life': lifeEvent(c.event); if (c.event === 'pat') model.pat(); if (c.event === 'window') model.settle(); break;
     case 'phase': if (c.phase === 'error' && settings.character.theatricalMotion) model.perform('flinch'); if (c.phase === 'speaking' && phase !== 'speaking') lifeEvent('reply'); phase = c.phase; statusFx.setPhase(c.phase); if (c.phase !== 'idle') behavior.wake(); break;
-    case 'react': if (c.reaction === 'surprised' && settings.character.theatricalMotion && !matchMedia('(prefers-reduced-motion: reduce)').matches) model.perform('flinch'); behavior.react(c.reaction); if (c.reaction === 'happy' || c.reaction === 'surprised') model.poke(); break;
+    case 'react': finishDirectedAnimation('interrupted'); if (c.reaction === 'surprised' && settings.character.theatricalMotion && !matchMedia('(prefers-reduced-motion: reduce)').matches) model.perform('flinch'); behavior.react(c.reaction); if(c.performanceId){if(behavior.clip)directedAnimation={id:c.performanceId,clip:behavior.clip};else void api.invoke('char:performance',{id:c.performanceId,status:'interrupted'});} if (c.reaction === 'happy' || c.reaction === 'surprised') model.poke(); break;
     case 'speak': behavior.wake(); speaker.enqueue(c.utteranceId, c.text, settings.character.personality ? personality.mood : undefined); break;
     case 'stopSpeech': speaker.stopAll(); textTalkUntil = 0; break;
     case 'wake': wakeAuto = true; behavior.react('surprised'); break;

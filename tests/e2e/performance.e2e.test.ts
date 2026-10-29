@@ -19,6 +19,10 @@ it('delivers provenance, authored retirement, generated feedback and quiet body 
    return {authored,bubble,blocked,arrival,feedback:c.cognitiveStore.load('performance-feedback')};
   });
   expect(result.authored.meta.speech.kind).toBe('authored');expect(result.bubble).toEqual(result.authored.meta.speech);expect(result.blocked).toBe(false);expect(result.arrival).toBe(false);expect(result.feedback[0]).toHaveProperty('kind','generic');
+  const animationId=await a.evaluate(()=>{const c=(globalThis as any).__capri,id=c.performanceDirector.requestAnimation('nod');c.charWin.webContents.send('cue',{type:'react',reaction:'nod',performanceId:id});return id;});
+  await expect.poll(()=>a.evaluate((_e,id)=>(globalThis as any).__capri.performanceDirector.animationState().find((x:any)=>x.id===id)?.status,animationId),{timeout:10000}).toBe('completed');
+  const interruptedId=await a.evaluate(()=>{const c=(globalThis as any).__capri,id=c.performanceDirector.requestAnimation('curious');c.charWin.webContents.send('cue',{type:'react',reaction:'curious',performanceId:id});c.charWin.webContents.send('cue',{type:'pause',paused:true});return id;});
+  await expect.poll(()=>a.evaluate((_e,id)=>(globalThis as any).__capri.performanceDirector.animationState().find((x:any)=>x.id===id)?.status,interruptedId)).toBe('interrupted');
   await closeIsolatedApp(app);app=undefined;const b=await boot();const restored=await b.evaluate(()=>{const c=(globalThis as any).__capri;return {retired:c.retiredLines.list(),feedback:c.cognitiveStore.load('performance-feedback'),message:c.history.recent(1)[0]};});expect(restored.retired[0].lineId).toBe(result.authored.meta.speech.lineId);expect(restored.feedback).toEqual(result.feedback);expect(restored.message.meta.speech).toEqual(result.authored.meta.speech);
  }finally{await closeIsolatedApp(app);fs.rmSync(dir,{recursive:true,force:true,maxRetries:8,retryDelay:250});}
 },90000);

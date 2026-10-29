@@ -51,16 +51,16 @@ describe('lasting relationship in the real app', () => {
   });
   it('retires the visible bubble line with a button, filters it after restarting and restores it', async () => {
     const dir = profile(), a = await launch(dir);
-    await a.evaluate(() => (globalThis as any).__capri.presentRemark('Your timing is suspiciously good.', true, false));
+    await a.evaluate(() => (globalThis as any).__capri.presentRemark('Mm. Stay there a second.', true, false));
     let bubble: Page | undefined;
     for (let i = 0; !bubble && i < 100; i++) { bubble = a.windows().find(w => w.url().includes('bubble.html')); if (!bubble) await new Promise(r => setTimeout(r, 100)); }
     if (!bubble) throw Error('No bubble');
     await bubble.getByRole('button', { name: "Don't say this again", exact: true }).click();
-    expect(await a.evaluate(() => (globalThis as any).__capri.retiredLines.list()[0].text)).toBe('Your timing is suspiciously good.');
+    expect(await a.evaluate(() => (globalThis as any).__capri.retiredLines.list()[0].text)).toBe('Mm. Stay there a second.');
     await a.close(); app = undefined;
     const b = await launch(dir);
-    const result = await b.evaluate(() => { const a = (globalThis as any).__capri; a.bubble.dismiss(); a.presentRemark('Your timing is suspiciously good!', true, false); return { items: a.retiredLines.list(), blocked: a.companionDialogue.acceptGenerated('Your timing is suspiciously good.', { event: 'pat' }, 'delight') }; });
-    expect(result.blocked).toBe('');
+    const result = await b.evaluate(() => { const a = (globalThis as any).__capri; a.bubble.dismiss(); a.presentRemark('Mm. Stay there a second.', true, false); return { items: a.retiredLines.list(), blocked: a.companionDialogue.acceptGenerated('Mm. Stay there a second.', { event: 'pat' }, 'delight') }; });
+    expect(result.items[0].lineId).toBeTruthy();
     const panel = await memoryPanel(b);
     await panel.getByRole('button', { name: 'Restore line', exact: true }).click();
     expect(await b.evaluate(() => (globalThis as any).__capri.retiredLines.list().length)).toBe(0);
@@ -69,7 +69,7 @@ describe('lasting relationship in the real app', () => {
     const a = await launch(profile());
     const result = await a.evaluate(async () => {
       const a = (globalThis as any).__capri;
-      a.presentRemark('You can object on the way.', true, false);
+      a.presentRemark('Mm. Stay there a second.', true, false);
       await a.convo.send("Don't say that again."); await a.convo.settle();
       const p = a.relationship.setThread({ title: 'Ceramic fox', summary: 'Trying cobalt glaze.', status: 'active', nextAskAt: Date.now() - 1000 });
       const greeting = a.convo.buildMessages('Hey')[0].content;
@@ -77,7 +77,7 @@ describe('lasting relationship in the real app', () => {
       a.relationship.delivered('How did the ceramic fox glaze turn out?');
       return { retired: a.retiredLines.list(), reply: a.history.recent(1)[0], greeting, task, next: a.relationship.candidate('', true), projectId: p.id };
     });
-    expect(result.retired[0].text).toBe('You can object on the way.'); expect(result.reply.meta.provider).toBe('companion');
+    expect(result.retired[0].text).toBe('Mm. Stay there a second.'); expect(result.reply.meta.provider).toBe('companion');
     expect(result.greeting).toContain('"followUp":{"id":'); expect(result.greeting).toContain('Ceramic fox');
     expect(result.task).toContain('"followUp":null'); expect(result.next).toBeUndefined();
   });

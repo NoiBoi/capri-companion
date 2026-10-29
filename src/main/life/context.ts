@@ -1,3 +1,4 @@
+import {resolveEntityMentions} from '../../core/entities';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
@@ -52,7 +53,15 @@ export class LifeContext {
   }
   flush() { this.save(); this.writer.flush(); }
   maintain() { if(this.now()-this.maintainedAt>60000){this.maintainedAt=this.now();this.reconcileDeadlines();this.save();} }
-  private reconcileDeadlines(){const now=this.now();for(const e of this.current('proactive')){const deadline=eventDeadline(e);if(!deadline||deadline<=now||deadline-now>86400000||!['calendar-scheduled','academic-due','academic-assigned'].includes(e.type))continue;
+  private reportedSubmitted(e:LifeObservation) {
+    return this.state.reports.some(r=>{if(r.type!=='academic-submitted'||r.expiresAt<=this.now())return false;try{const report=JSON.parse(r.detail),data=JSON.parse(e.detail||'{}');
+      if(data.assignment&&data.course)return data.assignment===report.assignment&&data.course===report.course;
+      const title=e.summary.toLowerCase().trim(),assignment=String(report.assignment).toLowerCase();
+      const unambiguous=new Set(this.current().filter(x=>x.type.startsWith('academic-')).flatMap(x=>{try{const d=JSON.parse(x.detail);return d.assignment===report.assignment?[d.course]:[];}catch{return [];} })).size===1;
+      return unambiguous&&['calendar-scheduled','displayed-page'].includes(e.type)&&[assignment,assignment+' due','due: '+assignment].includes(title);
+    }catch{return false;}});
+  }
+  private reconcileDeadlines(){const now=this.now();for(const e of this.current('proactive')){if(this.reportedSubmitted(e))continue;const deadline=eventDeadline(e);if(!deadline||deadline<=now||deadline-now>86400000||!['calendar-scheduled','academic-due','academic-assigned'].includes(e.type))continue;
     // One horizon crossing per evidence revision, never a periodic reminder feed.
     const id=digest('deadline:'+key(e)+':'+deadline);if(this.state.candidates.some(c=>c.id===id||key(c)===key(e)&&c.deadline===deadline&&['delivered','dismissed'].includes(c.status)))continue;
     const prior=this.state.candidates.find(c=>key(c)===key(e)&&['pending','deferred'].includes(c.status));if(prior){prior.deadline=deadline;prior.importance=Math.max(.65,prior.importance);continue;}
@@ -69,7 +78,7 @@ export class LifeContext {
   }
   setHealth(id: string, h: SourceHealth) { this.health[id] = h; }
   associate(raw: unknown) { const e = LifeEntity.parse(raw); this.state.entities = this.state.entities.filter(x => x.id !== e.id).concat(e).slice(-100); this.clearDraft(e.id);this.invalidate(); this.save();this.writer.flush(); }
-  resolve(text: string) { const t = text.toLowerCase(); return this.state.entities.filter(e => e.certainty !== 'uncertain' && (!e.source || this.source(e.source)?.permissions.collect && !this.source(e.source)?.paused) && [e.name,...e.aliases].some(a => { const at = t.indexOf(a.toLowerCase()); return at >= 0 && (at === 0 || !/[a-z0-9]/i.test(t[at-1])) && (at+a.length === t.length || !/[a-z0-9]/i.test(t[at+a.length])); })).map(e => e.id).slice(0,8); }
+  resolve(text: string) { return resolveEntityMentions(text,this.state.entities.filter(e=>e.certainty!=='uncertain'&&(!e.source||this.source(e.source)?.permissions.collect&&!this.source(e.source)?.paused))); }
   ingest(raw: unknown) {
     const e = LifeEvent.parse(raw), s = this.source(e.source), now = this.now();
     if (!s?.permissions.collect || s.paused || e.receivedAt > now + 1000 || e.occurredAt > now + 60000 || e.expiresAt <= e.occurredAt || now - e.occurredAt > s.retentionDays * 86400000) return false;
@@ -120,13 +129,14 @@ export class LifeContext {
     const names=new Set(assignments.map(({d})=>d.course+':'+d.assignment));
     if((submitted||notSubmitted)&&names.size===1){const {d}=assignments[0],recordId=digest(d.course+':'+d.assignment);this.state.reports=this.state.reports.filter(e=>e.recordId!==recordId).concat({source:'user',recordId,revision:at,type:notSubmitted?'academic-not-submitted':'academic-submitted',occurredAt:at,receivedAt:this.now(),expiresAt:at+30*86400000,entities:[],quality:'user-statement',permissions:{collect:true,live:true,proactive:false,retain:true,content:true,learn:false},summary:cleanEvidence(`${d.course}: ${d.assignment} (user reports ${notSubmitted?'not submitted':'submitted'})`,400),detail:JSON.stringify({course:d.course,assignment:d.assignment,status:notSubmitted?'not-submitted':'submitted',messageId:id,quote:cleanEvidence(text,500)}),operation:'correct',importance:.8}).slice(-64);if(!notSubmitted)for(const {e} of assignments)for(const c of this.state.candidates.filter(c=>key(c)===key(e)))this.acknowledge(c.id);}
     else if(dismiss){const recent=this.state.candidates.filter(c=>c.status==='delivered'&&this.now()-c.at<20*60000&&this.latest().some(e=>key(e)===key(c)&&e.type.startsWith('academic-')));if(recent.length===1)this.acknowledge(recent[0].id);}
+    if(submitted&&!notSubmitted)for(const c of this.state.candidates.filter(c=>['pending','deferred'].includes(c.status))) {const e=this.latest().find(e=>key(e)===key(c));if(e&&this.reportedSubmitted(e))this.acknowledge(c.id);}
     this.save();
   }
   world(mode:'chat'|'proactive'='chat'){return worldFacts([...this.current(mode),...this.userReports()],this.now());}
   diagnostics(){return {snapshots:this.state.snapshots.length,snapshotCharacters:this.state.snapshots.reduce((n,s)=>n+s.sections.reduce((n,s)=>n+s.text.length,0),0),pending:this.state.candidates.filter(c=>['pending','deferred'].includes(c.status)).length,saturated:this.state.candidates.filter(c=>['discussed','concluded','dismissed','exhausted'].includes(c.phase)).length,backgroundModelsOnIngest:0};}
   candidate(query = '') {
     const events = this.current('proactive'), entities = this.resolve(query);
-    return this.state.candidates.filter(c => ['pending','deferred'].includes(c.status) && c.nextAt <= this.now() && c.attempts < 2 && investigation({permitted:true,available:true,novel:c.novelty>0,usefulness:c.importance,cost:0,remaining:0,unavailable:false}).action==='investigate' && events.some(e => key(e) === key(c) && e.revision === c.revision)).sort((a,b) => {
+    return this.state.candidates.filter(c => ['pending','deferred'].includes(c.status) && c.nextAt <= this.now() && c.attempts < 2 && investigation({permitted:true,available:true,novel:c.novelty>0,usefulness:c.importance,cost:0,remaining:0,unavailable:false}).action==='investigate' && events.some(e => key(e) === key(c) && e.revision === c.revision && !this.reportedSubmitted(e))).sort((a,b) => {
       const rank = (c: LifeCandidate) => { const e = events.find(e => key(e) === key(c))!; return c.importance + (c.deadline&&c.deadline>this.now()&&c.deadline-this.now()<86400000?.4:0) + (e.entities.some(id => entities.includes(id)) ? .3 : 0) - (this.now()-c.at)/3600000; }; return rank(b)-rank(a);
     })[0];
   }
