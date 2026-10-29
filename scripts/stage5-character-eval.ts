@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import {CodexSessions} from '../src/main/ai/codexSessions';
 import {buildCharacterInstructions} from '../src/main/ai/persona';
 import {DEFAULT_SETTINGS} from '../src/shared/settings';
-import {DialogueCognition} from '../src/main/cognitive/dialogue';
+import {DialogueCognition} from '../src/core/dialogueCognition';
 import {PerformanceDirector} from '../src/core/performance';
 const out=process.argv[2];if(fs.existsSync(out))throw Error('First attempts are append-only; choose a new run filename.');
 const record=(v:unknown)=>fs.appendFileSync(out,JSON.stringify(v)+'\n');

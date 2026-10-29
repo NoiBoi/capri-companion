@@ -170,11 +170,12 @@ export class DragController {
   /** Release velocity in DIP/s (from the last ~100 ms of the drag), for throwing her. */
   velocity = { x: 0, y: 0 };
   private samples: { t: number; x: number; y: number }[] = [];
-  constructor(private win: () => BrowserWindow | null, private size: () => { width: number; height: number }, private onEnd: (moved: boolean) => void, private onLift?: () => void) {}
+  constructor(private win: () => BrowserWindow | null, private size: () => { width: number; height: number }, private onEnd: (moved: boolean) => void, private onLift?: () => void,
+    private input={cursor:()=>screen.getCursorScreenPoint(),down:()=>leftButtonDown()}) {}
   begin() {
     const w = this.win();
     if (!w || this.timer) return;
-    const c = screen.getCursorScreenPoint();
+    const c = this.input.cursor();
     const [wx, wy] = w.getPosition();
     this.offset = { x: c.x - wx, y: c.y - wy };
     this.start = c;
@@ -186,8 +187,8 @@ export class DragController {
   private step() {
     const w = this.win();
     if (!w || w.isDestroyed()) return this.end();
-    if (leftButtonDown() === false) return this.end();
-    const c = screen.getCursorScreenPoint();
+    if (this.input.down() === false) return this.end();
+    const c = this.input.cursor();
     const now = Date.now();
     this.samples.push({ t: now, x: c.x, y: c.y });
     while (this.samples.length > 2 && now - this.samples[0].t > 110) this.samples.shift();

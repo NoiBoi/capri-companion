@@ -1,90 +1,36 @@
-# Capri 1.1 Stage 2/3 continuation
+# Capri 1.1 migration and legacy retirement
 
-Current execution and world-model ownership is documented in [CAPRI_1_1_STAGE23.md](CAPRI_1_1_STAGE23.md), with validation in [CAPRI_1_1_STAGE23_VALIDATION.md](CAPRI_1_1_STAGE23_VALIDATION.md). This supersedes historical statements below that describe the action registry and Agency skill checks as separate production gateways or world status as only a transient projection. Continue the established CognitiveRuntime, AgencyRuntime and provider-session implementations. Product version remains 1.0.0 pending release; the installed application and normal profile have not been replaced by this source checkpoint.
+This supersedes the earlier compatibility instructions retained in [history/MIGRATION_PRE_1_1.md](history/MIGRATION_PRE_1_1.md). SQLite schema remains version 2; product version is 1.1.0. New checkpoint fields are additive. Approved memories, credentials, source permissions, pairing tokens, history, settings and existing integration formats retain their owners.
 
----
+## Retired live pathways
 
-# Stages 5/6 compatibility
+| Old pathway | Replacement and migration |
+| --- | --- |
+| BehaviorCore legacyState and optionalAfter | Required CognitiveRuntime state reference and its initiative clock; there is no standalone production admission fallback |
+| behavior-state.json as an ongoing writer | Validated one-time import to cognitive-working; remove that exact legacy file only after successful checkpoint save. Privacy/reset clears or tombstones the new state and scrubs the legacy file |
+| Host-created PerformanceDirector | Constructed by CognitiveRuntime; host retains a reference to that same object |
+| Host follow-up priority/agenda construction | CognitiveRuntime.contextOpportunities, existing evidence owners and the one agenda |
+| Global dialogue closure abandoning every cognitive subject | Only the active conversational subject is transitioned; unrelated mail/deadlines remain eligible |
+| Duplicate production ConversationScene reading | Retire the derived reading while preserving all transcript entries. MemoryLearning no longer writes a competing scene interpretation when runtime cognition is present |
+| LegacyModelSessions wrapper allocated on every direct round | Existing ConversationSessions for production; direct provider streaming for explicit standalone compatibility. Non-Codex in-flight source cancellation is handled by ConversationSessions too |
+| main/cognitive/dialogue re-export; behaviorExperiment/core shim | Callers use core/DialogueCognition or the explicit replay harness |
+| TeleportController autonomous timer, startAuto/rearm/schedule | PresencePolicy owns cadence. autoTick is a one-shot native preflight with truthful result, no scheduling; automatic native execution requires the cognitive lease |
+| Duplicate unreachable durable controls in index.ts | Existing AgencyRuntime command/execution paths; host keeps only non-durable mode/look/window execution |
+| Generated phrase retirement / fuzzy matchesRetired | Exact authored IDs plus temporary category feedback. Generated text passes through unchanged by retirement |
+| Text-based retirement IPC | Existing channel now accepts the stable authored ID. Renderer buttons submit provenance IDs; pasted authored catalog text resolves to its ID locally |
 
-No production profile reset or credential migration is required. SQLite schema remains version 2; the new performance-feedback checkpoint and optional conversational closure fields are additive. Existing identity, conversation history, Honcho state, integrations, encrypted secrets and artwork retain their owners. Old source caches and migration backups are preserved except when the user explicitly revokes/clears their content through existing controls.
+No working artwork, pose, physics, Win32, TTS, speech/bubble, Chrome, OAuth, calendar, mail, academic, project, location, music or Honcho adapter was removed. Standalone replay tools now explicitly compose the actual CognitiveRuntime, instead of relying on a production fallback. They acquire its real attention lease; bypass-rejection tests continue using the production interpreter directly.
 
-New retired authored items add lineId. Existing retired expression records have no lineId and remain valid legacy exclusions until restored. The migration does not reinterpret generated phrases as authored templates or silently discard user preferences. New generated feedback never appends a text blacklist. Old chat messages without provenance remain visible but do not acquire an invented authored/generated classification. New messages persist explicit provenance through restart.
+## Data safety
 
-Only the unused hostScheduler helper was retired. Stateless provider compatibility, existing movement/physics/pose executors, background request budgets and action authorization remain active and verified through their existing interfaces. Removal of those mechanisms would be a regression, not architectural cleanup.
+Legacy generated exclusions become id/category/original-time diagnostics in legacy-dialogue-feedback.json; their phrase text is not copied into a new ban list. Recent feedback is applicable only for its original ten-minute window, without refreshing on startup. Legitimate authored exclusions are retained. Existing explicit user preferences remain in approved memory/relationship/settings; migration does not invent a generalized personal preference from a disliked sentence. Old chat messages without provenance do not acquire fabricated authorship.
 
-Use the stopped-profile backup and application rollback procedure in OPERATIONS.md. Exact final deployment and preservation evidence is recorded in FINAL_REPORT.md.
+Cognitive extraction is attached to the existing learning batch, gated by existing memory/history/learning controls. Source-derived replies remain conservatively excluded. Revocation cancels dependent work and uses existing Life/session/Honcho/legacy-cache erasure routes. Source-tainted writes into legacy notes/approved memory/manual-reminder sinks remain refused. Unavailable interpretation leaves the deterministic/session path functional.
 
-# Current Stage 3 update: product 0.8.0
+The installed production profile was not replaced or reset. Release tests use isolated synthetic directories and the staged ASAR executable. A built installer is not proof of a normal-profile install. Before replacement, follow the stopped-profile backup and complete rollback-package procedure in OPERATIONS.md. Restore credentials only with their owning stopped-profile snapshot; do not roll back secrets independently.
 
-Read [STAGE3.md](STAGE3.md), [STAGE3_VALIDATION.md](STAGE3_VALIDATION.md) and
-[STAGE4_HANDOFF.md](STAGE4_HANDOFF.md) for current session, cognition, privacy and
-release ownership. Earlier descriptions below are preserved historical stage
-records; references to persistent model sessions as future work are superseded.
+## Remaining migration debt
 
-# Stage 2 migration and recovery
+Native geometry and presentation execution remain substantial in index.ts by design. Some callback assembly and native admission checks remain local preconditions; they cannot initiate optional work without runtime admission. ConversationScene's old reading API remains available to historical standalone consumers/tests, but is retired from production interpretation. PersonalContext/episodes/relationships remain distinct evidence projections rather than bulk-migrated storage. Conservative source attribution can clear more operational context than ideal. The existing lexical closure/question fallback is intentionally limited; structured cognition supplements it selectively.
 
-The new `agency-v1` SQLite checkpoint owns operational intentions, bounded receipts
-and diagnostic XState snapshots. Stage 1 conversation/Life checkpoints and their
-source-revocation rules remain authoritative. No bulk profile migration is added.
-Existing reminders remain in their store; new skill-created timers use stable IDs
-for crash reconciliation across JSON and SQLite. Original timer IDs are preserved.
-
-Read [STAGE2.md](STAGE2.md) before changing recovery. Restore stable domain states,
-compare absolute deadlines, and revalidate effects. Do not replay raw invoked-child
-snapshots or assume a saved JavaScript timer will resume. A lost native target is
-a visible failure, not permission to select another application. Full reset clears
-the operational checkpoint as well as the existing profile owners. History clearing
-cancels the operational activity; ongoing timers retain explicit cancellation paths.
-
-Use the actual shared profile selected by `profileDirectory`, currently
-`C:/Users/matth/Documents/Capri Buddy`. Back up that stopped profile as a unit before
-application replacement. Keep the complete previous unpacked application for
-rollback. Never independently roll back encrypted credentials or source permissions.
-
-## Preserved Stage 1 recovery contract
-# Stage 1 migration and recovery
-
-## Ownership changes
-
-| Data | Authoritative after startup | Compatibility behavior |
-| --- | --- | --- |
-| Immediate shared scene | SQLite `checkpoint/conversation-scene` | Import existing validated `conversation-scene.json` once; retain JSON. Import marker prevents cleared scenes from resurrecting. Source-derived entries are session-only. |
-| Life sources, retained observations, revision watermarks, attention candidates | SQLite `checkpoint/life-context` | Import validated `life-context.json` when no SQLite checkpoint exists. Constructors save the initialized checkpoint in the composition transaction. Existing adapters still use LifeContext's API. |
-| Model invocation metadata | SQLite `session/current-chat` | One bounded record, no prompt/provider conversation transcript. Source-dependent invocation metadata is invalidated on revocation. |
-| Completed/failed action metadata | SQLite `receipt/latest` | One bounded latest receipt, no action arguments or outputs. Existing action history/UI remains. |
-| Approved memories, relationship, personal context, episodes, settings, history, reminders, notes, secrets | Existing stores | No migration or credential replacement. |
-| Stage2/Stage3 configs, OAuth/poll cursors and Honcho deletion ledgers | Existing stores | Keep source-specific deletion and opt-in learning semantics. |
-
-SQLite schema versions are independent of the product's version number. Keep Electron and its Node SQLite API verified together. No installer data-reset operation is added.
-
-## Initialization and writes
-
-1. Open the database under the selected user-data directory, check integrity and reject newer schemas.
-2. Back up an existing older SQL schema through `VACUUM INTO`, verify that backup, then migrate transactionally.
-3. Initialize/import the bounded scene and import marker in one transaction.
-4. Initialize Life and existing Stage2/Stage3 registrations in a composition transaction. All retained Life records and watermarks share its checkpoint.
-5. Leave original JSON available for review/rollback. Future writes use SQLite for the migrated slices. Revocation sanitizes retained legacy copies.
-
-Do not edit a retained JSON file expecting the new runtime to import it again. Do not delete an import marker to recover state. Full profile reset/history clearing uses the existing UI paths and also clears the corresponding current SQLite activity records.
-
-## Backups and rollback
-
-For a live snapshot call `CognitiveSqlite.backup(target)` with a new, explicit destination. The method rejects overwriting an existing backup and checks the copy. Before manual file restoration stop the application and preserve the current database and any journal alongside the rest of the profile. Restore only a backup whose schema and integrity are understood. No automatic fallback replaces a corrupt database with blank state.
-
-A corrupt or future-schema database produces a startup error while preserving its bytes. Recovery requires selecting a verified backup or a compatible application version. Retained legacy JSON is not a complete ongoing rollback snapshot; older versions do not know the new authoritative checkpoints. For an application rollback, preserve the new database and use an explicit stopped-profile snapshot rather than expecting old code to reconstruct new conversations from stale JSON. Recheck source permissions before any older runtime resumes collecting. Never roll back encrypted credentials independently of the profile that owns them.
-
-Pre-upgrade backups are operator recovery artifacts. Restoring one can resurrect state intentionally deleted later, so it must never happen automatically or bypass deletion tombstones. Ordinary runtime writes do not create rotating private-data copies.
-
-## Privacy invariants
-
-- Collection, live context, proactive context, local retention and long-term learning stay separate.
-- Ordinary user messages remain eligible according to their own private/history/memory controls, including when sources are connected.
-- A generated reply supplied external evidence cannot be promoted into native memory because the model claims it did not use it.
-- Source-derived scene entries and readings supported only by them do not enter durable conversation checkpoints or memory-extraction inputs.
-- Source invalidation is selective for scenes, transactional records and source learning. The unpartitioned legacy behavior cache is the documented conservative exception.
-- Native Honcho's session is not rotated merely because a Chrome/project source changes. Source summaries have their own existing opt-in workspaces and durable deletion queues.
-- Private exchanges and action outputs retain the existing export exclusions.
-
-## Validation fixtures
-
-All new fixtures use synthetic messages, URLs and profiles. Unit cases cover upgrades, future/corrupt stores, verified backups, partial writes, nested rollback, abrupt process termination, restart, correction ordering, source revocation, nonretained evidence and coexistence with old stores. The Electron fixture repeats SQLite, scene, Life, metadata and profile checks in the actual runtime. The same fixture is suitable for `CAPRI_EXE` against a packaged executable.
+No independent core cognition/initiative remains in the host, BehaviorCore or action registry. This is an ownership claim supported by runtime identity and bypass tests, not a claim that all old code has disappeared.

@@ -639,7 +639,7 @@ describe('opening and taskbar controls', () => {
     const { app } = await launch(profile({ behavior: { explore: false, quietHours: { enabled: false } } }), { env: { CAPRI_TASKBAR_TEST: '1' } });
     const controls = app.windows().find(w => w.url().includes('/taskbar.html')) ?? await app.waitForEvent('window');
     await app.evaluate(() => {
-      const g = globalThis as any, a = g.__capri;
+      const g = globalThis as any, a = g.__capri; Math.random=()=>0;
       g.__capriWindowsOverride = [{ handle: 11n, rect: { x: 200, y: 850, width: 900, height: 400 } }];
       g.__capriWindowInfo = { '11': { title: 'Study notes', process: 'Acrobat.exe' } };
       g.__capriDesktopOverride = { title: 'Desktop', process: 'explorer.exe' };
@@ -1967,7 +1967,7 @@ describe('purposeful company', () => {
     try {
       const { app } = await launch(openaiProfile(model.url, { memory: { autoLearn: false }, behavior: { explore: true, idleRemarks: true, quietHours: { enabled: false } }, teleport: { effects: false } }));
       await app.evaluate(() => {
-        const g = globalThis as any, a = g.__capri;
+        const g = globalThis as any, a = g.__capri; Math.random=()=>0;
         g.__capriWindowsOverride = [{ handle: -93n, rect: { x: 350, y: 400, width: 700, height: 500 } }];
         g.__capriObservationOverride = { jpegBase64: 'fixture-image', region: { x: 350, y: 400, width: 700, height: 500 }, window: { x: 350, y: 400, width: 700, height: 500 } };
         g.__capriWindowInfo = { '-93': { title: 'Route experiment', process: 'fixture.exe' } };
@@ -2052,7 +2052,8 @@ describe('immersive presence', () => {
       });
       expect(model.calls).toBe(1);
       expect(await app.evaluate(() => (globalThis as any).__capri.bubble.state.text)).toBe('A comfortable spot.');
-      await char.evaluate(() => window.capri.invoke('char:interaction', 'pat'));
+      await app.evaluate(()=>{Math.random=()=>.99;}); // Select the generated-contact branch this fixture asserts.
+    await char.evaluate(() => window.capri.invoke('char:interaction', 'pat'));
       await app.evaluate(() => (globalThis as any).__capri.bubble.remark('Quiet company.'));
       await char.waitForTimeout(2300);
       await char.evaluate(() => window.capri.invoke('char:interaction', 'pat'));
@@ -2075,15 +2076,19 @@ describe('immersive presence', () => {
   it('cancels a gentle exploration flight when picked up and leaves the new position alone', async () => {
     const { app, char } = await launch(profile({ behavior: { explore: true, quietHours: { enabled: false } }, teleport: { effects: false } }));
     await app.evaluate(() => {
-      const g = globalThis as any, a = g.__capri, b = a.charWin.getBounds();
+      const g = globalThis as any, a = g.__capri, b = a.charWin.getBounds(); Math.random=()=>0;
       a.charWin.setBounds({ ...b, x: 250, y: 200 });
       g.__capriWindowsOverride = [{ handle: -81n, rect: { x: 400, y: 400, width: 700, height: 500 } }];
       a.setNextVisit(); g.__immersionFlight = a.exploreTick(0);
     });
     await expect.poll(() => app.evaluate(() => (globalThis as any).__capri.teleporter.active)).toBe(true);
     await char.waitForTimeout(400);
+    await app.evaluate(()=>{(globalThis as any).__capriDragInput={point:{x:500,y:500},down:true};});
     await char.evaluate(() => window.capri.invoke('char:drag', 'start'));
+    await app.evaluate(()=>{(globalThis as any).__capriDragInput.point={x:520,y:500};});
+    await expect.poll(()=>char.evaluate(()=>(window.__capriDebug as any).dragging)).toBe(true);
     await app.evaluate(async () => { await (globalThis as any).__immersionFlight; });
+    await app.evaluate(()=>{(globalThis as any).__capriDragInput.down=false;});
     await char.evaluate(() => window.capri.invoke('char:drag', 'end'));
     const info = await app.evaluate(() => { const a = (globalThis as any).__capri, b = a.charWin.getBounds(); a.charWin.setBounds({ ...b, x: 100, y: 110 }); return { active: a.teleporter.active, count: a.teleporter.count }; });
     expect(info.active).toBe(false); expect(info.count).toBe(0);
@@ -2707,7 +2712,7 @@ describe('contextual companion interactions', () => {
   it('roams a visible window before perching and resting', async () => {
     const { app, char } = await launch(profile({ behavior: { explore: true, quietHours: { enabled: false } }, teleport: { effects: false } }));
     await app.evaluate(() => {
-      const g = globalThis as any, a = g.__capri;
+      const g = globalThis as any, a = g.__capri; Math.random=()=>0;
       g.__capriWindowsOverride = [{ handle: -88n, rect: { x: 250, y: 350, width: 900, height: 600 } }];
       a.setNextVisit(); g.__tour = a.exploreTick(0);
     });
@@ -2747,7 +2752,8 @@ describe('contextual companion interactions', () => {
       await char.evaluate(() => window.capri.invoke('bubble:open'));
       await expect.poll(() => app.evaluate(() => (globalThis as any).__capri.bubble.state.text)).not.toBe('');
       await app.evaluate(() => { (globalThis as any).__capri.bubble.dismiss(); });
-      await char.evaluate(() => window.capri.invoke('char:interaction', 'pat'));
+      await app.evaluate(()=>{Math.random=()=>.99;}); // Select the generated-contact branch this fixture asserts.
+    await char.evaluate(() => window.capri.invoke('char:interaction', 'pat'));
       await expect.poll(() => app.evaluate(() => (globalThis as any).__capri.bubble.state.text)).not.toBe('');
       expect(model.calls).toBe(2); // Deliberate touch now continues the shared exchange.
       await app.evaluate(async () => { const a = (globalThis as any).__capri; await a.generatedRemark('inspect'); await a.generatedRemark('caught'); });

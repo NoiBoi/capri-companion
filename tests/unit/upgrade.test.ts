@@ -332,10 +332,14 @@ describe('TeleportController', () => {
     const ok = rig();
     expect(await ok.tc.autoTick()).toBeNull();
     expect(ok.tc.count).toBe(1);
-    ok.tc.stopAuto();
+
   });
   it('manual teleport works without AI', async () => {
     expect((await rig({ connected: false }).tc.go('near_cursor', 'manual')).ok).toBe(true);
+  });
+  it('enforces automatic preconditions through the direct executor, without a legacy timer wrapper',async()=>{
+    const r=rig({connected:false});expect(await r.tc.go('auto','auto','teleport')).toMatchObject({ok:false,detail:'AI is not connected'});expect(r.cues).toEqual([]);expect(r.tc.count).toBe(0);
+    const off=rig();off.s.teleport.auto=false;expect(await off.tc.go('auto','auto')).toMatchObject({ok:false,detail:'automatic teleport is off'});
   });
 });
 

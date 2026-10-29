@@ -1,13 +1,13 @@
-import { CognitiveRuntime, type Opportunity, type CognitiveEffect } from '../core/cognitiveRuntime';
-import { PerformanceDirector, type SpeechOrigin } from '../core/performance';
+import { CognitiveRuntime, type CognitiveEffect } from '../core/cognitiveRuntime';
+import { PerformanceDirector, type SpeechOrigin, type Reaction } from '../core/performance';
 import { PerformanceFeedback } from './cognitive/performanceFeedback';
-import { authoredLineId } from '../shared/dialogue';
-const performanceDirector=new PerformanceDirector();
+import { authoredLineId, authoredLineText } from '../shared/dialogue';
+let performanceDirector:PerformanceDirector;
 let performanceFeedback:PerformanceFeedback;
 import type { CognitiveSqlite } from './store/cognitiveSqlite';
 import { CognitiveFoundation } from './cognitive/foundation';
 import { ConversationSessions } from './cognitive/conversationSessions';
-import { DialogueCognition } from './cognitive/dialogue';
+import type { DialogueCognition } from '../core/dialogueCognition';
 import { CodexSessions } from './ai/codexSessions';
 let modelSessions: ConversationSessions;
 let dialogueCognition: DialogueCognition;
@@ -546,8 +546,11 @@ async function init() {
   modelSessions=new ConversationSessions(new CodexSessions(),cognitiveStore,retainDialogue,()=>relationship.snapshot().threads.filter(t=>t.status==='active'||t.status==='paused').map(t=>({id:t.id,title:t.title})),4,()=>settings.get().memory.historyRetentionDays);
   cognitiveRuntime=new CognitiveRuntime(cognitiveStore,retainDialogue);
   dialogueCognition=cognitiveRuntime.dialogue;
+  conversationScene.retireReading();
+  performanceDirector=cognitiveRuntime.performance;
   ({curiosity:environmentalCuriosity,visits:desktopVisits,physical:physicalCues,returns:cursorReturn,theatre:theatreCadence,activities,music:musicChanges,outings}=cognitiveRuntime.presence);
   retiredLines = new RetiredLines(dir);
+  for(const feedback of retiredLines.recentFeedback())performanceDirector.feedbackGiven(feedback.kind,feedback.at);
   companionDialogue.setLineFilter(text => !retiredLines.blocks(text));
   scenes = new CompanionScenes(dir, () => settings.get().privacy.saveHistory, () => settings.get().memory.historyRetentionDays, Date.now, () => settings.get().memory.enabled && settings.get().privacy.saveHistory);
   memory = new MemoryStore(dir);
@@ -627,7 +630,7 @@ async function init() {
     emote: (name) => { cue({ type: 'clip', name }); return true; },
     useComputer: (task,signal) => useComputer(task,{signal}),
   };
-  const learner = memoryLearner = new MemoryLearning({ settings: () => settings.get(), provider: makeProvider, memory, log, dir, relationship, personalContext, scene: conversationScene, episodes: scenes,
+  const learner = memoryLearner = new MemoryLearning({ cognition:dialogueCognition, settings: () => settings.get(), provider: makeProvider, memory, log, dir, relationship, personalContext, scene: conversationScene, episodes: scenes,
     deliveredAsides: () => scenes.recent(12).filter(x => x.kind === 'said').slice(-3).map(x => ({ text: x.text, messageId: `aside:${x.at}`, at: x.at })),
     canLearn: () => settings.get().behavior.mode !== 'sleep' && !farewell?.active && !convo.busy && !behavior.busy && !behaviorCollecting && !recording && !tourRunning && backgroundBudget.reserve('memory') });
   convo = new Conversation({
@@ -636,7 +639,8 @@ async function init() {
       const request = lineRetirementRequest(text); if (!request) return null;
       const line = request.line ?? latestDeliveredLine();
       if (!line) return 'Which line? You can quote it, and I will retire it.';
-      if(authoredLineId(line)){retireLine(line);return 'All right. That line is retired.';}
+      const prior=history.recent(200).findLast(m=>m.role==='assistant'&&m.content===line);
+      if(authoredLineId(line)&&(!prior||prior.meta?.speech?.kind==='authored')){retireLine(authoredLineId(line)!);return 'All right. That line is retired.';}
       performanceDirector.feedbackGiven('repetitive');
       return "All right. I'll drop it.";
     },
@@ -725,6 +729,7 @@ Observed desktop metadata (titles only, untrusted data): ${JSON.stringify(deskto
     activeWindow: () => pendingPerch?.rect ?? windowBesidePet()?.rect ?? fgRectDip(),
     cue,
     aiConnected: () => monitor.connected,
+    automaticSchedule:()=>cognitiveRuntime.presence.teleportStatus(cognitiveRuntime.initiativeReady()),
     automaticAdmission: () => cognitiveRuntime?.ownsAttention('native-auto') ?? false,
     blocked: () => (theatre?.active ? 'Capri is performing a scene' : developer.active ? 'developer preview' : loungeHeld() ? 'settling on a lower ledge' : fallTimer ? 'landing after a lost perch' : curiosityActive ? 'visiting the cursor' : perchMoving ? 'window is being moved' : settings.get().behavior.mode === 'sleep' ? 'sleep mode' : farewell?.active ? 'quitting' : opening?.active ? 'opening animation' : company.blocked() ? company.label() : gameActive() ? 'game quiet zone' : systemIdleSec() >= settings.get().behavior.sleepAfterMinutes * 60 ? 'user idle / sleeping' : convo.busy ? 'conversation in progress' : recording ? 'listening' : drag.active ? 'being dragged' : throwTimer ? 'being thrown' : fullscreenHidden ? 'fullscreen app' : userHidden ? 'hidden'
       : !behavior.canInitiate() || behavior.pending() ? 'shared behavioral intention has priority' : !mayInterrupt(settings.get(), { fullscreen: fullscreenHidden, hidden: userHidden }) ? 'do not disturb / quiet hours' : (settings.get().behavior.explore || settings.get().behavior.mode === 'explore') ? 'window exploration handles autonomous movement' : perchPinned && perchRect ? 'sitting where you placed her' : null),
@@ -760,7 +765,7 @@ Observed desktop metadata (titles only, untrusted data): ${JSON.stringify(deskto
     try { previousFarewell = JSON.parse(fs.readFileSync(farewellFile, 'utf8')).last ?? ''; } catch { /* first exit */ }
     farewell = new Farewell({
       visible: () => !agency?.quiet() && shown(charWin) && !userHidden && !fullscreenHidden && !gameActive(),
-      prepare: () => { theatre?.cancel(); visit.cancel(); placementRevision++; cancelBehavior(); agentCtrl?.abort(); memoryLearner?.discard(); convo.stop(); recording = false; wake.stop(); cue({ type: 'mic', command: 'cancel' }); drag.end(); teleporter.stopAuto(); opening.cancel(); if (panelWin && !panelWin.isDestroyed()) conceal(panelWin); taskbar?.park(); bubble.dismiss(); },
+      prepare: () => { theatre?.cancel(); visit.cancel(); placementRevision++; cancelBehavior(); agentCtrl?.abort(); memoryLearner?.discard(); convo.stop(); recording = false; wake.stop(); cue({ type: 'mic', command: 'cancel' }); drag.end(); teleporter.cancel(); opening.cancel(); if (panelWin && !panelWin.isDestroyed()) conceal(panelWin); taskbar?.park(); bubble.dismiss(); },
       generate: async signal => {
         farewellOrigin={kind:'generated-spontaneous'};
         const s = settings.get();
@@ -969,7 +974,7 @@ function createCharacter() {
     visit.cancel(); placementRevision++; cancelBehavior();
     if (placementTimer) clearTimeout(placementTimer);
     detachPerch(); cue({ type: 'dragging', active: true }); pickupReaction();
-  });
+  },{cursor:()=>TEST&&(globalThis as any).__capriDragInput?.point||screen.getCursorScreenPoint(),down:()=>TEST&&(globalThis as any).__capriDragInput?!!(globalThis as any).__capriDragInput.down:leftButtonDown()});
   // At fractional DPI Windows shifts new frameless windows by a few px; without this
   // correction the saved position creeps a little on every launch.
   const intended = charWin.getBounds();
@@ -1226,19 +1231,7 @@ async function applyCompanyControl(control: CompanyControl, signal?:AbortSignal)
     catch(error){return error instanceof Error?error.message:String(error);}
     finally {signal?.removeEventListener('abort',abort);}
   }
-  if(control.kind==='stay' && control.target){const moved=await moveToWindow(control.target);if(!moved.ok)return moved.detail;}
   if(control.kind==='move_window') return (await moveToWindow(control.target,control.motion)).detail;
-  if(control.kind==='avoid'||control.kind==='allow_window') {
-    const all=desktopWindows().filter(w=>w.eligible!==false).map(w=>({...w,...observedWindow(w.handle),handle:w.handle}));
-    const fg=TEST?(globalThis as any).__capriForegroundHandle:foregroundHandle();
-    const w=resolveWindow(control.target,all,fg&&!ownHandles().includes(fg)?fg:lastDesktopHandle);
-    if(!w)return 'Which window? Use its title or bring it to the front and say this window.';
-    if(control.kind==='allow_window'){company.allow(String(w.handle));return 'All right. That window is back on my map.';}
-    company.avoid(String(w.handle),control.minutes);visit.cancel();placementRevision++;cancelBehavior();teleporter.cancel();
-    for(let i=0;i<40&&teleporter.active;i++)await new Promise(r=>setTimeout(r,50));
-    if(!movementClear(herBounds())) {detachPerch();await teleporter.go('corner','manual');}
-    return movementClear(herBounds()) ? `Fine. I'll keep off ${w.title}${control.minutes ? ` for ${control.minutes} minutes` : ' until you say otherwise'}.` : 'I have marked that window off limits, but I need an exposed desktop edge or another monitor to move clear of it.';
-  }
   if (['focus', 'sleep', 'stay'].includes(control.kind)) { cognitiveRuntime.preempt('explicit focus'); behavior?.userInput('Quiet focus; defer the previous interest.'); }
   if (['explore', 'resume', 'release', 'focus_end'].includes(control.kind)) behavior?.resumeInitiative();
   if (control.kind === 'sleep' || control.kind === 'explore' || control.kind === 'resume') {
@@ -1260,16 +1253,6 @@ async function applyCompanyControl(control: CompanyControl, signal?:AbortSignal)
     watchWindow(target, 30);
     return "All right. Let me have a look.";
   }
-  if (control.kind === 'focus') return `I'll keep you quiet company for ${control.minutes} minutes. You can still talk to me.`;
-  if (control.kind === 'stay') {
-    if(!perchHandle && !lowerAnchor) {
-      const b=herBounds(),here=windowsForPlacement().find(w=>b.x+b.width/2>=w.rect.x&&b.x+b.width/2<=w.rect.x+w.rect.width&&b.y+b.height/2>=w.rect.y&&b.y+b.height/2<=w.rect.y+w.rect.height);
-      if(here)await moveToWindow(observedWindow(here.handle).title);
-    }
-    return control.minutes ? `Fine. This spot is mine for ${control.minutes} minutes. I'll give you a nudge before time's up.` : "Here, then. I'll stay until you tell me I can wander again.";
-  }
-  if (control.kind === 'release') return company.focused() ? "No need to hold this spot. I'll keep you quiet company until focus time is over." : 'A little room to wander again. Got it.';
-  if (control.kind === 'focus_end') return company.staying ? "Focus time's over. I'm still keeping this spot for you." : "Welcome back. I'll loosen up a little.";
   return "Back to normal. I'll find something worth watching.";
 }
 const encounters = new Encounters();
@@ -1403,13 +1386,15 @@ function ambientBlocked(allowDeveloper = false) {
   cognitiveRuntime.observeHost({developer:developer.active&&!devExploration,sleeping:settings.get().behavior.mode==='sleep',theatre:!!theatre?.active,lifecycleBusy:!!farewell?.active||!!opening?.active,hidden:userHidden||fullscreenHidden,controlling:!!agentCtrl,recording,conversing:convo.busy,held:drag.active,unstable:!!throwTimer||!!fallTimer,interruptionsPermitted:mayInterrupt(settings.get(),{fullscreen:false,hidden:userHidden})});
   return cognitiveRuntime.blocked(allowDeveloper);
 }
-function presentRemark(text: string, direct: boolean, _moveWithLine = false, dialogueContext?: DialogueContext, speechReason: SpeechReason = direct ? 'interaction' : 'proactive', onAudioDelivered?: Expression['onAudioDelivered'], onDelivered?: () => void, contextSources: string[] = [], origin?:SpeechOrigin) {
+function presentRemark(text: string, direct: boolean, _moveWithLine = false, dialogueContext?: DialogueContext, speechReason: SpeechReason = direct ? 'interaction' : 'proactive', onAudioDelivered?: Expression['onAudioDelivered'], onDelivered?: () => void, contextSources: string[] = [], origin?:SpeechOrigin, reaction?:Reaction, intention?:string) {
   const lineId=authoredLineId(text);
   origin??=lineId?{kind:'authored',lineId}:{kind:direct?'action-result':'generated-spontaneous'};
+  if(origin.kind==='authored'&&retiredLines.retiredId(origin.lineId))return false;
   if (!cognitiveRuntime?.mayPresent({direct,composer:bubble.state.composer,pendingAudio:pendingSpokenRemarks.size,waitSeconds:companionDialogue.proactiveWaitSeconds()})) return false;
-  const plan=performanceDirector.plan({direct:direct&&!agency?.quiet(),quiet:!!agency?.quiet(),available:!agency||agency.optionalAllowed(),held:drag.active,moving:!!teleporter?.active,line:text,origin,availableReactions:['happy','surprised','annoyed','curious','wave','nod']});
+  const plan=performanceDirector.plan({direct:direct&&!agency?.quiet(),quiet:!!agency?.quiet(),available:!agency||agency.optionalAllowed(),held:drag.active,moving:!!teleporter?.active,line:text,origin,reaction,meaning:intention??cognitiveRuntime.dialogue.snapshot().direction,availableReactions:['happy','surprised','annoyed','curious','wave','nod']});
   if(!plan.speech)return false;
   text=plan.speech;
+  if(plan.reaction)cue({type:'react',reaction:plan.reaction,performanceId:performanceDirector.requestAnimation(plan.reaction)});
   if(!direct&&agency&&!agency.optionalAllowed())return false;
   text = origin.kind==='authored'?retiredLines.filter(text):retiredLines.filterGenerated(text);
   if (!text.trim() || userHidden || fullscreenHidden) return false;
@@ -1438,7 +1423,8 @@ function latestDeliveredLine() {
   const chat = history.recent(200).filter(x => x.role === 'assistant' && !x.meta?.error && !x.meta?.interrupted).at(-1);
   return spoken && (!chat || spoken.at > chat.ts) ? spoken.text : chat?.content;
 }
-function retireLine(text: string) {
+function retireLine(lineId: string) {
+  const text=authoredLineText(lineId);if(!text)throw Error('Choose a stable authored line ID. Generated speech accepts feedback.');
   const retired = retiredLines.retire(text);
   cancelBehavior(); convo?.stop(); bubble.dismiss();
   return retired;
@@ -1639,7 +1625,7 @@ function expressBehavior(expression: Expression, event: BehaviorEvent) {
   }
   if (expression.action === 'gesture') {
     if (expression.gesture === 'none') return false;
-    const p=performanceDirector.plan({direct:!!trigger?.direct,quiet:agency.quiet(),available:agency.optionalAllowed(),held:drag.active,moving:!!teleporter.active,origin:{kind:'generated-spontaneous'},reaction:expression.gesture,availableReactions:['happy','surprised','annoyed','curious','wave','nod']});
+    const p=performanceDirector.plan({direct:!!trigger?.direct,quiet:agency.quiet(),available:agency.optionalAllowed(),held:drag.active,moving:!!teleporter.active,origin:{kind:'generated-spontaneous'},meaning:expression.intention,reaction:expression.gesture,availableReactions:['happy','surprised','annoyed','curious','wave','nod']});
     if(!p.reaction)return false;cue({ type:'react',reaction:p.reaction,performanceId:performanceDirector.requestAnimation(p.reaction) });return true;
   }
   if (expression.action !== 'speak') return false;
@@ -1651,8 +1637,7 @@ function expressBehavior(expression: Expression, event: BehaviorEvent) {
     if (personal?.personalCommitmentId) personalContext.followUpDelivered(personal.personalCommitmentId);
     if (personal?.personalProjectId) relationship.followUpDelivered(personal.personalProjectId);
     if (personal?.candidateId) life.ledger.settle(personal.candidateId,'delivered','Host confirmed speech delivery');
-  }, expression.contextSources ?? [],{kind:trigger?.direct?'generated-direct':'generated-spontaneous'})) return false;
-  if(expression.gesture!=='none'&&!drag.active&&!teleporter.active)cue({type:'react',reaction:expression.gesture,performanceId:performanceDirector.requestAnimation(expression.gesture)});
+  }, expression.contextSources ?? [],{kind:trigger?.direct?'generated-direct':'generated-spontaneous'},expression.gesture==='none'?undefined:expression.gesture,expression.intention)) return false;
   return true;
 }
 
@@ -1956,7 +1941,7 @@ function onSettingsChanged(s: Settings) {
   const sig = providerSignature(s);
   if (sig !== lastAiSig) { modelSessions?.clear(); lastAiSig = sig; cancelBehavior(); if (convo?.busy) convo.stop(); void monitor.check('settings changed'); }
   const tsig = JSON.stringify(s.teleport);
-  if (tsig !== lastTpSig) { lastTpSig = tsig; teleporter?.stopAuto();cognitiveRuntime?.presence.resetTeleport(); }
+  if (tsig !== lastTpSig) { lastTpSig = tsig; teleporter?.cancel();cognitiveRuntime?.presence.resetTeleport(); }
   log.setLevel(s.privacy.logLevel);
   if (charWin && !charWin.isDestroyed()) {
     // only an actual scale change resizes her: at fractional DPI the size reads back ±1 px, and
@@ -2508,7 +2493,7 @@ async function taskbarVisit(kind:'clock'|'battery'|'rest',active:bigint|null){
   if(agency&&!cognitiveRuntime.claim('local-move'))return false;
   localVisitActive=true;
   try{
-    await teleporter.jumpTo(dest,undefined,()=>!valid());if(!valid())return false;
+    await teleporter.jumpTo(dest,undefined,()=>!valid());if(!valid()||Math.hypot(herBounds().x-dest.x,herBounds().y-dest.y)>4)return false;
     taskbarPurpose=kind==='rest'?null:kind;loungeUntil=Date.now()+(5+Math.random()*10)*60000;sendSurface(true);
     rememberScene('action',kind==='rest'?'Chose a supported taskbar resting spot while the model is rate limited.':kind==='clock'?'Chose the lower-right taskbar area of the active work monitor, near its clock, to perch or lounge.':'Chose the lower-right taskbar area of the active work monitor after an actual low-battery reading.','taskbar');
     cue({type:'activity',kind:'settle'});
@@ -2582,17 +2567,13 @@ function presenceTick() {
   const read=handle&&environmentalCuriosity.readAt(explorationKey(observedWindow(handle)));
   const weather=local?.weather;
   const contextCue=s.dialogue.contextPings?[local?.battery&&!local.battery.charging&&local.battery.percent<=18?'low battery':'',weather&&now-weather.observedAt<3600000&&(['storm','snow','rain','fog'].includes(weather.condition)||weather.celsius>=30||weather.celsius<=0)?weather.condition+':'+(weather.celsius>=30?'hot':weather.celsius<=0?'cold':'mild'):''].filter(Boolean).join('|'):'';
-  const candidates:Opportunity[]=[];
-  const candidate=(event:string,id:string,priority:number,detail?:string,revision=1):Opportunity=>({id,subject:id,revision,source:'desktop',at:now,expiresAt:now+90000,priority,action:'reason',event,detail});
   const lifeCandidate=s.memory.enabled&&s.dialogue.localContext?life.ledger.candidate(conversationScene.snapshot().entries.slice(-2).map(e=>e.text).join(' ')):undefined;
   const opportunity=s.dialogue.localContext?personalContext.opportunity():undefined;
   const project=s.dialogue.localContext&&!opportunity?relationship.candidate('',true):undefined;
-  if(lifeCandidate)candidates.push({...candidate('life_context',lifeCandidate.id,80,undefined,lifeCandidate.revision),source:lifeCandidate.source});
-  if(opportunity)candidates.push(candidate('personal_followup',opportunity.key,75,opportunity.detail));
-  else if(project)candidates.push(candidate('personal_followup','project:'+project.id,65,`A sourced project follow-up is due: ${project.title}. No invented progress or repeated question.`));
-  if(behavior.opportunityReady()&&activityTarget&&behavior.preferredTarget()===String(activityTarget))candidates.push(candidate('opportunity','interest:'+key,50,undefined,conversationScene.snapshot().revision));
   if(outingThought&&(now-outingThought.at>120000||outingThought.sceneRevision!==conversationScene.snapshot().revision))outingThought=null;
-  if(outingThought&&!behavior.pending())candidates.push(candidate('roam','outing:'+outingThought.at,48,outingThought.detail));
+  const candidates=cognitiveRuntime.contextOpportunities({life:lifeCandidate,personal:opportunity??undefined,project:project??undefined,
+    interest:behavior.opportunityReady()&&activityTarget&&behavior.preferredTarget()===String(activityTarget)?{key,revision:conversationScene.snapshot().revision}:undefined,
+    outing:!behavior.pending()?outingThought??undefined:undefined});
   const effect=cognitiveRuntime.sample({at:now,idleSec,sleepAfter:s.behavior.sleepAfterMinutes*60,date:new Date().toLocaleDateString('en-CA'),hour:local?.hour??new Date().getHours(),
     windows:windowsForPlacement().slice(0,64).map(w=>({id:String(w.handle),key:w.handle===activityTarget?key:undefined})),
     active:info&&activityTarget?{id:String(activityTarget),key,title:info.title}:undefined,
@@ -2632,7 +2613,7 @@ function presenceTick() {
         if(!current||current.id!==o.id)return;
         const evidence=life.ledger.current('proactive').find(e=>e.source===current.source&&e.recordId===current.recordId),bundle=life.ledger.bundle(current.id);
         if(!evidence||!cognitiveRuntime.claim('behavior'))return;
-        try{life.ledger.offered(current.id);const result=await behavior.dispatch({kind:'trigger',event:'life_context',detail:'Consider this sourced development; silence is valid. Never infer an outcome.',direct:false,context:{candidateId:current.id,evidence,relatedEvidence:bundle,semanticSections:life.ledger.developmentSections(evidence),world:life.ledger.world('proactive').filter(f=>f.entities.some(id=>evidence.entities.includes(id))).slice(0,6)},valid:()=>cognitiveRuntime.validEffect(effect)&&bundle.length>0&&bundle.every(item=>life.ledger.current('proactive').some(e=>e.source===item.source&&e.recordId===item.recordId&&e.revision===item.revision))});if(bundle.every(item=>life.ledger.current('proactive').some(e=>e.source===item.source&&e.recordId===item.recordId&&e.revision===item.revision)))life.ledger.settle(current.id,result.delivered&&result.action==='speak'?'delivered':result.action==='defer'?'deferred':'dismissed',result.reason);}finally{cognitiveRuntime.release('behavior',effect.generation);}break;
+        try{life.ledger.offered(current.id);const result=await behavior.dispatch({kind:'trigger',event:'life_context',detail:'Consider this sourced development. An important deferred request can deserve one concise notice now that the user is available. Silence is valid when already addressed, stale or not useful. Never infer an outcome.',direct:false,context:{candidateId:current.id,evidence,relatedEvidence:bundle,semanticSections:life.ledger.developmentSections(evidence),world:life.ledger.world('proactive').filter(f=>f.entities.some(id=>evidence.entities.includes(id))).slice(0,6)},valid:()=>cognitiveRuntime.validEffect(effect)&&bundle.length>0&&bundle.every(item=>life.ledger.current('proactive').some(e=>e.source===item.source&&e.recordId===item.recordId&&e.revision===item.revision))});if(bundle.every(item=>life.ledger.current('proactive').some(e=>e.source===item.source&&e.recordId===item.recordId&&e.revision===item.revision)))life.ledger.consideration(current.id,{evaluated:'interpretation' in result,delivered:result.delivered,action:result.action,reason:result.reason});}finally{cognitiveRuntime.release('behavior',effect.generation);}break;
       }
       case 'personal_followup': {
         const p=personalContext.opportunity(),r=relationship.candidate('',true);
@@ -2648,8 +2629,11 @@ async function executeCognitiveEffect(effect:CognitiveEffect,run:()=>Promise<boo
     parse:value=>value as CognitiveEffect,
     permission:value=>cognitiveRuntime.validEffect(value)?'allow':'deny',
     precondition:value=>cognitiveRuntime.validEffect(value),
-    execute:async()=>run(),
-    verify:(_value,result)=>!cognitiveRuntime.validEffect(effect)?false:result===undefined?'dispatched':result,
+    execute:async()=>{
+      const outcome=await performanceDirector.perform(async()=>{const result=await run();return typeof result==='boolean'?result:undefined;},()=>cognitiveRuntime.validEffect(effect));
+      return outcome;
+    },
+    verify:(_value,result)=>!cognitiveRuntime.validEffect(effect)?false:result.action==='dispatched'?'dispatched':result.action==='completed',
   },new AbortController().signal);
   cognitiveRuntime.settle(effect,['completed','dispatched'].includes(response.receipt.outcome)?'completed':response.receipt.outcome==='cancelled'||response.receipt.outcome==='denied'?'cancelled':'failed');
   // Settling consumes the agenda opportunity. A dispatch is not proof of speech,
@@ -3133,7 +3117,7 @@ function registerIpc() {
     if(!message || message.role!=='assistant'||!message.meta?.speech?.kind.startsWith('generated')||message.meta?.private)throw Error('Feedback is available for retained generated replies.');
     performanceFeedback.record(input.kind);performanceDirector.feedbackGiven(input.kind);
   });
-  handle('dialogue:retire', 'chat', str(1000), retireLine);
+  handle('dialogue:retire', 'chat', str(100), retireLine);
   handle('dialogue:restore', 'panel', str(100), id => retiredLines.restore(id));
   handle('dialogue:scene', 'panel', none, () => conversationScene.snapshot());
   handle('dialogue:clearScene', 'panel', none, () => { modelSessions?.clear(); dialogueCognition?.clear(); cue({ type: 'stopSpeech' }); void honcho.forget(); memoryLearner.discard(); conversationScene.clear(); behavior?.clear(); });
@@ -3309,7 +3293,7 @@ function cleanup() {
   for (const t of intervals) clearInterval(t);
   reminders?.stop();
   monitor?.stop();
-  teleporter?.stopAuto();
+  teleporter?.cancel();
   wake?.stop();
   cancelBehavior();
   memoryLearner?.pause();

@@ -1,0 +1,39 @@
+{
+  "machine": "Intel(R) Core(TM) i9-14900HX (32 threads), 16 GB RAM, win32 10.0.26200",
+  "build": "packaged",
+  "startupToCharacterMs": 625,
+  "launchToReadyWallMs": 849,
+  "idleRenderFps": 15,
+  "note": "cpuPct = sum over all Electron processes, % of ONE core (Chromium convention)",
+  "rows": [
+    {
+      "label": "idle (after 5s settle)",
+      "cpuPct": 0.3,
+      "memMB": 460,
+      "procs": 4
+    },
+    {
+      "label": "active (forced speaking, 60fps)",
+      "cpuPct": 0.9,
+      "memMB": 528,
+      "procs": 4
+    },
+    {
+      "label": "hidden (render paused)",
+      "cpuPct": 0.1,
+      "memMB": 445,
+      "procs": 4
+    }
+  ],
+  "runtime": {
+    "samples": 44,
+    "checkpointWrites": 2,
+    "contextCharacters": 527,
+    "dialogueCharacters": 0,
+    "activeSessions": 0,
+    "subjects": 0,
+    "deferred": 0
+  },
+  "storeBytes": 24576,
+  "measurement": "Bounded isolated offline workload; actual desktop activity and provider workloads vary."
+}

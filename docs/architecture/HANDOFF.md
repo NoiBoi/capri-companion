@@ -1,3 +1,9 @@
+# Capri 1.1 completion
+
+Current ownership, migration and verification are in ARCHITECTURE.md, MIGRATION.md, STATUS.md, FINAL_REPORT.md and SCENARIO_RESULTS.md. Product version is 1.1.0. The staged release is separately verified; the installed normal-profile application was not replaced. All older handoffs below are historical and their remaining-work statements are superseded by the current report.
+
+---
+
 # Capri 1.1 Stage 2/3 continuation
 
 Current execution and world-model ownership is documented in [CAPRI_1_1_STAGE23.md](CAPRI_1_1_STAGE23.md), with validation in [CAPRI_1_1_STAGE23_VALIDATION.md](CAPRI_1_1_STAGE23_VALIDATION.md). This supersedes historical statements below that describe the action registry and Agency skill checks as separate production gateways or world status as only a transient projection. Continue the established CognitiveRuntime, AgencyRuntime and provider-session implementations. Product version remains 1.0.0 pending release; the installed application and normal profile have not been replaced by this source checkpoint.

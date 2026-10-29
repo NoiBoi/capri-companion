@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { BehaviorCore, type Decision, type Expression, type Trigger } from '../../src/main/behavior/core';
+import { BehaviorCore, type Decision, type Expression, type Trigger } from '../../scripts/behaviorHarness';
 import { ConversationScene } from '../../src/main/store/conversationScene';
 import { fact, hold, ask, START } from '../../src/main/behaviorExperiment/scenarios';
 import type { LLMProvider } from '../../src/main/ai/providers';

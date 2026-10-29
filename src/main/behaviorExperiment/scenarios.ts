@@ -1,4 +1,4 @@
-import type { BehaviorEvent, Decision, Observation } from './core';
+import type { BehaviorEvent, Decision, Observation } from '../behavior/core';
 export const START = 1800000000000;
 export const fact = (id = 'color', detail = 'Two color swatches: muted green and vivid violet.', at = START): Observation =>
   ({ id, at, target: 'window-42', title: 'Palette study', process: 'paint.exe', evidence: 'visual', detail });

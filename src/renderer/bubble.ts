@@ -91,7 +91,7 @@ input.addEventListener('input', () => { void api.invoke('bubble:draft',!!input.v
 document.getElementById('reply')!.addEventListener('click', () => { void api.invoke('bubble:reply'); });
 document.getElementById('retire')!.addEventListener('click', () => {
   const line = shownText(); if (!line) return;
-  void api.invoke('dialogue:retire', line.slice(0, 1000)).catch(() => {});
+  if(state.speech?.kind==='authored')void api.invoke('dialogue:retire', state.speech.lineId).catch(() => {});
 });
 document.getElementById('settings')!.addEventListener('click', () => { void api.invoke('panel:open', 'character'); });
 document.getElementById('close')!.addEventListener('click', () => { void api.invoke('bubble:close'); });

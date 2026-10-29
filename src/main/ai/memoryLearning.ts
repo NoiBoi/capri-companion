@@ -1,4 +1,6 @@
 import { retainedConversation } from '../../core/conversation';
+import { COGNITIVE_EXTRACTION } from '../../core/cognitiveInterpretation';
+import type { DialogueCognition } from '../../core/dialogueCognition';
 import { z } from 'zod';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -101,7 +103,7 @@ export class MemoryLearning {
       if (!ctrl.signal.aborted) this.schedule(Math.max(this.d.settings().ai.provider === 'codex' ? 60000 : 2000, this.retryDelay));
     }
   }
-  constructor(private d: { settings(): Settings; provider(): LLMProvider; memory: MemoryStore; log: Logger; canLearn?(): boolean; dir?: string; relationship?: RelationshipStore; scene?: ConversationScene; episodes?: CompanionScenes; personalContext?: PersonalContext; deliveredAsides?(): { text: string; messageId: string; at: number }[] }) {
+  constructor(private d: { settings(): Settings; provider(): LLMProvider; memory: MemoryStore; log: Logger; canLearn?(): boolean; dir?: string; relationship?: RelationshipStore; scene?: ConversationScene; episodes?: CompanionScenes; personalContext?: PersonalContext; cognition?:DialogueCognition; deliveredAsides?(): { text: string; messageId: string; at: number }[] }) {
     if (!d.dir) return;
     this.queueFile = path.join(d.dir, 'memory-learning-queue.json');
     const s = d.settings();
@@ -131,11 +133,12 @@ export class MemoryLearning {
     const personalRevision = personalLearningContext?.revision;
     const tasteSources: { text: string; messageId: string; at: number; preferenceQuestion?: string }[] = [...sources.flatMap(j => j.assistant ? [{ text: j.assistant.text, messageId: j.assistant.messageId, at: j.at ?? Date.now(), preferenceQuestion: j.text.slice(0,1000) }] : []), ...(this.d.deliveredAsides?.() ?? []).slice(-3)];
     let raw = '';
+    const cognitiveRequest=this.d.cognition?.interpretationRequest();
     try {
       for await (const chunk of provider.stream([
-        { role: 'system', content: PROMPT + '\n' + RELATIONSHIP_EXTRACTION + '\n' + EPISODIC_EXTRACTION + '\n' + PERSONAL_EXTRACTION },
+        { role: 'system', content: PROMPT + '\n' + RELATIONSHIP_EXTRACTION + '\n' + EPISODIC_EXTRACTION + '\n' + PERSONAL_EXTRACTION + (cognitiveRequest?'\n'+COGNITIVE_EXTRACTION:'') + (this.d.cognition?'\nThe application owns conversational cognition. Return scene:null. Do not produce a second scene interpretation.':'') },
         { role: 'user', content: JSON.stringify({ existing_memories: snapshot.filter(m => !m.archived).map(m => ({ id: m.id, text: m.text, kind: m.context?.kind })), current_user_message: text,
-          existing_relationship: relationshipSnapshot,
+          existing_relationship: relationshipSnapshot,cognitive_request:cognitiveRequest??null,
           existing_working_context: personalLearningContext,
           shared_experiences: this.d.episodes?.recall(text).slice(0,2),
           current_scene: sceneSnapshot,
@@ -148,6 +151,7 @@ export class MemoryLearning {
       if (signal.aborted || !this.d.settings().memory.enabled || !this.d.settings().memory.autoLearn) return;
       const changes = parseLearning(raw, text);
       const relationshipChanges = parseRelationshipLearning(raw);
+      if(cognitiveRequest)this.d.cognition?.applyInterpretation(JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'' )).cognition??[],cognitiveRequest);
       if (this.d.personalContext && personalRevision === this.d.personalContext.checkpoint()) {
         this.d.personalContext.learn(relationshipChanges, sources.map(j => ({ text: j.text, messageId: j.messageId, at: j.at ?? Date.now() })), personalRevision);
         for (const source of sources) if (source.assistant?.at) this.d.personalContext.replyDelivered(source.messageId, source.assistant.messageId, source.assistant.at);
@@ -159,7 +163,7 @@ export class MemoryLearning {
         ]), ...(sceneSnapshot?.entries ?? []).map(e => ({ id: e.id, text: e.text.slice(0,1000), at: e.at, role: e.role, reliability: e.role === 'assistant' ? 'delivered' as const : 'statement' as const }))];
         for (const episode of relationshipChanges.episodes) this.d.episodes.remember(episode, evidence, this.d.episodes.checkpoint(), episode.question || undefined);
       }
-      if (relationshipChanges.scene && sceneSnapshot) this.d.scene?.apply(relationshipChanges.scene, sceneSnapshot.revision);
+      if (!this.d.cognition && relationshipChanges.scene && sceneSnapshot) this.d.scene?.apply(relationshipChanges.scene, sceneSnapshot.revision);
       if (/\b(forget|remove|delete)\b/i.test(text)) {
         // Deletion requests must not create a new memory of the thing being forgotten.
         for (let i = changes.length - 1; i >= 0; i--) if (changes[i].op === 'add') changes.splice(i, 1);

@@ -14,6 +14,7 @@ export interface DialogueContext {
 }
 const authoredCatalog = new Map<string,string>();
 export function authoredLineId(text:string):string|undefined { return authoredCatalog.get(text.trim()); }
+export function authoredLineText(id:string):string|undefined { return [...authoredCatalog].find(([,value])=>value===id)?.[0]; }
 function registerAuthored(text:string) { let hash=2166136261;for(const c of text)hash=Math.imul(hash^c.charCodeAt(0),16777619);const id='authored.'+(hash>>>0).toString(16);authoredCatalog.set(text.trim(),id);return id; }
 interface Beat {
   id: string; event: DialogueEvent; intent: DialogueIntent;

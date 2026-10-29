@@ -6,7 +6,7 @@ import { CompanionScenes } from '../../src/main/store/companionScenes';
 import { RelationshipStore } from '../../src/main/store/relationship';
 import { HistoryStore, MemoryStore } from '../../src/main/store/dataStores';
 import { MemoryLearning } from '../../src/main/ai/memoryLearning';
-import { BehaviorCore } from '../../src/main/behavior/core';
+import { BehaviorCore } from '../../scripts/behaviorHarness';
 import { recalledExchanges, publicHistory } from '../../src/main/ai/promptContext';
 import { DEFAULT_SETTINGS } from '../../src/shared/settings';
 import { nullLogger } from '../../src/main/log';

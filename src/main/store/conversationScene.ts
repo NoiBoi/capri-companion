@@ -48,6 +48,9 @@ export class ConversationScene {
     if (before !== this.state.entries.length || reading !== this.state.reading) this.save();
   }
   snapshot() { this.prune(); return structuredClone(this.state); }
+  /** Transcript remains evidence; operational interpretation now belongs to the
+   * runtime. Retire only the obsolete derived reading, preserving every turn. */
+  retireReading() {if(this.state.reading){this.state.reading=undefined;this.save();}}
   private removeFile() { this.checkpoints?.removeCheckpoint('conversation-scene'); try { fs.rmSync(this.file, { force: true }); } catch {} }
   private save() {
     if (!this.persistent()) return;

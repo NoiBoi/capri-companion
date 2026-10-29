@@ -1,3 +1,4 @@
+import type {LLMProvider} from '../../src/main/ai/providers';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,7 +13,7 @@ import type { StateRecord } from '../../src/core/contracts';
 import { LifeContext, ContextAssembler } from '../../src/main/life/context';
 import { disconnectedChrome } from '../../src/shared/lifeContext';
 import { CognitiveFoundation } from '../../src/main/cognitive/foundation';
-import { LegacyModelSessions } from '../../src/main/cognitive/runtime';
+import { ConversationSessions } from '../../src/main/cognitive/conversationSessions';
 
 const directories: string[] = [], stores: CognitiveSqlite[] = [];
 const fixture = () => { const dir = fs.mkdtempSync(path.join(os.tmpdir(),'capri-core-')); directories.push(dir); return dir; };
@@ -130,8 +131,9 @@ describe('migrated host slices', () => {
   });
   it('adapts an existing provider without changing role order and cancels on dependency revocation', async () => {
     let received:unknown,aborted=false;
-    const runtime=new LegacyModelSessions({name:'fixture',local:true,test:async()=>({ok:true,detail:'fixture',latencyMs:0}),listModels:async()=>[],async *stream(messages,opts){received=messages;opts.signal.addEventListener('abort',()=>{aborted=true;});yield 'fixture';}},()=>({temperature:0,maxTokens:20,timeoutMs:1000}));
-    const messages=[{role:'user' as const,content:'A synthetic question'}], stream=runtime.respond({id:'turn',revision:0,dependencies:['chrome']},{text:'',messages,evidence:[]},new AbortController().signal);
+    const provider:LLMProvider={name:'fixture',local:true,test:async()=>({ok:true,detail:'fixture',latencyMs:0}),listModels:async()=>[],async *stream(messages,opts){received=messages;opts.signal.addEventListener('abort',()=>{aborted=true;});yield 'fixture';}};
+    const runtime=new ConversationSessions({} as any,open(fixture()),()=>true,()=>[]);
+    const messages=[{role:'user' as const,content:'A synthetic question'}], stream=runtime.respond(provider,messages,{temperature:0,maxTokens:20,timeoutMs:1000,signal:new AbortController().signal},{private:false,dependencies:['chrome'],instructions:'',model:'fixture'});
     expect((await stream.next()).value).toBe('fixture');runtime.invalidate('chrome');expect(aborted).toBe(true);expect(received).toEqual(messages);await stream.return(undefined);
   });
 });

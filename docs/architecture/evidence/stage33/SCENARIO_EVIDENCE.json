@@ -1,0 +1,161 @@
+{
+  "simulatedHours": 48,
+  "checks": 30,
+  "ticks": 2280,
+  "nativeExecutions": 7,
+  "modelCalls": 0,
+  "storeBytes": 311296,
+  "supportedSourceKinds": 9,
+  "trace": [
+    {
+      "hour": 0,
+      "name": "similar projects do not silently merge",
+      "result": "pass"
+    },
+    {
+      "hour": 0,
+      "name": "displayed assignment and approaching deadline are not submission proof",
+      "result": "pass"
+    },
+    {
+      "hour": 0.25,
+      "name": "user submission closes pending reminders with attributed evidence",
+      "result": "pass"
+    },
+    {
+      "hour": 0.25,
+      "name": "stay owns negative-monitor placement only after verified receipt",
+      "result": "pass"
+    },
+    {
+      "hour": 0.45,
+      "name": "restart revalidates stay and keeps absolute deadline",
+      "result": "pass"
+    },
+    {
+      "hour": 0.75,
+      "name": "30 minute bargain completes locally without any model",
+      "result": "pass"
+    },
+    {
+      "hour": 0.75,
+      "name": "failed placement is never an active timer or success",
+      "result": "pass"
+    },
+    {
+      "hour": 0.75,
+      "name": "window loss fails safely",
+      "result": "pass"
+    },
+    {
+      "hour": 0.75,
+      "name": "explicit release and interruption relinquish movement",
+      "result": "pass"
+    },
+    {
+      "hour": 0.75,
+      "name": "CAD association never establishes geometry",
+      "result": "pass"
+    },
+    {
+      "hour": 0.75,
+      "name": "unchanged CAD does not create another pending topic",
+      "result": "pass"
+    },
+    {
+      "hour": 4.75,
+      "name": "phone proximity remains activity unknown",
+      "result": "pass"
+    },
+    {
+      "hour": 6.75,
+      "name": "leisure permits expression and unchanged video stays settled",
+      "result": "pass"
+    },
+    {
+      "hour": 6.75,
+      "name": "selective grounded thought uses delivered words rather than invented preference",
+      "result": "pass"
+    },
+    {
+      "hour": 6.75,
+      "name": "topic criticism preserves unrelated pending evidence",
+      "result": "pass"
+    },
+    {
+      "hour": 8.75,
+      "name": "provider failure preserves deferred communication without spending semantic attempts",
+      "result": "pass"
+    },
+    {
+      "hour": 8.75,
+      "name": "runtime admits no optional effect during gaming or a call",
+      "result": "pass"
+    },
+    {
+      "hour": 8.75,
+      "name": "gaming defers mail silently without consuming attempts",
+      "result": "pass"
+    },
+    {
+      "hour": 9.75,
+      "name": "available runtime selects deferred mail without claiming delivery",
+      "result": "pass"
+    },
+    {
+      "hour": 10.75,
+      "name": "available follow-through coalesces matching email and meeting",
+      "result": "pass"
+    },
+    {
+      "hour": 10.75,
+      "name": "explicit stop withholds callback without another model",
+      "result": "pass"
+    },
+    {
+      "hour": 10.75,
+      "name": "off-record turn does not change persistent dialogue state",
+      "result": "pass"
+    },
+    {
+      "hour": 10.75,
+      "name": "revocation clears retained source pages, evidence and retrieval",
+      "result": "pass"
+    },
+    {
+      "hour": 10.75,
+      "name": "out-of-order source events rejected",
+      "result": "pass"
+    },
+    {
+      "hour": 10.75,
+      "name": "current correction replaces old user submission",
+      "result": "pass"
+    },
+    {
+      "hour": 20.75,
+      "name": "suspension advances wall clock without active reasoning",
+      "result": "pass"
+    },
+    {
+      "hour": 20.75,
+      "name": "resume expires stale commitment without action replay",
+      "result": "pass"
+    },
+    {
+      "hour": 20.75,
+      "name": "day two retains own opinion and current correction without generic reset",
+      "result": "pass"
+    },
+    {
+      "hour": 20.75,
+      "name": "meaningful next-day project change creates one new opportunity",
+      "result": "pass"
+    },
+    {
+      "hour": 48,
+      "name": "complete 48 hour checkpoint is bounded and restartable",
+      "result": "pass"
+    }
+  ]
+}

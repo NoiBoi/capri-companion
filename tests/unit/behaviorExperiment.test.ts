@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { BehaviorCore, type Expression } from '../../src/main/behaviorExperiment/core';
+import { BehaviorCore, type Expression } from '../../scripts/behaviorHarness';
 import { scenarios, START, fact, hold, ask, nod } from '../../src/main/behaviorExperiment/scenarios';
 import { ConversationScene } from '../../src/main/store/conversationScene';
 import { expressionSink } from '../../src/main/behaviorExperiment/expression';

@@ -1,5 +1,5 @@
 import type { CharacterCue } from '../../shared/ipc';
-import type { Expression } from './core';
+import type { Expression } from '../behavior/core';
 
 /** Narrow bridge to existing rendering contracts. No filesystem, input control or new permissions. */
 export function expressionSink(host: {

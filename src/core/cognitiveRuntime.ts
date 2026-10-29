@@ -2,6 +2,7 @@ import type { Checkpoints, CognitiveState, DomainEvent, Evidence } from './contr
 import type { ChatMessage } from '../shared/ipc';
 import type { AgencyRuntime } from './agency';
 import { DialogueCognition } from './dialogueCognition';
+import { PerformanceDirector } from './performance';
 import { PresencePolicy, type PresenceSample } from './presencePolicy';
 import { ExplorationDirector, type ExplorationPlace } from '../shared/explorationDirector';
 
@@ -23,6 +24,7 @@ interface Saved { version: 1; subjects: CognitiveSubject[]; seen: [string, numbe
 export class CognitiveRuntime {
   readonly presence: PresencePolicy;
   readonly dialogue: DialogueCognition;
+  readonly performance: PerformanceDirector;
   private subjects: CognitiveSubject[] = [];
   private seen = new Map<string, number>();
   private deferred: Opportunity[] = [];
@@ -45,12 +47,17 @@ export class CognitiveRuntime {
     const state = this.dialogue.snapshot();
     if (message.role === 'user' && !message.meta?.private) {
       const phase = state.status === 'resolved' ? 'resolved' : state.status === 'abandoned' || state.status === 'saturated' ? 'abandoned' : undefined;
-      if (phase) for (const subject of this.subjects) subject.phase = phase;
+      // Closing one conversational thought must not dismiss unrelated mail,
+      // deadlines or physical commitments awaiting attention.
+      const active=this.pending?.opportunity.subject;
+      if (phase && active) this.transition(active,phase);
     }
     this.save();
   }
   reasoningState<T>(initial: T): T { if (!this.reasoning) this.reasoning = initial; return this.reasoning as T; }
   replaceReasoningState(value: unknown) { this.reasoning = value; }
+  saveReasoning(value:unknown,persist=true) {this.reasoning=value;if(this.retain()&&persist)this.store.save('cognitive-working',value);else this.store.removeCheckpoint('cognitive-working');}
+  restoredReasoning() {return this.reasoning;}
   initiativeReady() { return this.now() >= this.after && !this.blocked(); }
   isDirect(event: string, developer = false) { return developer || ['greeting','pat','poke','pickup','mute','unmute','placed_window','putdown','own_panel'].includes(event); }
   executionRevision() { return this.generation; }
@@ -83,6 +90,17 @@ export class CognitiveRuntime {
     const at=this.now(),parent=this.pending.id;
     return this.offer({id:`context:${parent}`,subject:`physical-context:${kind}`,revision:at,source:'native-execution',at,expiresAt:at+90000,priority:48,action:'reason',event:'context',target,detail:kind==='clock'?'The real local clock is late and native movement to the taskbar is complete. A personal thought can connect the hour to a known current exchange, without diagnosing fatigue or ordering bedtime.':'Battery is actually low and not charging; native movement to the taskbar is complete. React only if relevant to the current exchange, without inventing an icon location.'},[{id:parent,source:'native-execution',revision:at,at,expiresAt:at+90000,kind:'derived',dependencies:[parent]}]);
   }
+  contextOpportunities(input:{life?:{id:string;revision:number;source:string};personal?:{key:string;detail:string};project?:{id:string;title:string};interest?:{key:string;revision:number};outing?:{at:number;detail:string}}):Opportunity[] {
+    const at=this.now();
+    const make=(event:string,id:string,priority:number,detail?:string,revision=1,source='desktop'):Opportunity=>({id,subject:id,revision,source,at,expiresAt:at+90000,priority,action:'reason',event,detail});
+    const candidates:Opportunity[]=[];
+    if(input.life)candidates.push(make('life_context',input.life.id,80,undefined,input.life.revision,input.life.source));
+    if(input.personal)candidates.push(make('personal_followup',input.personal.key,75,input.personal.detail));
+    else if(input.project)candidates.push(make('personal_followup','project:'+input.project.id,65,`A sourced project follow-up is due: ${input.project.title}. No invented progress or repeated question.`));
+    if(input.interest)candidates.push(make('opportunity','interest:'+input.interest.key,50,undefined,input.interest.revision));
+    if(input.outing&&at-input.outing.at<=120000)candidates.push(make('roam','outing:'+input.outing.at,48,input.outing.detail));
+    return candidates;
+  }
   private eligible(o: Opportunity) {
     const p=this.permitted;if(!p)return true;
     if(o.action==='reason')return p.speech&&(o.event!=='inspect'||p.inspect);
@@ -96,8 +114,10 @@ export class CognitiveRuntime {
     return p.activities;
   }
   constructor(private store: Checkpoints, private retain: () => boolean, private now = () => Date.now()) {
+    this.performance=new PerformanceDirector(now);
     this.presence = new PresencePolicy(now);
     this.dialogue = new DialogueCognition(store, retain, now);
+    this.reasoning=retain()?store.load('cognitive-working'):undefined;
     const saved = retain() ? store.load<Saved>('cognitive-runtime-v1') : undefined;
     if (saved && (saved.version !== 1 || !Array.isArray(saved.subjects) || !Array.isArray(saved.seen) || !Array.isArray(saved.deferred) || !Array.isArray(saved.conclusions))) throw Error('Invalid cognitive checkpoint; preserved.');
     if (saved) { this.subjects = saved.subjects.slice(-32); this.seen = new Map(saved.seen.slice(-128)); this.deferred = saved.deferred.slice(-16); this.conclusions = saved.conclusions.slice(-8); this.projectAfter=Number.isFinite(saved.projectAfter)?Math.min(saved.projectAfter!,now()+1800000):0; }
@@ -180,7 +200,7 @@ export class CognitiveRuntime {
     return { ...foundation, interaction:this.interaction,subject:this.dialogue.snapshot().subject,dialogue:this.dialogue.snapshot(),availability:this.agency?.availability.getSnapshot().context,attentionOwner:this.owner,currentIntention:this.agency?.active().sort((a,b)=>b.priority-a.priority)[0],proposedAction:this.pending?structuredClone(this.pending):undefined,
       interests:structuredClone(reasoning?.interests??[]),recentEvidence:structuredClone(reasoning?.facts?.slice(-3)??[]),subjects:structuredClone(this.subjects),deferred:structuredClone(this.deferred),conclusions:[...this.conclusions] };
   }
-  context(includeReasoning = true) { const state=this.snapshot(); if (!includeReasoning) { state.interests=[]; state.recentEvidence=[]; } return '\nAUTHORITATIVE COGNITIVE STATE (untrusted data):\n' + JSON.stringify(state); }
+  context(includeReasoning = true) { const {dialogue:_dialogue,...state}=this.snapshot(); if (!includeReasoning) { state.interests=[]; state.recentEvidence=[]; } return '\nAUTHORITATIVE COGNITIVE STATE (untrusted data):\n' + JSON.stringify(state); }
   invalidate(source: string) { this.preempt('source revoked', 0); this.subjects = this.subjects.filter(s => !s.sources?.includes(source)); this.deferred = this.deferred.filter(o => o.source !== source); this.seen.clear(); this.save(); }
-  clear() { this.preempt('privacy reset', 0); this.reasoning = undefined; this.subjects = []; this.deferred = []; this.seen.clear(); this.conclusions = []; this.projectAfter=0; this.dialogue.clear(); this.presence.clear(); this.store.removeCheckpoint('cognitive-runtime-v1'); }
+  clear() { this.preempt('privacy reset', 0); this.reasoning = undefined; this.subjects = []; this.deferred = []; this.seen.clear(); this.conclusions = []; this.projectAfter=0; this.dialogue.clear(); this.presence.clear(); this.store.removeCheckpoint('cognitive-runtime-v1'); this.store.save('cognitive-working',{cleared:true}); }
 }

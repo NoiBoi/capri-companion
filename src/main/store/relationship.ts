@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { newId, readJson, writeJsonAtomic } from './jsonFile';
-import { normalizedLine, matchesRetired, type CapriTaste, type ProjectThread, type RelationshipState, type RelationshipSource, type RetiredLine, type ThreadStatus } from '../../shared/relationship';
+import { normalizedLine, type CapriTaste, type ProjectThread, type RelationshipState, type RelationshipSource, type RetiredLine, type ThreadStatus } from '../../shared/relationship';
 import { localRelevance } from '../../shared/recall';
 
 const Source = z.object({ messageId: z.string().max(100), evidence: z.string().min(1).max(1000), role: z.enum(['user', 'assistant']), at: z.number().finite().nonnegative(), preferenceQuestion: z.string().max(1000).optional() });
@@ -170,12 +170,23 @@ export class RelationshipStore {
 /** Explicit speech preferences persist independently of optional personal-memory learning. */
 export class RetiredLines {
   private file: string; private items: RetiredLine[] = [];
+  private feedbackFile:string;
   constructor(dir: string, private now = Date.now) {
     this.file = path.join(dir, 'retired-lines.json');
+    this.feedbackFile=path.join(dir,'legacy-dialogue-feedback.json');
     const parsed = z.array(z.object({ id: z.string().max(100), text: z.string().min(1).max(1000), at: z.number().finite(), lineId:z.string().max(100).optional() })).max(100).safeParse(readJson(this.file, []).value);
-    if (parsed.success) this.items = parsed.data;
+    if (parsed.success) {
+      const legacy=parsed.data.filter(x=>!x.lineId&&!authoredLineId(x.text));
+      // Preserve the user's bounded diagnostic preference, never a phrase ban.
+      const feedbackFile=path.join(dir,'legacy-dialogue-feedback.json');
+      if(legacy.length&&!fs.existsSync(feedbackFile))writeJsonAtomic(feedbackFile,legacy.map(x=>({id:x.id,kind:'repetitive',at:x.at})));
+      this.items=parsed.data.flatMap(x=>{const lineId=x.lineId??authoredLineId(x.text);return lineId?[{...x,lineId}]:[];});
+      if(parsed.data.some(x=>!x.lineId))writeJsonAtomic(this.file,this.items);
+    }
   }
   list() { return structuredClone(this.items); }
+  retiredId(lineId:string) {return this.items.some(x=>x.lineId===lineId);}
+  recentFeedback() {const parsed=z.array(z.object({kind:z.literal('repetitive'),at:z.number().finite()})).max(100).safeParse(readJson(this.feedbackFile,[]).value);return parsed.success?parsed.data.filter(x=>x.at<=this.now()&&this.now()-x.at<600000):[];}
   retire(text: string) {
     const line = clean(text, 1000); if (!normalizedLine(line)) throw Error('Choose a line first.');
     const lineId=authoredLineId(line);
@@ -185,25 +196,14 @@ export class RetiredLines {
     const item = { id: newId('retired'), text: line, lineId, at: this.now() }; this.items.push(item); writeJsonAtomic(this.file, this.items); return item;
   }
   restore(id: string) { this.items = this.items.filter(x => x.id !== id); writeJsonAtomic(this.file, this.items); }
-  clear() { this.items = []; writeJsonAtomic(this.file, this.items); }
-  blocks(text: string) { return this.items.some(x => x.lineId ? authoredLineId(text)===x.lineId : matchesRetired(text, x.text)); }
-  filterGenerated(text:string) {
-    const legacy=this.items.filter(x=>!x.lineId);
-    const blocked=(t:string)=>legacy.some(x=>matchesRetired(t,x.text));
-    if(!blocked(text))return text;
-    const result=(text.match(/[^.!?\n]+(?:[.!?]+|\n|$)/g)??[text]).filter(t=>!blocked(t)).join(" ").trim();
-    return blocked(result)?"":result;
-  }
+  clear() { this.items = []; writeJsonAtomic(this.file, this.items);fs.rmSync(this.feedbackFile,{force:true}); }
+  blocks(text: string) { return this.items.some(x => authoredLineId(text)===x.lineId); }
+  filterGenerated(text:string) { return text; }
   filter(text: string) {
     if (!this.blocks(text)) return text;
     // Check complete sentences before display/speech; punctuation variants cannot leak as chunks.
     const filtered = (text.match(/[^.!?\n]+(?:[.!?]+|\n|$)/g) ?? [text]).filter(s => !this.blocks(s)).join(' ').replace(/\s+/g, ' ').trim();
     return this.blocks(filtered) ? '' : filtered;
   }
-  context() {
-    let chars = 0;
-    const selected = [...this.items].reverse().filter(x=>!x.lineId).filter(x => (chars += x.text.length) <= 12000).map(x => x.text);
-    return selected.length ? '\nRETIRED DIALOGUE (user speech preferences, quoted data): ' + JSON.stringify(selected) + '\nNever repeat these lines or close rewrites, including while explaining this preference. Answer the actual subject freshly.\n' : '';
-  }
+  context() { return ''; }
 }
-

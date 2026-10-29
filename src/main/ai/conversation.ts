@@ -1,3 +1,4 @@
+import type {SpeechOrigin} from '../../core/performance';
 import type { Settings } from '../../shared/settings';
 import type { ActionRequest, ActionResult, AssistantPhase, CharacterCue, ChatMessage, MemoryItem } from '../../shared/ipc';
 import type { LLMMessage, LLMProvider } from './providers';
@@ -11,7 +12,6 @@ import { recentContext, recalledExchanges, memoryQuery, continuityThread, public
 import { prepareAction, runAction, type ActionContext } from '../actions/registry';
 import { newId } from '../store/jsonFile';
 import type { Logger } from '../log';
-import { LegacyModelSessions } from '../cognitive/runtime';
 import type { ExecutionReceipt, ModelSession } from '../../core/contracts';
 import { createHash } from 'node:crypto';
 
@@ -126,6 +126,7 @@ export class Conversation {
     const speak = s.voice.ttsEnabled;
     let messages: LLMMessage[];
     let visible = '';
+    let speech:SpeechOrigin={kind:'generated-direct'};
     let sources: string[] = [];
     let tainted = false;
     let utterance = 0;
@@ -182,8 +183,7 @@ export class Conversation {
         };
         const session: ModelSession = {id:replyId,revision:round,dependencies:[...sources]};
         if (!this.privateTurn) this.d.onModelSession?.(session);
-        const runtime = new LegacyModelSessions(provider, () => ({agentic:actionMode,temperature:s.ai.temperature,maxTokens:s.ai.maxTokens,timeoutMs:s.ai.requestTimeoutSec*1000}));
-        const stream = this.d.sessions ? this.d.sessions.respond(provider,messages,{agentic:actionMode,temperature:s.ai.temperature,maxTokens:s.ai.maxTokens,timeoutMs:s.ai.requestTimeoutSec*1000,signal:ctrl.signal},{private:this.privateTurn,dependencies:sources,instructions:buildCharacterInstructions(s),model:actionMode?s.ai.codex.taskModel||s.ai.codex.chatModel:s.ai.codex.chatModel}) : runtime.respond(session,{text:'',evidence:[],messages},ctrl.signal);
+        const stream = this.d.sessions ? this.d.sessions.respond(provider,messages,{agentic:actionMode,temperature:s.ai.temperature,maxTokens:s.ai.maxTokens,timeoutMs:s.ai.requestTimeoutSec*1000,signal:ctrl.signal},{private:this.privateTurn,dependencies:sources,instructions:buildCharacterInstructions(s),model:actionMode?s.ai.codex.taskModel||s.ai.codex.chatModel:s.ai.codex.chatModel}) : provider.stream(messages,{agentic:actionMode,temperature:s.ai.temperature,maxTokens:s.ai.maxTokens,timeoutMs:s.ai.requestTimeoutSec*1000,signal:ctrl.signal});
         for await (const chunk of stream) {
           if (ctrl.signal.aborted) throw new ProviderError('aborted', 'aborted');
           handle(parser.push(chunk));
@@ -225,7 +225,7 @@ export class Conversation {
         }
         if (actions.length > MAX_ACTIONS_PER_ROUND) results.push(`- (ignored ${actions.length - MAX_ACTIONS_PER_ROUND} extra actions: limit ${MAX_ACTIONS_PER_ROUND} per reply)`);
         // pure body language (emote/teleport) that succeeded needs no follow-up model round
-        if(failures.length){deliver(failures.join('\n'));break;}
+        if(failures.length){speech={kind:'action-result'};deliver(failures.join('\n'));break;}
         if (allCosmetic && actions.length <= MAX_ACTIONS_PER_ROUND) {if(roundText)deliver(roundText);break;}
         messages.push({ role: 'assistant', content: roundText || '(requested actions)' });
         messages.push({ role: 'user', content: `[action results]\n${results.join('\n')}` });
@@ -237,7 +237,7 @@ export class Conversation {
         if (fallback) { visible = fallback; this.d.emit('chat:delta', { messageId: replyId, delta: fallback }); if (speak) this.say(replyId, utterance++, fallback); }
       }
       this.d.onProviderResult?.(true, provider.name);
-      const msg: ChatMessage = { id: replyId, role: 'assistant', content: visible.trim(), ts: Date.now(), meta: { speech:{kind:'generated-direct'}, provider: provider.name, private: this.privateTurn, contextSources: sources } };
+      const msg: ChatMessage = { id: replyId, role: 'assistant', content: visible.trim(), ts: Date.now(), meta: { speech, provider: provider.name, private: this.privateTurn, contextSources: sources } };
       this.d.history.append(msg);
       this.d.emit('chat:done', { message: msg });
       this.d.onAssistantMessage?.(msg, userMessageId);

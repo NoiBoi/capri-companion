@@ -99,13 +99,13 @@ describe('retired dialogue', () => {
     expect(lineRetirementRequest('Stop saying "I approve."')).toEqual({ latest: false, line: 'I approve.' });
     expect(lineRetirementRequest('Why do people say "never say that again"?')).toBeNull();
   });
-  it('persists case/punctuation-insensitive exclusions and restores lines explicitly', () => {
-    const dir = tmpDir();fs.writeFileSync(path.join(dir,'retired-lines.json'),JSON.stringify([{id:'legacy',text:"Well, that's my argument ruined.",at:1}]));const store=new RetiredLines(dir);
-    const line=store.list()[0];
-    expect(store.filter("WELL. That's my argument ruined! The answer is 408.")).not.toContain('argument');
-    expect(store.filter("Well, that's my argument ruined. The answer is 408.")).toBe('The answer is 408.');
-    const restored = new RetiredLines(dir); expect(restored.blocks("Well that's my argument ruined!")).toBe(true);
-    restored.restore(line.id); expect(restored.blocks(line.text)).toBe(false);
+  it('migrates legacy generated retirement to diagnostics without phrase bans', () => {
+    const dir=tmpDir(),text="This synthetic generated phrase was never in the authored bank.";
+    fs.writeFileSync(path.join(dir,'retired-lines.json'),JSON.stringify([{id:'legacy',text,at:1}]));
+    const store=new RetiredLines(dir);expect(store.list()).toEqual([]);expect(store.filterGenerated(text)).toBe(text);
+    expect(store.blocks(text)).toBe(false);expect(store.context()).toBe('');
+    expect(JSON.parse(fs.readFileSync(path.join(dir,'legacy-dialogue-feedback.json'),'utf8'))).toEqual([{id:'legacy',kind:'repetitive',at:1}]);
+    expect(new RetiredLines(dir).filterGenerated(text)).toBe(text);
   });
   it('never re-enables a retired local line when recent-line exclusions are exhausted', () => {
     const retired = new RetiredLines(tmpDir());
@@ -114,15 +114,15 @@ describe('retired dialogue', () => {
     for (let i = 0; i < 80; i++) expect(director.choose({ event: 'pat' }, { required: true })).not.toBe(line);
     expect(retired.filterGenerated(line)).toBe(line);
   });
-  it('holds streamed chunks until checked and rewrites an entirely blocked answer once', async () => {
+  it('does not rewrite generated speech after migrating a legacy phrase retirement', async () => {
     const dir = tmpDir();fs.writeFileSync(path.join(dir,'retired-lines.json'),JSON.stringify([{id:'legacy',text:'Your timing is suspiciously good.',at:1}]));const retired=new RetiredLines(dir);
     const { ctx, s } = makeCtx({}, dir); s.voice.ttsEnabled = true;
     const history = new HistoryStore(dir, () => 0, () => true), events: { ch: string; p: any }[] = [], said: string[] = []; let calls = 0;
     const provider = { name: 'mock', local: true, async *stream() { calls++; for (const char of calls === 1 ? 'Your timing is suspiciously good.' : 'I vote for the red one.') yield char; }, async test() { return { ok: true, detail: '' }; }, async listModels() { return []; } };
     const conversation = new Conversation({ settings: () => s, history, provider: () => provider, memories: () => [], actionCtx: ctx, emit: (ch, p) => events.push({ ch, p }), cue: c => { if (c.type === 'speak') said.push(c.text); }, confirm: async () => false, log: nullLogger, hasRetiredLines: () => true, filterReply: t => retired.filter(t) });
     await conversation.send('Which one?'); await conversation.settle();
-    expect(calls).toBe(2); expect(history.recent(1)[0].content).toBe('I vote for the red one.');
-    expect(events.filter(e => e.ch === 'chat:delta').map(e => e.p.delta).join('')).toBe('I vote for the red one.');
-    expect(said.join(' ')).not.toContain('suspiciously');
+    expect(calls).toBe(1); expect(history.recent(1)[0].content).toBe('Your timing is suspiciously good.');
+    expect(events.filter(e => e.ch === 'chat:delta').map(e => e.p.delta).join('')).toBe('Your timing is suspiciously good.');
+    expect(said.join(' ')).toContain('suspiciously');
   });
 });

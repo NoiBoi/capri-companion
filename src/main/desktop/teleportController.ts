@@ -2,7 +2,7 @@ import type { Settings } from '../../shared/settings';
 import type { CharacterCue } from '../../shared/ipc';
 import type { Logger } from '../log';
 import type { DisplayLike, Rect } from './displays';
-import { chooseDestination, nextAutoDelay, type Destination, type TeleportTarget } from './teleport';
+import { chooseDestination, type Destination, type TeleportTarget } from './teleport';
 
 export interface TeleportDeps {
   settings(): Settings;
@@ -17,6 +17,7 @@ export interface TeleportDeps {
   aiConnected(): boolean;
   /** Production automatic travel requires a cognitive execution lease. */
   automaticAdmission?(): boolean;
+  automaticSchedule?(): {nextAt:number;ready:boolean};
   /** Reason autonomous behaviour must not run right now, or null. */
   blocked(): string | null;
   userIdleSec(): number;
@@ -39,8 +40,6 @@ export class TeleportController {
   cancel() { this.revision++; }
   private waiting = new Map<string, () => void>();
   private busy = false;
-  private autoTimer: NodeJS.Timeout | null = null;
-  private nextAt: number | null = null;
   last: string | null = null;
   count = 0;
   lastBlocked: string | null = null;
@@ -49,10 +48,13 @@ export class TeleportController {
 
   get active() { return this.busy; }
   private automaticBlock() {
-    if (this.d.automaticAdmission?.() === false) return 'cognitive runtime has not admitted automatic movement';
+    if(!this.d.settings().teleport.auto)return 'automatic teleport is off';
+    if(!this.d.aiConnected())return 'AI is not connected';
+    if(this.d.userIdleSec()>300)return 'user is away';
     const reason = this.d.blocked();
     // The exploration owner may still request automatic travel itself.
-    return reason === 'window exploration handles autonomous movement' ? null : reason;
+    if(reason&&reason!=='window exploration handles autonomous movement')return reason;
+    return this.d.automaticAdmission?.() === false?'cognitive runtime has not admitted automatic movement':null;
   }
 
   /** Renderer finished a phase. */
@@ -127,7 +129,7 @@ export class TeleportController {
   }
 
   async go(target: TeleportTarget, reason: 'manual' | 'auto' | 'ai', how: 'teleport' | 'glide' | 'either' = 'teleport'): Promise<{ ok: boolean; detail: string; to?: Rect }> {
-    if (reason === 'auto' && this.d.automaticAdmission?.() === false) return {ok:false,detail:'Cognitive runtime has not admitted automatic movement.'};
+    if(reason==='auto'){const blocked=this.automaticBlock();if(blocked)return {ok:false,detail:blocked};}
     if (this.busy) return { ok: false, detail: 'Already teleporting' };
     if (target === 'near_cursor' && this.d.cursorProtected?.()) return {ok:false,detail:'Keeping clear of the video or avoided window under the pointer.'};
     const cur = this.d.bounds();
@@ -191,40 +193,19 @@ export class TeleportController {
     }
   }
 
-  // ---------------------------------------------------------------- autonomous
-  startAuto() { this.schedule(); }
-  stopAuto() { if (this.autoTimer) clearTimeout(this.autoTimer); this.autoTimer = null; this.nextAt = null; }
-  /** Settings or connection changed: re-arm. */
-  rearm() { this.stopAuto(); this.schedule(); }
-
-  private schedule() {
-    const s = this.d.settings().teleport;
-    if (!s.auto) { this.lastBlocked = 'automatic teleport is off'; return; }
-    const delay = nextAutoDelay(s.minMinutes, s.maxMinutes);
-    this.nextAt = Date.now() + delay;
-    this.autoTimer = setTimeout(() => void this.autoTick(), delay);
-    this.autoTimer.unref?.();
-  }
-
   /** Exposed for tests. Returns the reason it didn't teleport, or null if it did. */
   async autoTick(): Promise<string | null> {
-    this.autoTimer = null;
-    const reason = !this.d.settings().teleport.auto ? 'automatic teleport is off'
-      : !this.d.aiConnected() ? 'AI is not connected'
-      : this.d.blocked() ?? (this.d.userIdleSec() > 300 ? 'user is away' : null);
-    this.lastBlocked = reason;
-    if (!reason) await this.go('auto', 'auto', 'either');
-    else this.d.log.debug('auto teleport skipped', { reason });
-    if (this.d.settings().teleport.auto) this.schedule();
-    return reason;
+    const result=await this.go('auto','auto','either');this.lastBlocked=result.ok?null:result.detail;
+    if(this.lastBlocked)this.d.log.debug('auto teleport skipped',{reason:this.lastBlocked});
+    return this.lastBlocked;
   }
 
   status() {
     const s = this.d.settings().teleport;
     return {
       auto: s.auto,
-      armed: !!this.autoTimer && this.d.aiConnected(),
-      nextInSec: this.nextAt ? Math.max(0, Math.round((this.nextAt - Date.now()) / 1000)) : null,
+      armed: !!this.d.automaticSchedule?.().ready && this.d.aiConnected(),
+      nextInSec: this.d.automaticSchedule?.().nextAt ? Math.max(0,Math.round((this.d.automaticSchedule().nextAt-Date.now())/1000)):null,
       last: this.last,
       count: this.count,
       blockedReason: !this.d.aiConnected() ? 'AI is not connected' : this.lastBlocked,

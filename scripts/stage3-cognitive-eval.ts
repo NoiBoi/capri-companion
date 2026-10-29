@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { DialogueCognition } from '../src/main/cognitive/dialogue';
+import { DialogueCognition } from '../src/core/dialogueCognition';
 const values=new Map<string,unknown>();const checkpoints={load:<T>(id:string)=>structuredClone(values.get(id)) as T|undefined,save:<T>(id:string,value:T)=>{values.set(id,structuredClone(value));},removeCheckpoint:(id:string)=>{values.delete(id);}};let cognition=new DialogueCognition(checkpoints,()=>true);
 import { CodexSessions } from '../src/main/ai/codexSessions';
 import { buildCharacterInstructions } from '../src/main/ai/persona';

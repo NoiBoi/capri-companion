@@ -30,13 +30,14 @@ export class PresencePolicy {
   readonly returns = new CursorReturn();
   readonly theatre = new TheatreCadence();
   readonly music = new MusicChanges();
-  readonly outings = new ExplorationDirector();
+  readonly outings = new ExplorationDirector(()=>Math.random());
   private backgroundSongAt = -Infinity;
   private lastMusic = '';
   private lastCue = '';
   private revision = 0;
   private autoAt = 0;
   constructor(private now = () => Date.now()) { this.visits = new DesktopVisits(now()); }
+  teleportStatus(ready:boolean) {return {nextAt:this.autoAt,ready:ready&&this.autoAt>0};}
   resetTeleport() { this.autoAt = 0; }
   clear() { this.curiosity.clear(); this.visits.clear(this.now()); this.returns.cancel(); this.lastCue = this.lastMusic = ''; }
   sample(s: PresenceSample, ready: boolean): Opportunity[] {

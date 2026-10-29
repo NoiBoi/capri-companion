@@ -15,6 +15,7 @@ const object = (properties: Record<string, unknown>, required = Object.keys(prop
 const str = { type: 'string' };
 /** One extraction request handles all three stores, preserving the shared background budget. */
 export const MEMORY_OUTPUT_SCHEMA = object({
+  cognition:{type:'array',maxItems:4,items:object({topic:str,kind:{type:'string',enum:['position','reason','question','intention','criticism','experience']},status:{type:'string',enum:['active','revised','resolved','abandoned']},evidence:object({sourceId:str,quote:str}),reason:{anyOf:[{type:'null'},object({sourceId:str,quote:str})]}})},
   situations: { type: 'array', items: object({ key: { type: 'string', enum: ['whereabouts','current_work'] }, value: str, evidence: str, ttlMinutes: { type: 'integer' } }) },
   commitments: { type: 'array', items: object({ op: { type: 'string', enum: ['add','complete','cancel','forget'] }, id: str, intention: str, condition: object({ kind: { type: 'string', enum: ['reply','topic','time'] }, topic: str, dueAt: { type: ['string','null'] } }), evidence: str }) },
   episodes: { type: 'array', items: object({ id: str, topic: str, sourceId: str, evidence: str, interpretation: str, question: str, tags: { type: 'array', items: str }, status: { type: 'string', enum: ['current','resolved'] } }) },

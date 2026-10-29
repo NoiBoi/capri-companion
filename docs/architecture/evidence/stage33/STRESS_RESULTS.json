@@ -1,0 +1,24 @@
+{
+  "events": 5000,
+  "rejectedDuplicates": 5000,
+  "messages": 2000,
+  "modelRequests": 0,
+  "checkpointWrites": 9000,
+  "elapsedMs": 18128,
+  "sqliteBytesAfter1000And2000Messages": [
+    49152,
+    49152
+  ],
+  "contextCharacters": 7872,
+  "dialogueContextCharacters": 676,
+  "bounds": {
+    "subjects": 32,
+    "deferred": 16,
+    "seen": 128,
+    "evidence": 16,
+    "thoughts": 0,
+    "questions": 0
+  },
+  "integrity": "ok",
+  "restart": "identical bounded dialogue checkpoint"
+}

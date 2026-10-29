@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { tmpDir } from './helpers';
-import { BehaviorCore } from '../../src/main/behavior/core';
+import { BehaviorCore } from '../../scripts/behaviorHarness';
 import { ConversationScene } from '../../src/main/store/conversationScene';
 import { CompanionScenes } from '../../src/main/store/companionScenes';
 import { RelationshipStore } from '../../src/main/store/relationship';

@@ -10,15 +10,6 @@ export interface ProjectThread {
 export interface RelationshipState { version: 1; tastes: CapriTaste[]; threads: ProjectThread[]; lastFollowUpAt?: number }
 export interface RetiredLine { lineId?: string; id: string; text: string; at: number }
 export const normalizedLine = (text: string) => text.normalize('NFKC').toLowerCase().replace(/['’]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-/** Punctuation/case variants and close rewrites of a line remain retired. */
-export function matchesRetired(text: string, retired: string) {
-  const a = normalizedLine(text), b = normalizedLine(retired);
-  if (!a || !b) return false;
-  if (` ${a} `.includes(` ${b} `)) return true;
-  const x = new Set(a.split(' ')), y = new Set(b.split(' '));
-  const common = [...y].filter(w => x.has(w)).length;
-  return y.size >= 5 && common >= 5 && common / new Set([...x, ...y]).size >= .85;
-}
 export function lineRetirementRequest(text: string): { latest: boolean; line?: string } | null {
   const t = text.trim().replace(/[.!]+$/, '');
   if (/^(?:please[, ]+)?(?:don['’]?t|do not|never) (?:say|use|repeat) (?:that|this|it|that line|this line)(?: (?:line|phrase))? again(?: please)?$/i.test(t)

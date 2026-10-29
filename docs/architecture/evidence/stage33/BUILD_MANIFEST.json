@@ -1,0 +1,342 @@
+{
+  "version": "1.1.0",
+  "buildFiles": 66,
+  "matchingFiles": 66,
+  "forbiddenPaths": [],
+  "mainSha256": "f019c01883e916e988080dec36b8e0820f1a6d68594cd0b5348d6a8b761e6c27",
+  "installerSha256": "45305363e9b531a0e906e4387aab375f619a40647cdf573e07137925472a4cbb",
+  "installerBytes": 141355798,
+  "nativeKoffi": true,
+  "files": [
+    {
+      "file": "dist/main/index.js",
+      "bytes": 2488501,
+      "match": true
+    },
+    {
+      "file": "dist/preload/preload.js",
+      "bytes": 3058,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/bubble.css",
+      "bytes": 7416,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/bubble.html",
+      "bytes": 1763,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/bubble.js",
+      "bytes": 35220,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/lachy/blink.png",
+      "bytes": 192228,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/lachy/blink_glitch.png",
+      "bytes": 195101,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/lachy/dangle.png",
+      "bytes": 1169507,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/lachy/glitch.png",
+      "bytes": 718323,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/lachy/grin.png",
+      "bytes": 663789,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/lachy/idle.png",
+      "bytes": 660767,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/lachy/mouth.png",
+      "bytes": 4197,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/lachy/perch.png",
+      "bytes": 813412,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/lachy/perch_blink.png",
+      "bytes": 221666,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/lachy/perch_blink_glitch.png",
+      "bytes": 224017,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/lachy/perch_glitch.png",
+      "bytes": 678863,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/lachy/sleep.png",
+      "bytes": 1375093,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/lachy/wake.png",
+      "bytes": 890526,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/capri-face.png",
+      "bytes": 89792,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/cutin-eyes.png",
+      "bytes": 115772,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/cutin-grin.png",
+      "bytes": 115926,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/cutin-laugh.png",
+      "bytes": 106321,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/cutin-look.png",
+      "bytes": 118574,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/cutin-many.png",
+      "bytes": 97693,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/face-aside.png",
+      "bytes": 84559,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/face-calm.png",
+      "bytes": 86683,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/face-laugh.png",
+      "bytes": 83490,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/face-look.png",
+      "bytes": 95747,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/face-many.png",
+      "bytes": 84428,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/face-smug.png",
+      "bytes": 91485,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/face-wide.png",
+      "bytes": 95711,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/icon.ico",
+      "bytes": 166358,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/icon.png",
+      "bytes": 102560,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/intro-grab.webp",
+      "bytes": 163302,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/intro-happy.webp",
+      "bytes": 159986,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/intro-mouth1.webp",
+      "bytes": 163288,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/intro-mouth2.webp",
+      "bytes": 163290,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/intro-mouth3.webp",
+      "bytes": 163496,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/intro-smear.webp",
+      "bytes": 180764,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/intro-wave1.webp",
+      "bytes": 183020,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/intro-wave2.webp",
+      "bytes": 186222,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/mochiiwuff/intro-wave3.webp",
+      "bytes": 179282,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/model.json",
+      "bytes": 144951,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/secondary/recline-palette.png",
+      "bytes": 1028627,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/secondary/sit-soft-closed.png",
+      "bytes": 795884,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/capri/secondary/sit-soft.png",
+      "bytes": 804730,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/character.html",
+      "bytes": 1230,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/character.js",
+      "bytes": 260958,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/fonts/chakra-petch-latin-600-normal.woff2",
+      "bytes": 9968,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/fonts/jetbrains-mono-latin-400-normal.woff2",
+      "bytes": 21168,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/intro.css",
+      "bytes": 229,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/intro.html",
+      "bytes": 378,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/intro.js",
+      "bytes": 3125,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/panel.css",
+      "bytes": 18146,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/panel.html",
+      "bytes": 1097,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/panel.js",
+      "bytes": 577146,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/panelStartup.js",
+      "bytes": 820,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/taskbar.css",
+      "bytes": 2442,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/taskbar.html",
+      "bytes": 1775,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/taskbar.js",
+      "bytes": 763,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/theatre.css",
+      "bytes": 135,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/theatre.html",
+      "bytes": 361,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/theatre.js",
+      "bytes": 6145,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/trail.css",
+      "bytes": 146,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/trail.html",
+      "bytes": 310,
+      "match": true
+    },
+    {
+      "file": "dist/renderer/trail.js",
+      "bytes": 796,
+      "match": true
+    }
+  ]
+}

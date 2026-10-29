@@ -70,12 +70,12 @@ export class ConversationSessions {
     return JSON.stringify({authoritative:true,replaceBlocks:changes,removeBlocks:removed,note:'These current application blocks supersede earlier versions. Old body state, time and memory are not current. Native history is historical dialogue. Never recite internal context.'});
   }
   async *respond(provider:LLMProvider,messages:LLMMessage[],o:GenOptions,request:{private:boolean;dependencies:string[];instructions:string;model:string}) {
-    if(provider.name!=='codex') {yield* provider.stream(messages,o);return;}
     const epoch=this.epoch,controller=new AbortController(),stop=()=>controller.abort();
     o.signal.addEventListener('abort',stop,{once:true});if(o.signal.aborted)stop();
     this.active={controller,dependencies:request.dependencies};
     let h:SessionHandle|undefined;let transient=false;let emitted=false;
     try {
+      if(provider.name!=='codex'){yield* provider.stream(messages,{...o,signal:controller.signal});return;}
       const last=messages.at(-1)?.content??'';
       const key=request.private||!this.retain()?'private':request.dependencies.length?'source':sessionRoute(last,this.state.current,this.projects());
       const scope:SessionScope=key.startsWith('project:')?'project':key==='private'?'private':key==='source'?'source':'primary';

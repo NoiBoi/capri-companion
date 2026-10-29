@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { ConversationSessions, sessionRoute } from '../../src/main/cognitive/conversationSessions';
-import { DialogueCognition } from '../../src/main/cognitive/dialogue';
+import { DialogueCognition } from '../../src/core/dialogueCognition';
 import type { PersistentSessions, SessionHandle, SessionStart } from '../../src/core/modelSessions';
 import type { Checkpoints } from '../../src/core/contracts';
 import type { LLMProvider } from '../../src/main/ai/providers';

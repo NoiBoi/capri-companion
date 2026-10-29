@@ -2,7 +2,7 @@ import {resolveEntityMentions} from '../../src/core/entities';
 import {expect,it} from 'vitest';
 import {PerformanceDirector,type PerformanceInput} from '../../src/core/performance';
 import {PerformanceFeedback} from '../../src/main/cognitive/performanceFeedback';
-import {DialogueCognition} from '../../src/main/cognitive/dialogue';
+import {DialogueCognition} from '../../src/core/dialogueCognition';
 import {DialogueDirector,authoredLineId} from '../../src/shared/dialogue';
 import {RetiredLines} from '../../src/main/store/relationship';
 import {tmpDir} from './helpers';
@@ -24,3 +24,5 @@ it('does not infer animation completion from a request, timeout or interrupted c
 it('prefers specific overlapping entities while retaining two explicit mentions',()=>{const e=[{id:'a',name:'Glass Finch Lab',aliases:[]},{id:'b',name:'Glass Finch Lab Two',aliases:[]}];expect(resolveEntityMentions('Glass Finch Lab Two',e)).toEqual(['b']);expect(new Set(resolveEntityMentions('Glass Finch Lab and Glass Finch Lab Two',e))).toEqual(new Set(['a','b']));expect(resolveEntityMentions('unrelated',e)).toEqual([]);});
 
 it('removes expired diagnostics on restart and honors disabled retention',()=>{let now=1,enabled=true;const store=memory(),f=new PerformanceFeedback(store,()=>now,()=>enabled);f.record('intrusive');now+=31*86400000;new PerformanceFeedback(store,()=>now,()=>enabled);expect(store.load<any[]>('performance-feedback')).toEqual([]);f.record('generic');enabled=false;f.prune();f.record('character');expect(store.load('performance-feedback')).toBeUndefined();});
+
+it('retired authored IDs survive speech punctuation normalization',()=>{const r=new RetiredLines(tmpDir()),d=new DialogueDirector(()=>.7),line=d.choose({event:'poke'},{required:true});r.retire(line);expect(r.retiredId(authoredLineId(line)!)).toBe(true);const plan=new PerformanceDirector().plan({...input,direct:true,line,origin:{kind:'authored',lineId:authoredLineId(line)!}});expect(r.retiredId(plan.origin.kind==='authored'?plan.origin.lineId:'')).toBe(true);});

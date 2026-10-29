@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { BehaviorCore } from '../src/main/behaviorExperiment/core';
+import { BehaviorCore } from './behaviorHarness';
 import { fact } from '../src/main/behaviorExperiment/scenarios';
 import { ConversationScene } from '../src/main/store/conversationScene';
 import { CodexAccountProvider, configureCodexDiagnostics } from '../src/main/ai/codexAccount';

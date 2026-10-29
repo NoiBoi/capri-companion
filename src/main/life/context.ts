@@ -178,6 +178,16 @@ export class LifeContext {
     })[0];
   }
   offered(id: string) { const c=this.state.candidates.find(c=>c.id===id);if(!c||!['pending','deferred'].includes(c.status))return;c.attempts++;c.phase='investigated';c.status='deferred';c.reason='Submitted through existing initiative gates';c.nextAt=this.now()+5*60000;this.save(); }
+  consideration(id:string,result:{evaluated:boolean;delivered:boolean;action:string;reason:string}) {
+    const c=this.state.candidates.find(c=>c.id===id);if(!c||!['pending','deferred'].includes(c.status))return;
+    if(!result.evaluated){
+      // Transport outage, budget/admission denial or cancellation is not Capri
+      // deciding the communication is unimportant. Retry later without spending
+      // a semantic consideration; source expiry/revocation still wins.
+      c.attempts=Math.max(0,c.attempts-1);c.status='deferred';c.phase='noticed';c.nextAt=this.now()+5*60000;c.reason=result.reason.slice(0,300);this.save();return;
+    }
+    this.settle(id,result.delivered&&result.action==='speak'?'delivered':['defer','gesture','investigate'].includes(result.action)?'deferred':'dismissed',result.reason);
+  }
   settle(id: string, status: LifeCandidate['status'], reason = '') { const c = this.state.candidates.find(c => c.id === id); if (!c || ['delivered','dismissed','expired','superseded'].includes(c.status)) return; c.status = status; c.phase=status==='delivered'?'discussed':status==='dismissed'?'dismissed':c.phase; c.reason = reason.slice(0,300); c.nextAt = this.now()+5*60000; if (c.attempts >= 2 && status === 'deferred') {c.status = 'dismissed';c.phase='exhausted';} this.save(); if(status==='delivered'||status==='dismissed'){for(const related of c.related){const other=this.state.candidates.find(x=>x.id===related);if(other&&['pending','deferred'].includes(other.status)){other.status=status;other.phase=c.phase;other.reason='Coalesced with '+c.id;}}this.save();this.writer.flush();} }
   acknowledge(id:string,dismissed=false){const c=this.state.candidates.find(c=>c.id===id);if(!c)return;c.acknowledgedAt=this.now();c.phase=dismissed?'dismissed':'resolved';c.status='dismissed';c.reason=dismissed?'User dismissed':'User acknowledged';this.save();this.writer.flush();}
   private scrubLegacy(source?: string) {

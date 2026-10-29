@@ -65,7 +65,7 @@ describe('episodic continuity in the integrated companion',()=>{
     const saved=JSON.parse(fs.readFileSync(path.join(dir,'companion-scenes.json'),'utf8'));
     expect(saved.version).toBe(2);expect(saved.episodes).toHaveLength(1);
     a=await launch(dir,'999');
-    await a.evaluate(()=>{(globalThis as any).__capri.interaction('pat');});
+    await a.evaluate(()=>{Math.random=()=>.99;(globalThis as any).__capri.interaction('pat');});
     await expect.poll(()=>m.requests.length).toBe(3);
     await expect.poll(()=>a!.evaluate(()=>!(globalThis as any).__capri.behavior.busy)).toBe(true);
     expect(m.requests[2].messages[0].content).toContain('node wiring');
@@ -81,7 +81,7 @@ describe('episodic continuity in the integrated companion',()=>{
     const budget=path.join(dir,'background-budget.json');
     if(fs.existsSync(budget))fs.writeFileSync(budget,JSON.stringify(JSON.parse(fs.readFileSync(budget,'utf8')).map((r:any)=>({...r,at:r.at-16000}))));
     a=await launch(dir,'999');
-    await a.evaluate(()=>{(globalThis as any).__capri.interaction('pat');});
+    await a.evaluate(()=>{Math.random=()=>.99;(globalThis as any).__capri.interaction('pat');});
     await expect.poll(()=>m.requests.some(r=>r.messages.at(-1).content.includes('"event":"pat"'))).toBe(true);
     await expect.poll(()=>a.evaluate(()=>!(globalThis as any).__capri.behavior.busy)).toBe(true);
     const touch=m.requests.find(r=>r.messages.at(-1).content.includes('"event":"pat"'));

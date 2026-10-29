@@ -1,3 +1,4 @@
+import {authoredLineId} from '../../shared/dialogue';
 import type { ActionRequest, ActionResult, AssistantPhase, ChatMessage, ConnectionStatus, Diagnostics, MemoryItem, Note, Reminder } from '../../shared/ipc';
 import { TOOL_NAMES, type Settings, type ToolName } from '../../shared/settings';
 import type { CapriApi } from '../../preload/preload';
@@ -190,7 +191,7 @@ function msgEl(m: ChatMessage): HTMLElement {
     m.role === 'assistant' ? h('span', { class: 'who' }, 'Capri') : null, ...richText(m.content));
   if (m.meta?.interrupted) el.append(h('span', { class: 'meta' }, '— interrupted'));
   if (m.meta?.error && m.content !== m.meta.error) el.append(h('span', { class: 'meta' }, m.meta.error));
-  if(m.role==='assistant'&&m.meta?.speech?.kind==='authored')el.append(btn('Retire line',async()=>{try{await api.invoke('dialogue:retire',m.content);toast('Authored line retired.');}catch(e){toast((e as Error).message,true);}},'quiet'));
+  if(m.role==='assistant'&&m.meta?.speech?.kind==='authored')el.append(btn('Retire line',async()=>{try{await api.invoke('dialogue:retire',m.meta!.speech!.kind==='authored'?m.meta!.speech!.lineId:'');toast('Authored line retired.');}catch(e){toast((e as Error).message,true);}},'quiet'));
   if(m.role==='assistant'&&m.meta?.speech?.kind.startsWith('generated')&&!m.meta?.private) {
     const feedback=h('div',{class:'row'});
     for(const [kind,label] of [['repetitive','Repetitive'],['generic','Too generic'],['character','Out of character'],['intrusive','Poor timing']] as const)feedback.append(btn(label,async()=>{try{await api.invoke('dialogue:feedback',{messageId:m.id,kind});feedback.remove();toast('Feedback saved locally.');}catch(e){toast((e as Error).message,true);}},'quiet'));
@@ -561,9 +562,9 @@ function relationshipSections(data: Awaited<ReturnType<typeof relationshipData>>
       h('div', { class: 'list' }, ...data.state.tastes.map(tasteCard), tasteCard())),
     group('Ongoing projects', h('p', { class: 'hint' }, 'Keeps the latest state you actually reported. Occasional follow-ups fit into a greeting or relevant conversation. Paused, completed and dismissed topics stay quiet; two unanswered check-ins pause further questions until you update the project.'),
       h('div', { class: 'list' }, ...data.state.threads.map(threadCard), threadCard())),
-    group('Retired lines', h('p', { class: 'hint' }, 'Retire an exact authored line here or from its bubble. Generated replies have feedback buttons in Chat. Older retired expressions are preserved until restored.'),
+    group('Retired lines', h('p', { class: 'hint' }, 'Retire an exact authored line here or from its bubble. Generated replies have feedback buttons in Chat. Older generated-line exclusions become repetition feedback, without banning phrases.'),
       h('div', { class: 'list' }, ...data.retired.map(item => h('div', { class: 'item' }, h('div', { class: 'txt' }, item.text), btn('Restore line', () => run(() => api.invoke('dialogue:restore', item.id)), 'quiet')))),
-      line, btn('Retire line', () => run(() => api.invoke('dialogue:retire', line.value)), 'quiet')),
+      line, btn('Retire line', () => run(() => api.invoke('dialogue:retire', authoredLineId(line.value)??'')), 'quiet')),
   ];
 }
 const relationshipData = () => api.invoke('relationship:get');

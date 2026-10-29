@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { BehaviorCore, type Decision, type Expression } from '../src/main/behaviorExperiment/core';
+import { BehaviorCore, type Decision, type Expression } from './behaviorHarness';
 import { START, scenarios } from '../src/main/behaviorExperiment/scenarios';
 import { ConversationScene } from '../src/main/store/conversationScene';
 import { expressionSink } from '../src/main/behaviorExperiment/expression';
