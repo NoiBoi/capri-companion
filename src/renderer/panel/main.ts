@@ -190,11 +190,12 @@ function msgEl(m: ChatMessage): HTMLElement {
     m.role === 'assistant' ? h('span', { class: 'who' }, 'Capri') : null, ...richText(m.content));
   if (m.meta?.interrupted) el.append(h('span', { class: 'meta' }, '— interrupted'));
   if (m.meta?.error && m.content !== m.meta.error) el.append(h('span', { class: 'meta' }, m.meta.error));
-  if (m.role === 'assistant' && m.content && !m.meta?.error && !m.meta?.interrupted) el.append(btn('Retire a line', () => {
-    const line = h('textarea', { value: m.content.slice(0, 1000), rows: 3, maxLength: 1000, 'aria-label': 'Line to retire', style: 'width:100%' });
-    const edit: HTMLDivElement = h('div', {}, line, h('div', { class: 'row' }, btn('Retire', async () => { try { await api.invoke('dialogue:retire', line.value); edit.remove(); toast('Line retired. Restore it in Memory.'); } catch (e) { toast((e as Error).message, true); } }, 'quiet'), btn('Cancel', () => edit.remove(), 'quiet')));
-    el.append(edit); line.focus();
-  }, 'quiet'));
+  if(m.role==='assistant'&&m.meta?.speech?.kind==='authored')el.append(btn('Retire line',async()=>{try{await api.invoke('dialogue:retire',m.content);toast('Authored line retired.');}catch(e){toast((e as Error).message,true);}},'quiet'));
+  if(m.role==='assistant'&&m.meta?.speech?.kind.startsWith('generated')&&!m.meta?.private) {
+    const feedback=h('div',{class:'row'});
+    for(const [kind,label] of [['repetitive','Repetitive'],['generic','Too generic'],['character','Out of character'],['intrusive','Poor timing']] as const)feedback.append(btn(label,async()=>{try{await api.invoke('dialogue:feedback',{messageId:m.id,kind});feedback.remove();toast('Feedback saved locally.');}catch(e){toast((e as Error).message,true);}},'quiet'));
+    el.append(feedback);
+  }
   return el;
 }
 const atBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 60;
@@ -554,13 +555,13 @@ function relationshipSections(data: Awaited<ReturnType<typeof relationshipData>>
       btn('Delete', () => run(() => api.invoke('relationship:remove', { kind: 'thread', id: thread.id })), 'quiet'));
     return card;
   };
-  const line = entryInput('Line to retire', '', 1000);
+  const line = entryInput('Exact authored line', '', 1000);
   return [
     group('Capri’s tastes', h('p', { class: 'hint' }, 'Stable preferences from her own delivered replies, kept separately from facts about you. Automatic learning builds these; you can edit or add one here. Use in conversations controls whether they guide her replies. These stay saved until deleted or you Forget all.'),
       h('div', { class: 'list' }, ...data.state.tastes.map(tasteCard), tasteCard())),
     group('Ongoing projects', h('p', { class: 'hint' }, 'Keeps the latest state you actually reported. Occasional follow-ups fit into a greeting or relevant conversation. Paused, completed and dismissed topics stay quiet; two unanswered check-ins pause further questions until you update the project.'),
       h('div', { class: 'list' }, ...data.state.threads.map(threadCard), threadCard())),
-    group('Retired lines', h('p', { class: 'hint' }, 'Say “don’t say that again,” use the bubble’s ⊘ button, or retire a phrase here. These speech preferences stay in place until you restore them, even with personal memory off.'),
+    group('Retired lines', h('p', { class: 'hint' }, 'Retire an exact authored line here or from its bubble. Generated replies have feedback buttons in Chat. Older retired expressions are preserved until restored.'),
       h('div', { class: 'list' }, ...data.retired.map(item => h('div', { class: 'item' }, h('div', { class: 'txt' }, item.text), btn('Restore line', () => run(() => api.invoke('dialogue:restore', item.id)), 'quiet')))),
       line, btn('Retire line', () => run(() => api.invoke('dialogue:retire', line.value)), 'quiet')),
   ];

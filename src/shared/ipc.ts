@@ -1,3 +1,4 @@
+import type { SpeechOrigin, FeedbackKind } from '../core/performance';
 // Typed IPC contract shared by main, preload and renderers.
 import type { Mood, LifeEvent } from './personality';
 import type { Settings, ToolName, Policy } from './settings';
@@ -8,7 +9,7 @@ export interface ChatMessage {
   role: ChatRole;
   content: string;
   ts: number;
-  meta?: { provider?: string; error?: string; interrupted?: boolean; actionStatus?: string; private?: boolean; contextSources?: string[] };
+  meta?: { speech?:SpeechOrigin; provider?: string; error?: string; interrupted?: boolean; actionStatus?: string; private?: boolean; contextSources?: string[] };
 }
 
 export interface MemoryRevision {
@@ -42,7 +43,7 @@ export interface ActionResult { id: string; ok: boolean; summary: string; data?:
 
 /** Coarse status shown on the character + panel */
 export type AssistantPhase = 'idle' | 'listening' | 'transcribing' | 'thinking' | 'speaking' | 'error' | 'offline';
-export interface BubbleState { text: string; phase: AssistantPhase; composer: boolean; side: 'left' | 'right'; tail?: { x: number; y: number }; startedAt?: number; delivery?: 'aside' | 'reply'; company?: string; previous?: {id:string;text:string;fading?:boolean}[]; maxHeight?:number; fading?:boolean }
+export interface BubbleState { speech?:SpeechOrigin; text: string; phase: AssistantPhase; composer: boolean; side: 'left' | 'right'; tail?: { x: number; y: number }; startedAt?: number; delivery?: 'aside' | 'reply'; company?: string; previous?: {id:string;text:string;fading?:boolean}[]; maxHeight?:number; fading?:boolean }
 
 /** Cues the main process sends to the character renderer */
 export type CharacterCue =
@@ -203,6 +204,7 @@ export interface InvokeMap {
   'relationship:thread': [{ id?: string; title: string; summary: string; status: import('./relationship').ThreadStatus }, import('./relationship').ProjectThread];
   'relationship:status': [{ id: string; status: import('./relationship').ThreadStatus; snoozeDays?: number }, void];
   'relationship:remove': [{ kind: 'taste' | 'thread'; id: string }, void];
+  'dialogue:feedback': [{messageId:string;kind:FeedbackKind}, void];
   'dialogue:retire': [string, import('./relationship').RetiredLine];
   'dialogue:restore': [string, void];
   'dialogue:scene': [void, import('./conversationScene').ConversationSceneState];
@@ -271,7 +273,7 @@ export const INVOKE_CHANNELS: InvokeChannel[] = [
   'settings:get', 'settings:set', 'settings:reset', 'secrets:status', 'secrets:set', 'secrets:delete',
   'chat:send', 'chat:stop', 'chat:state', 'chat:history', 'chat:clear', 'memory:list', 'memory:add', 'memory:approve',
   'memory:undo', 'memory:update', 'memory:delete', 'memory:clear', 'memory:patterns', 'memory:clearPatterns', 'notes:list', 'notes:delete', 'reminders:list', 'reminders:cancel',
-  'relationship:get', 'relationship:taste', 'relationship:thread', 'relationship:status', 'relationship:remove', 'dialogue:retire', 'dialogue:restore',
+  'relationship:get', 'relationship:taste', 'relationship:thread', 'relationship:status', 'relationship:remove', 'dialogue:retire', 'dialogue:restore', 'dialogue:feedback',
   'dialogue:scene', 'dialogue:clearScene',
   'personal:get', 'personal:manage', 'personal:clear',
   'honcho:status', 'honcho:sync', 'honcho:rebuild',

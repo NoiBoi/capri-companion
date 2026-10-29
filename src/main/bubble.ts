@@ -140,11 +140,11 @@ export class BuddyBubble {
   }
   hide() { this.visible = false;this.hoveredAt=0;this.state.fading=false; this.previous=[];this.syncStack(); if (this.window && !this.window.isDestroyed()) conceal(this.window); }
   dismiss() { this.dismissed = true; this.state.composer = false; this.hide(); }
-  begin() { this.archive();this.id = ''; this.state.text = ''; this.state.delivery = 'reply'; this.state.startedAt = Date.now(); this.dismissed = false; if (this.timer) clearTimeout(this.timer); }
+  begin() { this.state.speech=undefined; this.archive();this.id = ''; this.state.text = ''; this.state.delivery = 'reply'; this.state.startedAt = Date.now(); this.dismissed = false; if (this.timer) clearTimeout(this.timer); }
   phase(p: AssistantPhase) { if (p === 'thinking' && !this.state.startedAt) this.state.startedAt = Date.now(); this.state.phase = p; if (p === 'thinking' || p === 'listening' || p === 'transcribing') this.show(); else this.send(); }
-  delta(id: string, text: string) { if (this.id !== id) { this.archive();this.id = id; this.state.text = ''; } this.state.text = (this.state.text + text).slice(-20000); this.show(); }
-  done(message: ChatMessage) { if(this.id!==message.id)this.archive();this.id = message.id; this.state.delivery = 'reply'; this.state.text = this.d.filterText?.(message.content) ?? message.content; this.state.phase = message.meta?.error ? 'error' : 'idle'; this.state.startedAt = undefined; const shown = !!this.state.text && this.show(); this.expire(); return shown; }
-  remark(text: string) { text = this.d.filterText?.(text) ?? text; if (this.state.composer || !text.trim()) return false; this.archive();this.id='';this.dismissed = false; this.state.delivery = 'aside'; this.state.startedAt = undefined; this.state.text = text; this.state.phase = 'idle'; const shown = this.show(); this.expire(); return shown; }
+  delta(id: string, text: string) { this.state.speech={kind:'generated-direct'}; if (this.id !== id) { this.archive();this.id = id; this.state.text = ''; } this.state.text = (this.state.text + text).slice(-20000); this.show(); }
+  done(message: ChatMessage) { this.state.speech=message.meta?.speech; if(this.id!==message.id)this.archive();this.id = message.id; this.state.delivery = 'reply'; this.state.text = this.d.filterText?.(message.content) ?? message.content; this.state.phase = message.meta?.error ? 'error' : 'idle'; this.state.startedAt = undefined; const shown = !!this.state.text && this.show(); this.expire(); return shown; }
+  remark(text: string,speech?:import('../core/performance').SpeechOrigin) { this.state.speech=speech; text = this.d.filterText?.(text) ?? text; if (this.state.composer || !text.trim()) return false; this.archive();this.id='';this.dismissed = false; this.state.delivery = 'aside'; this.state.startedAt = undefined; this.state.text = text; this.state.phase = 'idle'; const shown = this.show(); this.expire(); return shown; }
   resize(height: number) {
     if (!this.window || this.window.isDestroyed()) return;
     const h = Math.min(this.state.maxHeight??1200, Math.max(76, Math.ceil(height / 2) * 2));

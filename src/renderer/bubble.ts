@@ -55,6 +55,7 @@ function render(next: BubbleState) {
   card.hidden=!state.text&&state.phase==='idle'&&!state.composer&&!selected;
   document.body.dataset.compact = String(state.delivery === 'aside' && state.phase === 'idle' && !state.composer && state.text.length <= 180);
   const busy = ['thinking', 'transcribing', 'listening'].includes(state.phase);
+  document.getElementById('retire')!.hidden=state.speech?.kind!=='authored'||!!selected;
   (document.getElementById('retire') as HTMLButtonElement).disabled = !state.text || busy || state.phase === 'error';
   const elapsed = Math.max(0, Math.floor((Date.now() - (state.startedAt ?? Date.now())) / 1000));
   const display = transmissionStatus(state.phase, !!state.text, elapsed);

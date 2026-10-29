@@ -139,7 +139,7 @@ export class Conversation {
         if (ctrl.signal.aborted) throw new ProviderError('Stopped.', 'aborted');
         this.d.emit('chat:delta', { messageId: replyId, delta: visible });
         if (speak) this.say(replyId, utterance++, visible);
-        const message: ChatMessage = { id: replyId, role: 'assistant', content: visible, ts: Date.now(), meta: { provider: 'companion', private: this.privateTurn } };
+        const message: ChatMessage = { id: replyId, role: 'assistant', content: visible, ts: Date.now(), meta: { speech:{kind:'action-result'}, provider: 'companion', private: this.privateTurn } };
         this.d.history.append(message); this.d.emit('chat:done', { message });
         this.d.onAssistantMessage?.(message, userMessageId);
         if (this.phase !== 'speaking') this.setPhase('idle');
@@ -230,7 +230,7 @@ export class Conversation {
         if (fallback) { visible = fallback; this.d.emit('chat:delta', { messageId: replyId, delta: fallback }); if (speak) this.say(replyId, utterance++, fallback); }
       }
       this.d.onProviderResult?.(true, provider.name);
-      const msg: ChatMessage = { id: replyId, role: 'assistant', content: visible.trim(), ts: Date.now(), meta: { provider: provider.name, private: this.privateTurn, contextSources: sources } };
+      const msg: ChatMessage = { id: replyId, role: 'assistant', content: visible.trim(), ts: Date.now(), meta: { speech:{kind:'generated-direct'}, provider: provider.name, private: this.privateTurn, contextSources: sources } };
       this.d.history.append(msg);
       this.d.emit('chat:done', { message: msg });
       this.d.onAssistantMessage?.(msg, userMessageId);
@@ -244,7 +244,7 @@ export class Conversation {
       const err = aborted ? undefined : friendlyError(e);
       if (!aborted) { this.d.log.warn('turn failed', { provider: provider?.name ?? s.ai.provider, error: e as Error }); this.d.onProviderResult?.(false, provider?.name ?? s.ai.provider, e); }
       const content = visible.trim() || (aborted ? '' : err!);
-      const msg: ChatMessage = { id: replyId, role: 'assistant', content, ts: Date.now(), meta: { provider: provider?.name ?? s.ai.provider, error: err, interrupted: aborted, private: this.privateTurn, contextSources: sources } };
+      const msg: ChatMessage = { id: replyId, role: 'assistant', content, ts: Date.now(), meta: { speech:{kind:'system-error'}, provider: provider?.name ?? s.ai.provider, error: err, interrupted: aborted, private: this.privateTurn, contextSources: sources } };
       if (content) this.d.history.append(msg);
       this.d.emit('chat:done', { message: msg });
       this.setPhase(aborted ? 'idle' : 'error', err);
@@ -325,7 +325,7 @@ export class Conversation {
   }
 
   private record(tool: string, status: string, text: string) {
-    const m: ChatMessage = { id: newId('x'), role: 'action', content: text, ts: Date.now(), meta: { actionStatus: status, private: this.privateTurn } };
+    const m: ChatMessage = { id: newId('x'), role: 'action', content: text, ts: Date.now(), meta: { speech:{kind:'action-result'}, actionStatus: status, private: this.privateTurn } };
     this.d.history.append(m);
     this.d.emit('chat:message', { message: m });
   }

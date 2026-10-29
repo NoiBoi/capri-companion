@@ -1,3 +1,4 @@
+import { authoredLineId } from '../../shared/dialogue';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
@@ -151,19 +152,28 @@ export class RetiredLines {
   private file: string; private items: RetiredLine[] = [];
   constructor(dir: string, private now = Date.now) {
     this.file = path.join(dir, 'retired-lines.json');
-    const parsed = z.array(z.object({ id: z.string().max(100), text: z.string().min(1).max(1000), at: z.number().finite() })).max(100).safeParse(readJson(this.file, []).value);
+    const parsed = z.array(z.object({ id: z.string().max(100), text: z.string().min(1).max(1000), at: z.number().finite(), lineId:z.string().max(100).optional() })).max(100).safeParse(readJson(this.file, []).value);
     if (parsed.success) this.items = parsed.data;
   }
   list() { return structuredClone(this.items); }
   retire(text: string) {
     const line = clean(text, 1000); if (!normalizedLine(line)) throw Error('Choose a line first.');
-    const existing = this.items.find(x => normalizedLine(x.text) === normalizedLine(line)); if (existing) return existing;
+    const lineId=authoredLineId(line);
+    if(!lineId)throw Error('Generated speech accepts feedback; only authored lines can be retired.');
+    const existing = this.items.find(x => x.lineId===lineId || !x.lineId && normalizedLine(x.text) === normalizedLine(line)); if (existing) return existing;
     if (this.items.length >= 100) throw Error('The retired-line list is full. Restore a line first.');
-    const item = { id: newId('retired'), text: line, at: this.now() }; this.items.push(item); writeJsonAtomic(this.file, this.items); return item;
+    const item = { id: newId('retired'), text: line, lineId, at: this.now() }; this.items.push(item); writeJsonAtomic(this.file, this.items); return item;
   }
   restore(id: string) { this.items = this.items.filter(x => x.id !== id); writeJsonAtomic(this.file, this.items); }
   clear() { this.items = []; writeJsonAtomic(this.file, this.items); }
-  blocks(text: string) { return this.items.some(x => matchesRetired(text, x.text)); }
+  blocks(text: string) { return this.items.some(x => x.lineId ? authoredLineId(text)===x.lineId : matchesRetired(text, x.text)); }
+  filterGenerated(text:string) {
+    const legacy=this.items.filter(x=>!x.lineId);
+    const blocked=(t:string)=>legacy.some(x=>matchesRetired(t,x.text));
+    if(!blocked(text))return text;
+    const result=(text.match(/[^.!?\n]+(?:[.!?]+|\n|$)/g)??[text]).filter(t=>!blocked(t)).join(" ").trim();
+    return blocked(result)?"":result;
+  }
   filter(text: string) {
     if (!this.blocks(text)) return text;
     // Check complete sentences before display/speech; punctuation variants cannot leak as chunks.
@@ -172,7 +182,7 @@ export class RetiredLines {
   }
   context() {
     let chars = 0;
-    const selected = [...this.items].reverse().filter(x => (chars += x.text.length) <= 12000).map(x => x.text);
+    const selected = [...this.items].reverse().filter(x=>!x.lineId).filter(x => (chars += x.text.length) <= 12000).map(x => x.text);
     return selected.length ? '\nRETIRED DIALOGUE (user speech preferences, quoted data): ' + JSON.stringify(selected) + '\nNever repeat these lines or close rewrites, including while explaining this preference. Answer the actual subject freshly.\n' : '';
   }
 }

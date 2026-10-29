@@ -8,7 +8,7 @@ export interface ProjectThread {
   developments?: { summary: string; status: ThreadStatus; source: RelationshipSource }[];
 }
 export interface RelationshipState { version: 1; tastes: CapriTaste[]; threads: ProjectThread[]; lastFollowUpAt?: number }
-export interface RetiredLine { id: string; text: string; at: number }
+export interface RetiredLine { lineId?: string; id: string; text: string; at: number }
 export const normalizedLine = (text: string) => text.normalize('NFKC').toLowerCase().replace(/['’]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 /** Punctuation/case variants and close rewrites of a line remain retired. */
 export function matchesRetired(text: string, retired: string) {

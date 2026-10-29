@@ -12,6 +12,9 @@ export interface DialogueContext {
   waking?: boolean;
   familiarTouch?: boolean;
 }
+const authoredCatalog = new Map<string,string>();
+export function authoredLineId(text:string):string|undefined { return authoredCatalog.get(text.trim()); }
+function registerAuthored(text:string) { let hash=2166136261;for(const c of text)hash=Math.imul(hash^c.charCodeAt(0),16777619);const id='authored.'+(hash>>>0).toString(16);authoredCatalog.set(text.trim(),id);return id; }
 interface Beat {
   id: string; event: DialogueEvent; intent: DialogueIntent;
   starts: readonly string[]; ends?: readonly string[];
@@ -186,6 +189,7 @@ export class DialogueDirector {
     const source = contextBeat.length ? contextBeat : purposeful.length ? purposeful : tailored.length ? tailored : DIALOGUE_BEATS;
     const candidates = source.filter(b => b.event === c.event && (!b.when || b.when(c))).flatMap(b =>
       b.starts.flatMap(start => (b.ends ?? ['']).map(end => ({ beat: b, text: `${start}${end ? ' ' + end : ''}`.replace('{name}', c.name ?? '') }))));
+    for(const c of candidates)registerAuthored(c.text);
     let pool = candidates.filter(x => this.allowed(x.text) && !recent.some(line => similarDialogue(x.text, line)));
     // Exhaustion relaxes old history, never the last few lines. Optional moments can be silent.
     if (!pool.length && options.required) pool = candidates.filter(x => this.allowed(x.text) && !recent.slice(-6).some(line => similarDialogue(x.text, line)));
@@ -213,7 +217,7 @@ export class DialogueDirector {
   acceptGenerated(raw: string, c: DialogueContext, intent: DialogueIntent, options: { remember?: boolean } = {}): string {
     const text = cleanGeneratedDialogue(raw);
     if (repeatedUnresolvedThought(text, this.recent().filter(h => this.now() - h.at < 20 * 60000).slice(-8).map(h => h.text))) return '';
-    if (!text || !this.allowed(text) || [...this.recent().slice(-12).map(h => h.text), ...(c.recent ?? [])].some(line => similarDialogue(text, line))) return '';
+    if (!text || [...this.recent().slice(-12).map(h => h.text), ...(c.recent ?? [])].some(line => similarDialogue(text, line))) return '';
     if (options.remember !== false) this.remember(text, c, intent);
     return text;
   }
@@ -235,7 +239,7 @@ export function cleanGeneratedDialogue(raw: string): string {
   if (!text || /<[^>]*>|^Capri\s*:/i.test(text) || text.length > 420 || text.split(/\s+/).length > 50) return '';
   if (/\b(as an ai|how can i (?:help|assist)|magnificen\w*|front.row seat|better angle|new vantage point|supply your own chaos)\b/i.test(text)) return '';
   if (/keeps? (?:pulling|drawing) you back|you keep (?:coming|going|returning) back|you (?:weren't|were not) finished/i.test(text)) return '';
-  return text;
+  return text.replace(/\s*[—–]\s*/g,', ');
 }
 export const companionDialogue = new DialogueDirector();
 
@@ -340,3 +344,5 @@ export class WaitingDialogue {
     return elapsed >= 15 ? this.late : this.early;
   }
 }
+
+for(const b of DIALOGUE_BEATS)for(const start of b.starts)for(const end of b.ends??[''])registerAuthored(`${start}${end?' '+end:''}`);

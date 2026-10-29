@@ -100,8 +100,8 @@ describe('retired dialogue', () => {
     expect(lineRetirementRequest('Why do people say "never say that again"?')).toBeNull();
   });
   it('persists case/punctuation-insensitive exclusions and restores lines explicitly', () => {
-    const dir = tmpDir(), store = new RetiredLines(dir);
-    const line = store.retire("Well, that's my argument ruined.");
+    const dir = tmpDir();fs.writeFileSync(path.join(dir,'retired-lines.json'),JSON.stringify([{id:'legacy',text:"Well, that's my argument ruined.",at:1}]));const store=new RetiredLines(dir);
+    const line=store.list()[0];
     expect(store.filter("WELL. That's my argument ruined! The answer is 408.")).not.toContain('argument');
     expect(store.filter("Well, that's my argument ruined. The answer is 408.")).toBe('The answer is 408.');
     const restored = new RetiredLines(dir); expect(restored.blocks("Well that's my argument ruined!")).toBe(true);
@@ -112,10 +112,10 @@ describe('retired dialogue', () => {
     const director = new DialogueDirector(() => .5); director.setLineFilter(text => !retired.blocks(text));
     const line = director.choose({ event: 'pat' }, { required: true }); retired.retire(line);
     for (let i = 0; i < 80; i++) expect(director.choose({ event: 'pat' }, { required: true })).not.toBe(line);
-    expect(director.acceptGenerated(line, { event: 'pat' }, 'delight')).toBe('');
+    expect(retired.filterGenerated(line)).toBe(line);
   });
   it('holds streamed chunks until checked and rewrites an entirely blocked answer once', async () => {
-    const dir = tmpDir(), retired = new RetiredLines(dir); retired.retire('Your timing is suspiciously good.');
+    const dir = tmpDir();fs.writeFileSync(path.join(dir,'retired-lines.json'),JSON.stringify([{id:'legacy',text:'Your timing is suspiciously good.',at:1}]));const retired=new RetiredLines(dir);
     const { ctx, s } = makeCtx({}, dir); s.voice.ttsEnabled = true;
     const history = new HistoryStore(dir, () => 0, () => true), events: { ch: string; p: any }[] = [], said: string[] = []; let calls = 0;
     const provider = { name: 'mock', local: true, async *stream() { calls++; for (const char of calls === 1 ? 'Your timing is suspiciously good.' : 'I vote for the red one.') yield char; }, async test() { return { ok: true, detail: '' }; }, async listModels() { return []; } };

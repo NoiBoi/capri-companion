@@ -6,6 +6,7 @@ export interface DialogueState {
   version: 1; subject: string; direction: string; position?: Quote; previousPosition?: Quote;
   reasoning?: Quote; questions: (Quote & { status: 'open' | 'answered' | 'abandoned' })[];
   changes: Quote[]; status: 'active' | 'resolved' | 'abandoned' | 'saturated'; updatedAt: number;
+  closedSubjects?:{terms:string[];at:number}[];
 }
 const initial = (): DialogueState => ({version:1,subject:'',direction:'Continue the current exchange.',questions:[],changes:[],status:'active',updatedAt:0});
 /** Small operational state. Learned tastes remain exclusively in RelationshipStore. */
@@ -26,9 +27,17 @@ export class DialogueCognition {
     const s=this.state;
     if(message.role==='user') {
       const correction=/\b(actually|you['’]?re wrong|that['’]?s wrong|changed my mind|correction|instead)\b/i.test(text);
-      const exhausted=/\b(stop (?:talking|asking|repeating)|keep (?:saying|bringing|repeating)|repetitive|drop (?:it|that|this)|enough (?:about|of))\b/i.test(text);
+      const exhausted=/\b(stop (?:talking|asking|repeating|commenting|mentioning)|keep (?:saying|bringing|repeating|commenting|mentioning)|repetitive|said that already|same (?:remark|comment|question|thing)|drop (?:it|that|this)|enough (?:about|of))\b/i.test(text);
       const transition=/\b(?:new (?:topic|subject)|(?:let['’]?s |back to |return to |switch to ).{3,})/i.test(text);
       const resolved=/\b(?:that (?:answers|settles) it|we['’]?re done|resolved|never mind|nevermind)\b/i.test(text);
+      const terms=(v:string)=>v.toLowerCase().match(/[a-z]{3,}/g)?.filter(w=>!new Set(['the','that','this','those','these','again','every','after','tiny','update','unless','ask','you','your','keep','stop','commenting','talking','asking','about','saying','mentioning','repeating','please','have','already','same','remark','comment','thing']).has(w))??[];
+      s.closedSubjects=(s.closedSubjects??[]).filter(c=>message.ts-c.at<24*3600000);
+      if(exhausted) {
+        const named=/(?:\babout|\bon|\bmentioning|\brepeating|\bbringing up)\s+(.+?)(?:[.!?]|\s+(?:after|unless|every)\b|$)/i.exec(text)?.[1];
+        const subjectTerms=terms(named??'');
+        if(subjectTerms.length)s.closedSubjects.push({terms:subjectTerms.slice(0,6),at:message.ts});
+        s.closedSubjects=s.closedSubjects.slice(-8);
+      } else s.closedSubjects=s.closedSubjects.filter(c=>!c.terms.some(t=>terms(text).includes(t)));
       if(correction||exhausted||transition||resolved) {
         s.changes.push(quote(text));s.changes=s.changes.slice(-5);
         s.direction=exhausted?'Change the subject or answer the new request. Do not revive the exhausted thought.':correction?'Reconsider the prior position using this correction. Keep only supported reasoning.':resolved?'The preceding exchange is closed. Follow the next user lead.':'Follow the explicitly changed subject.';
@@ -50,6 +59,16 @@ export class DialogueCognition {
       s.questions=s.questions.slice(-6);
     }
     s.updatedAt=message.ts;this.store.save('dialogue-cognition',s);
+  }
+  /** A bounded conversational closure, not a permanent generated-text blacklist.
+   * Explicit user reopening removes the closure before the next response. */
+  filterContinuation(text:string) {
+    const closed=(this.state.closedSubjects??[]).filter(c=>this.now()-c.at<24*3600000);
+    if(!closed.length)return text;
+    return (text.match(/[^.!?\n]+(?:[.!?]+|\n|$)/g)??[text]).filter(sentence=>{
+      const words:string[]=Array.from(sentence.toLowerCase().match(/[a-z]{3,}/g)??[]);
+      return !closed.some(c=>c.terms.some(t=>words.includes(t)));
+    }).join(' ').trim();
   }
   context() {
     if(!this.retain())return '';
