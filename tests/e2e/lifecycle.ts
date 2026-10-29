@@ -9,6 +9,13 @@ export async function closeIsolatedApp(app: ElectronApplication | undefined, kno
   try {
     await Promise.race([app.evaluate(({ app: electronApp }) => electronApp.quit()).catch(() => {}), new Promise<void>(resolve => { timer = setTimeout(resolve, 5000); })]);
   } finally { clearTimeout(timer); }
+  // app.quit() can acknowledge before Chromium flushes Local State (including
+  // the OS-encrypted credential key). Allow the owned child to exit normally.
+  if (child.exitCode === null && child.signalCode === null) {
+    try {
+      await Promise.race([new Promise<void>(resolve => child.once('exit', () => resolve())), new Promise<void>(resolve => { timer = setTimeout(resolve, 5000); })]);
+    } finally { clearTimeout(timer); }
+  }
   if (child.exitCode === null && child.signalCode === null) {
     // Playwright launches through cmd.exe on Windows. Killing only that wrapper
     // leaves its Electron child alive and holding the synthetic profile open.

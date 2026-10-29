@@ -134,6 +134,23 @@ export interface CharacterEvents {
 /** invoke() channels from either renderer to main */
 export interface InvokeMap {
   'life:draft': [{id:string;draft:import('./lifeContext').LifeDraft},void];
+  'life:stage3': [void, import('./communications').Stage3View];
+  'life:stage3Setup': [import('./communications').Stage3Settings, import('./communications').Stage3View];
+  'life:accountAuth': [string,void];
+  'life:accountChoices': [string,import('./communications').Stage3View];
+  'life:accountSync': [string,void];
+  'life:botKey': [string,void];
+  'life:academic': [import('zod').infer<typeof import('./communications').AcademicImport>,number];
+  'life:academicFile': [void,number];
+  'life:forgetEntity': [string,void];
+  'life:exclude': [{source:string;recordId:string},void];
+  'life:stage2': [void, import('./lifeContext').Stage2View];
+  'life:stage2Setup': [import('./lifeContext').Stage2Settings, import('./lifeContext').Stage2View];
+  'life:stage2Key': [{key:'googleClient'|'googleClientSecret'|'lastfmKey';value:string},void];
+  'life:googleAuth': [void,void];
+  'life:calendars': [void,import('./lifeContext').Stage2View];
+  'life:sync': [string,void];
+  'life:locationKey': [void,{username:string;password:string;persistent:boolean}];
   'life:get': [void, import('./lifeContext').LifeView];
   'life:configure': [import('./lifeContext').LifeSourceConfig, import('./lifeContext').LifeView];
   'life:addProject': [void, import('./lifeContext').LifeView];
@@ -244,7 +261,7 @@ export interface InvokeMap {
 }
 export type InvokeChannel = keyof InvokeMap;
 export const INVOKE_CHANNELS: InvokeChannel[] = [
-  'life:draft', 'life:get', 'life:configure', 'life:addProject', 'life:pair', 'life:forget', 'life:clear', 'life:associate', 'life:candidate', 'life:correct',
+  'life:draft', 'life:stage3', 'life:stage3Setup', 'life:accountAuth', 'life:accountChoices', 'life:accountSync', 'life:botKey', 'life:academic', 'life:academicFile', 'life:exclude', 'life:forgetEntity', 'life:stage2', 'life:stage2Setup', 'life:stage2Key', 'life:googleAuth', 'life:calendars', 'life:sync', 'life:locationKey', 'life:get', 'life:configure', 'life:addProject', 'life:pair', 'life:forget', 'life:clear', 'life:associate', 'life:candidate', 'life:correct',
   'dev:absence',
   'bubble:reply',
   'dev:get', 'dev:run', 'dev:stop',
@@ -274,5 +291,5 @@ export const EVENT_CHANNELS = [
   'bubble:focus',
 ] as const;
 
-export const SECRET_KEYS = ['gemini', 'openai', 'anthropic', 'openaiVoice', 'lifeBridge'] as const;
+export const SECRET_KEYS = ['gemini', 'openai', 'anthropic', 'openaiVoice', 'lifeBridge', 'googleClient', 'googleClientSecret', 'googleRefresh', 'lastfmKey', 'owntracksBasic','lifeOAuth0','lifeOAuth1','lifeOAuth2','lifeOAuth3','lifeOAuth4','lifeOAuth5','discordBot'] as const;
 export type SecretKey = (typeof SECRET_KEYS)[number];

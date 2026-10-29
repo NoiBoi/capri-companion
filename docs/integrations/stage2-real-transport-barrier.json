@@ -1,0 +1,8 @@
+{
+  "synthetic": true,
+  "packaged": true,
+  "actualSourceImport": true,
+  "immediateRecallBlocked": true,
+  "deletion": "accepted by server; pending actual removal; durable tombstone retained",
+  "modelDerivation": "Not verified: existing local adapter allowance 64/64."
+}

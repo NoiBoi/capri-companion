@@ -1,0 +1,10 @@
+{
+  "observations": 180,
+  "ingestMs": 32,
+  "cpuMs": 47,
+  "current": 24,
+  "packaged": true,
+  "synthetic": true,
+  "ingestionModelRequests": 0,
+  "fixtureChatMs": 75
+}

@@ -1,4 +1,4 @@
-export interface SceneEntry { id: string; role: 'user' | 'assistant'; text: string; at: number; event?: string }
+export interface SceneEntry { id: string; role: 'user' | 'assistant'; text: string; at: number; event?: string; contextSources?:string[] }
 export interface SceneReading {
   topic: string; position: string; intention: string; openQuestion: string; tone: 'ordinary' | 'playful' | 'quiet' | 'serious';
   evidence: string; sourceId: string;

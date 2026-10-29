@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-28T23:13:21.770Z",
+  "provider": "codex",
+  "scope": "Exactly two first attempts with synthetic schedule, project, phone and music evidence. No personal profile, history, memories, source data or credentials copied. All results, including failures and silence, retained.",
+  "results": [
+    {
+      "kind": "chat",
+      "message": {
+        "id": "amvsqd87q26of9r",
+        "role": "assistant",
+        "content": "That sounds like the right split: keep the reference model stable, and let experimental data live in its own lane so comparisons don’t quietly rewrite your baseline. Just make the link between them explicit, or you’ll end up chasing which version produced each result.",
+        "ts": 1793229208411,
+        "meta": {
+          "provider": "codex",
+          "private": false,
+          "contextSources": [
+            "calendar",
+            "owntracks",
+            "lastfm"
+          ]
+        }
+      }
+    },
+    {
+      "kind": "optional",
+      "result": {
+        "interpretation": "The user has already shared that the review ran long and they chose an approach; the model-versus-experimental-data split is the live topic.",
+        "interest": null,
+        "action": "silent",
+        "line": "",
+        "gesture": "none",
+        "reason": "No new detail to add after the prior answer, and the synthetic records do not establish attendance or an outcome.",
+        "delivered": false
+      },
+      "failure": null
+    }
+  ]
+}

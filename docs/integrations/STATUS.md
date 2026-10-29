@@ -1,3 +1,57 @@
+# Stage 3 status: Capri 0.6.0
+
+Outlook is the user's email service. Outlook and Teams lead the setup flow; Gmail is implemented as an optional disconnected adapter, with no setup required for this user.
+
+| Capability | Implemented status | Real account requirements / limits |
+|---|---|---|
+| Shared evidence, entities, context and initiative | Extended and fixture-tested | Works with every external source disconnected |
+| Chrome / local projects | Preserved, independent direct/proactive controls | Extension grants / explicit folders remain optional |
+| Google Calendar / Last.fm / OwnTracks | Preserved | OAuth/API key/phone/Tailscale setup still optional |
+| Outlook (two account slots) | Read-only OAuth/PKCE, selected folders/senders, metadata, selected bodies, delta sync, exclusions | Entra registration and delegated Mail.ReadBasic; optional Mail.Read for selected bodies; tenant policy unverified |
+| Teams (two account slots) | Delegated selected chats/channels, revisions, bounded pages/replies, exclusions | Chat.Read; optional ChannelMessage.Read.All; actual institutional consent may block access |
+| Gmail (two slots, optional) | Desktop PKCE, selected labels, metadata/history sync and selected bodies | User does not use Gmail; leave disconnected. No successful real authorization claimed |
+| Gradescope | Notification-email classification, approved Chrome/Calendar and explicit manual records/imports | Direct supported public student API not established; no private endpoints or unattended scraping |
+| Discord local | Windows running/foreground and configured game foreground metadata | No account login; no call/speech/gameplay inference |
+| Discord bot | Selected authorized guild text/threads and optional one-guild voice membership | Real bot/server/channel permissions and possibly Message Content approval; DMs/general calls/speech detection unsupported |
+| Source learning | Existing HonchoMemory reused for opt-in aggregates and independent erasure | No communication text/addresses/grades or Discord content exported. Existing local adapter allowance previously exhausted; derivation not assumed |
+| Privacy | Separate direct/proactive use, exclusions, retained history, pause/forget, dependent cache blocking | Source-informed Chat stays visible but is excluded from automatic recall/learning |
+
+The consolidated setup is [FINAL_SETUP.md](FINAL_SETUP.md). No external account access or phone setup was requested during implementation. Synthetic account success is not a real connectivity claim.
+
+## Actual Stage 3 verification
+
+- Deterministic: TypeScript passed; 61 unit files / 610 tests passed. Includes 19 Stage 3 cases for OAuth/PKCE/state, metadata/body permissions, Outlook delta/tombstones/immutable IDs, selected Teams messages/replies, exclusions, Discord bot/local boundaries, academic states, cross-source history/fairness, account outages, quotas and independent Honcho barriers.
+- Source Electron regression: 21 passed, three conditional skips. Final packaged integration regression: 27 passed, three conditional skips. Separate packaged load test passed, five movement/touch cases passed, and isolated native focus/actual typing/Escape restoration passed. Fixture credentials and simulated records used only synthetic profiles; the production profile was never populated with them.
+- Package verification: all 12 ASAR/resource/native-module/profile-exclusion checks passed. Installer and portable package built at 0.6.0.
+- Packaged fixture load: 180 observations across six sources, 32ms ingestion / 47ms main-process CPU, zero ingestion model calls, 24 fairly selected current records and a 75ms next fixture reply. These measurements are not real-provider latency guarantees.
+- Real model: exactly two first Codex attempts on synthetic multi-source context are preserved unchanged. Chat respected the explicit not-yet-run comparison. The optional reply made a contextual design remark, but partly repeated the preceding answer. No broad personality/quality claim follows from two outputs.
+- Real local service: Honcho health still reports 64/64 adapter requests used. No limit reset/bypass or successful new derivation is claimed. Existing Stage 2 real transport evidence and pending-deletion barriers remain applicable; Stage 3 aggregate summaries and offline/async erasure were deterministically verified using the same HonchoMemory implementation.
+- Awaiting authorization/live testing: real Outlook/Teams/optional Gmail OAuth and organization access, Discord bot/server/voice permissions, and postponed Stage 1-2 setup. Missing setup is expected and not a test failure. Tenant restrictions are possible but have not been asserted as an actual Purdue denial.
+- Unsupported: direct Gradescope public student API was not established; alternative email/Calendar/Chrome/manual paths are implemented. General Discord client calls/DMs/speech/activity scraping are unavailable; no unsupported workaround is used.
+
+Machine-readable evidence: stage3-verification.json. Ordinary NSIS installer exited 0 and installed ASAR matches the tested package. Two checks against the actual installation passed with isolated unconfigured/test profiles. Production runtime reports 0.6.0, Codex connected, 40 approved memories. Memory/credential/relationship hashes, Chat history prefix and settings apart from position are preserved. Native Honcho workspace identity preserved: True. Normal desktop shortcut targets the verified executable and full relaunch loaded the same profile with known name available; character ready in 616ms for that launcher run. Rollback package: `C:\Users\matth\Documents\Codex\2026-10-25\i-x20\outputs\Capri\release\rollback-before-stage3-0.6.0-20261028-205548`. Stopped-profile backup: `C:\Users\matth\Documents\Codex\2026-10-28\files-pasted-by-the-user-capri-2\work\profile-before-stage3-0.6.0-20261028-205548`. New sources remain disconnected; existing Chrome/project sources are preserved.
+
+ Historical Stage 2 results below apply only to their stated build.
+
+# Stage 2 status: Capri 0.5.0
+
+Implemented Google Calendar read-only desktop OAuth/PKCE, selected calendars, expanded recurrence and incremental sync; Last.fm recent/history/favorites with bounded caching and deduplication; disabled-by-default authenticated OwnTracks loopback receiver, named places, drift-aware proximity/dwell, delayed-report handling; shared evidence/entity context and existing initiative; independent opt-in summarized Honcho learning and source erasure; Connections setup and diagnostics. Existing Stage 1 functionality and user stores are preserved.
+
+User setup is required. No Google, Last.fm, Spotify Scrobbling, Tailscale or iPhone authorization/delivery has been claimed. See [numbered setup checklist](STAGE2-SETUP.md). Network failures back off; authorization failures clear stale source evidence. Phone proximity is not attendance/activity, schedule entries are not outcomes, and music metadata is not audio analysis or Capri preference.
+
+## Stage 2 verification
+
+- TypeScript passed. Full unit suite: 60 files, 591 tests passed.
+- Final packaged integration suites: 22 passed, 3 conditional skips. These cover real loopback reception, renderer setup, restart persistence, source revocation, prompt inclusion, direct-chat priority and existing context/behavior paths. Fixtures do not establish real account access.
+- Packaged movement/touch checks: 5 passed. Native reply activation, actual typing and Escape restoration passed in an isolated final packaged run. A prior grouped focus case failed; the old release and new release both passed isolated checks. Earlier broad packaged runs also had transient panel/cleanup failures; final focused reruns passed. Raw reports are preserved in the delivery evidence.
+- Package layout: 12 checks passed, including ASAR/bundle hashes, Chrome resources, Koffi and absence of profile/environment files.
+- Real local Honcho source import and immediate erasure barrier passed in the packaged app. Remote deletion remains accepted/pending and is not claimed complete; durable tombstones prevent old recall. The local adapter reports 64/64 model requests used. Native and source-summary live derivation attempts timed out, so real derived understanding is unverified. No limit was reset or bypassed. Unit HTTP tests verify that a 202 deletion response is not treated as completed erasure.
+- Synthetic packaged load: 26 authenticated location requests, zero ingestion model requests, 73ms elapsed and 47ms main-process CPU in that fixture run. The next fixture chat completed in 55ms. This is a bounded fixture measurement, not a real-provider latency guarantee.
+- Exactly two first real Codex dialogue attempts on synthetic evidence are preserved in stage2-dialogue-first.json: a practical technical opinion in chat and an optional silent decision. No broad character-quality claim is made from these two outputs.
+- Calendar authorization/account access, Last.fm and Spotify Scrobbling, private tailnet/Serve and real iPhone background delivery still require the numbered setup checklist. All new adapters remain disconnected until enabled.
+
+Detailed machine-readable results: stage2-verification.json. Installed-state verification passed for 0.5.0: Codex connected, 40 approved memories, memory/credentials/relationship hashes preserved, Chat prefix and settings apart from position preserved. Native Honcho workspace preserved: True. Rollback: `C:\Users\matth\Documents\Codex\2026-10-25\i-x20\outputs\Capri\release\rollback-before-stage2-0.5.0-20261028-193603`. Profile backup: `C:\Users\matth\Documents\Codex\2026-10-28\files-pasted-by-the-user-capri-2\work\profile-before-stage2-0.5.0-20261028-193603`. Previous Stage 1 release evidence follows and applies only to the stated older builds.
+
 # Stage 1 status: Capri 0.4.1
 
 ## 0.4.1 restart, quota and pose repair

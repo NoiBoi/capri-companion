@@ -1,0 +1,287 @@
+{
+  "version": "0.6.0",
+  "date": "2026-10-29T00:55:06.929373+00:00",
+  "priority": "Outlook only for user email; Teams next; Gmail optional and disconnected.",
+  "typecheck": "passed",
+  "unit": {
+    "files": 61,
+    "passed": 610,
+    "failed": 0,
+    "skipped": 0
+  },
+  "sourceElectron": {
+    "files": 6,
+    "passed": 21,
+    "failed": 0,
+    "skipped": 3
+  },
+  "packagedElectron": {
+    "files": 7,
+    "passed": 27,
+    "failed": 0,
+    "skipped": 3
+  },
+  "packagedLoad": {
+    "files": 1,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 5
+  },
+  "packagedMovement": {
+    "files": 1,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 18
+  },
+  "packagedNativeFocus": {
+    "files": 1,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 22
+  },
+  "packageLayout": {
+    "date": "2026-10-29T00:52:34.098Z",
+    "version": "0.6.0",
+    "checks": [
+      {
+        "name": "staged app version",
+        "ok": true,
+        "detail": "0.6.0"
+      },
+      {
+        "name": "asar matches built main/index.js",
+        "ok": true
+      },
+      {
+        "name": "asar matches built preload/preload.js",
+        "ok": true
+      },
+      {
+        "name": "asar matches built renderer/panel.js",
+        "ok": true
+      },
+      {
+        "name": "extension resource matches manifest.json",
+        "ok": true
+      },
+      {
+        "name": "extension resource matches capture.js",
+        "ok": true
+      },
+      {
+        "name": "extension resource matches observe.js",
+        "ok": true
+      },
+      {
+        "name": "extension resource matches worker.js",
+        "ok": true
+      },
+      {
+        "name": "extension resource matches popup.js",
+        "ok": true
+      },
+      {
+        "name": "extension resource matches popup.html",
+        "ok": true
+      },
+      {
+        "name": "native Koffi packaged",
+        "ok": true
+      },
+      {
+        "name": "no profile/environment files in asar",
+        "ok": true
+      }
+    ],
+    "ok": true
+  },
+  "performance": {
+    "observations": 180,
+    "ingestMs": 32,
+    "cpuMs": 47,
+    "current": 24,
+    "packaged": true,
+    "synthetic": true,
+    "ingestionModelRequests": 0,
+    "fixtureChatMs": 75
+  },
+  "realModelFirstAttempts": {
+    "date": "2026-10-29T00:50:31.501Z",
+    "provider": "codex",
+    "scope": "Exactly two first attempts with synthetic Outlook, Teams, schedule, project, phone and music evidence. No personal profile, history, memories, source data or credentials copied. All results, including failures and silence, retained.",
+    "results": [
+      {
+        "kind": "chat",
+        "message": {
+          "id": "amvstu7ll2zw6xb",
+          "role": "assistant",
+          "content": "Keep the experimental data and reference model as separate inputs: don\u2019t tune or preprocess the reference to match the experimental results, and don\u2019t let the fit overwrite either source. Document their provenance, units, assumptions, and any transformations independently, then compare them using the same clearly defined fitting procedure. Since you haven\u2019t run it yet, the main trap is letting the comparison blur into a calibration step before you\u2019ve agreed what each side represents.",
+          "ts": 1793235037599,
+          "meta": {
+            "provider": "codex",
+            "private": false,
+            "contextSources": [
+              "calendar",
+              "lastfm",
+              "owntracks",
+              "outlook-0",
+              "teams-0"
+            ]
+          }
+        }
+      },
+      {
+        "kind": "optional",
+        "result": {
+          "interpretation": "The fitting comparison is still unrun, and the move gives room to keep the model and experimental data cleanly distinct.",
+          "interest": null,
+          "action": "speak",
+          "line": "Tomorrow\u2019s a better bargain than rushing the fit. Keep the reference model pristine; once it\u2019s been bent to match, you\u2019re comparing it to its own reflection.",
+          "gesture": "none",
+          "reason": "A brief opinion reinforces the key design distinction without implying the work is done.",
+          "delivered": true
+        },
+        "failure": null
+      }
+    ]
+  },
+  "realServices": {
+    "Codex": "Two bounded actual model responses on synthetic multi-source context. Not account integration access.",
+    "Honcho": "Local model adapter health reports ready, requests 64/64. No reset/bypass; new derivation not claimed."
+  },
+  "awaitingUserSetup": [
+    "Outlook/Teams Entra application and delegated consent; university restrictions not live-verified.",
+    "Chrome extension/site permissions, optional Google Calendar, Last.fm and phone/Tailscale setup.",
+    "Optional Discord bot/server/channel permissions and actual voice endpoint access."
+  ],
+  "unsupported": [
+    "Direct Gradescope public student API not established; only supported alternatives implemented.",
+    "Discord self-bots, user tokens, general DM calls, speech activity and account-wide presence."
+  ],
+  "installed": true,
+  "installedState": {
+    "date": "2026-10-29T00:56:30.943Z",
+    "runtime": {
+      "version": "0.6.0",
+      "userData": "C:\\Users\\matth\\Documents\\Capri Buddy",
+      "startupMs": 2900,
+      "approvedMemories": 40,
+      "connection": {
+        "state": "connected",
+        "provider": "codex",
+        "detail": "Codex is signed in with your existing account. Replies use your Codex usage."
+      },
+      "sources": [
+        {
+          "id": "chrome",
+          "collect": true,
+          "live": true
+        },
+        {
+          "id": "project:d15409e609fe8e04",
+          "collect": true,
+          "live": true
+        },
+        {
+          "id": "calendar",
+          "collect": false,
+          "live": false
+        },
+        {
+          "id": "lastfm",
+          "collect": false,
+          "live": false
+        },
+        {
+          "id": "owntracks",
+          "collect": false,
+          "live": false
+        },
+        {
+          "id": "gmail-0",
+          "collect": false,
+          "live": false
+        },
+        {
+          "id": "gmail-1",
+          "collect": false,
+          "live": false
+        },
+        {
+          "id": "outlook-0",
+          "collect": false,
+          "live": false
+        },
+        {
+          "id": "outlook-1",
+          "collect": false,
+          "live": false
+        },
+        {
+          "id": "teams-0",
+          "collect": false,
+          "live": false
+        },
+        {
+          "id": "teams-1",
+          "collect": false,
+          "live": false
+        },
+        {
+          "id": "discord-local",
+          "collect": false,
+          "live": false
+        },
+        {
+          "id": "discord-bot",
+          "collect": false,
+          "live": false
+        },
+        {
+          "id": "academic",
+          "collect": false,
+          "live": false
+        }
+      ],
+      "bridge": "listening"
+    },
+    "packageMatches": true,
+    "rollback": "C:\\Users\\matth\\Documents\\Codex\\2026-10-25\\i-x20\\outputs\\Capri\\release\\rollback-before-stage3-0.6.0-20261028-205548",
+    "profileBackup": "C:\\Users\\matth\\Documents\\Codex\\2026-10-28\\files-pasted-by-the-user-capri-2\\work\\profile-before-stage3-0.6.0-20261028-205548",
+    "preserved": {
+      "memory.json": true,
+      "secrets.bin": true,
+      "relationship.json": true,
+      "historyPrefix": true,
+      "settingsExceptPosition": true
+    },
+    "ok": true
+  },
+  "ordinaryInstaller": {
+    "exitCode": 0,
+    "packageMatches": true
+  },
+  "installedWithoutSetup": {
+    "passed": 2,
+    "failed": 0,
+    "unselected": 4
+  },
+  "normalLauncher": {
+    "checkedAt": "2026-10-28T20:57:18.9638531-04:00",
+    "workingDirectory": "C:\\Users\\matth\\Documents\\Codex\\2026-10-25\\i-x20\\outputs\\Capri\\release\\win-unpacked",
+    "launchAt": "2026-10-28T20:57:14.0546988-04:00",
+    "running": true,
+    "runtimeEvidence": [
+      "{\"t\":\"2026-10-29T00:56:27.311Z\",\"level\":\"info\",\"msg\":\"saved profile loaded\",\"data\":{\"userData\":\"C:\\\\Users\\\\matth\\\\Documents\\\\Capri Buddy\",\"approvedMemories\":40,\"knownName\":true,\"settingsRepairs\":[]}}",
+      "{\"t\":\"2026-10-29T00:56:29.617Z\",\"level\":\"info\",\"msg\":\"character ready\",\"data\":{\"startupMs\":2900}}",
+      "{\"t\":\"2026-10-29T00:57:14.506Z\",\"level\":\"info\",\"msg\":\"saved profile loaded\",\"data\":{\"userData\":\"C:\\\\Users\\\\matth\\\\Documents\\\\Capri Buddy\",\"approvedMemories\":40,\"knownName\":true,\"settingsRepairs\":[]}}",
+      "{\"t\":\"2026-10-29T00:57:14.921Z\",\"level\":\"info\",\"msg\":\"character ready\",\"data\":{\"startupMs\":616}}"
+    ],
+    "version": "0.6.0.0",
+    "arguments": "",
+    "target": "C:\\Users\\matth\\Documents\\Codex\\2026-10-25\\i-x20\\outputs\\Capri\\release\\win-unpacked\\Capri Buddy.exe",
+    "shortcut": "C:\\Users\\matth\\OneDrive\\Desktop\\Capri Buddy.lnk"
+  },
+  "nativeHonchoWorkspacePreserved": true,
+  "fixtureDataEnteredProduction": false
+}

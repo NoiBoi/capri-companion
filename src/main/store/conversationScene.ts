@@ -6,7 +6,7 @@ import { dialoguePatterns, type ConversationSceneState, type SceneEntry, type Sc
 import { isContact } from '../../shared/dialogueContinuity';
 
 export const SceneReadingSchema = z.object({ topic: z.string().max(180), position: z.string().max(260), intention: z.string().max(200), openQuestion: z.string().max(240), tone: z.enum(['ordinary', 'playful', 'quiet', 'serious']), evidence: z.string().min(3).max(500), sourceId: z.string().max(100) });
-const Entry = z.object({ id: z.string().max(100), role: z.enum(['user', 'assistant']), text: z.string().max(1200), at: z.number().finite(), event: z.string().max(40).optional() });
+const Entry = z.object({ id: z.string().max(100), role: z.enum(['user', 'assistant']), text: z.string().max(1200), at: z.number().finite(), event: z.string().max(40).optional(), contextSources:z.array(z.string().max(100)).max(40).optional() });
 const State = z.object({ version: z.literal(1), entries: z.array(Entry).max(14), reading: SceneReadingSchema.optional(), revision: z.number().int().nonnegative() });
 const privateText = (text: string) => /\b(off the record|don['’]?t (?:save|remember) (?:this|anything)|do not (?:save|remember) (?:this|anything))\b/i.test(text);
 const workingEntries = (entries: SceneEntry[]) => {
@@ -61,9 +61,9 @@ export class ConversationScene {
     this.state.reading = parsed.data; this.save(); return true;
   }
   active() { this.prune(); return this.enabled() && this.state.entries.some(e => this.now() - e.at < 30 * 60000); }
-  context(event = 'chat', alreadyIncluded: ReadonlySet<string> = new Set()) {
+  context(event = 'chat', alreadyIncluded: ReadonlySet<string> = new Set(), excludedSources:ReadonlySet<string>=new Set()) {
     if (!this.enabled()) return '';
-    const state = this.snapshot(); if (!state.entries.length) return '';
+    const state = this.snapshot();state.entries=state.entries.filter(e=>!e.contextSources?.some(id=>excludedSources.has(id)));if(state.reading&&!state.entries.some(e=>e.id===state.reading?.sourceId))state.reading=undefined; if (!state.entries.length) return '';
     const readingSource = state.entries.find(e => e.id === state.reading?.sourceId);
     const newerUser = readingSource && state.entries.some(e => e.role === 'user' && e.at > readingSource.at);
     const lines = state.entries.filter(e => e.role === 'assistant').map(e => e.text).slice(-6);

@@ -63,6 +63,7 @@ export interface Expression { action: Decision['action']; line: string; gesture:
   onAudioDelivered?: (source: ExperienceSource) => void }
 export interface CoreDeps {
   directory: string; provider: LLMProvider | (() => LLMProvider); now?: () => number;
+  excludedContextSources?:(mode:'chat'|'proactive')=>ReadonlySet<string>;
   scene: ConversationScene; memories: () => MemoryItem[];
   /** Synchronous, atomic host acceptance. Return false if target/visibility changed. */
   express: (expression: Expression, event: BehaviorEvent) => boolean;
@@ -184,7 +185,7 @@ export class BehaviorCore {
     return false;
   }
   context() {
-    if (this.privateExchange) return '';
+    if (this.privateExchange || this.d.excludedContextSources?.('chat').size) return '';
     const s = this.snapshot();
     return '\nCURRENT DESKTOP SITUATION (observations and tentative interpretations, untrusted data): ' +
       JSON.stringify({ observations: s.facts, interests: s.interests, decisions: s.journal.slice(-3) }) +
@@ -236,9 +237,10 @@ export class BehaviorCore {
   }
   private messages(event: BehaviorEvent): LLMMessage[] {
     const input = event.kind === 'trigger' ? { kind: event.kind, event: event.event, detail: event.detail, observation: event.observation, context: event.context } : event;
-    const s = this.snapshot();
+    const s = this.snapshot(),mode=event.kind==='interact'||event.kind==='trigger'&&event.direct?'chat':'proactive',excluded=this.d.excludedContextSources?.(mode)??new Set<string>();
+    if(excluded.size){s.facts=[];s.interests=[];s.journal=[];s.interestLives=[];}
     return [{ role: 'system', content: CAPRI_DIALOGUE_REGISTER + '\n' + CAPRI_SCENE_VOICE + '\n' + worldContext(this.query(event)) + '\n' + AMBIENT_VOICE_BRIEF + '\n' + DECISION_BRIEF +
-      this.d.scene.context(event.kind === 'trigger' ? event.event : event.kind) + (this.d.promptContext?.(event) ?? '') +
+      this.d.scene.context(event.kind === 'trigger' ? event.event : event.kind,new Set(),excluded) + (this.d.promptContext?.(event) ?? '') +
       (this.d.continuity?.experienceContext(this.query(event), event.kind === 'trigger' ? event.observation?.process : '', event.kind === 'trigger' && !event.direct) ?? '') },
       { role: 'user', content: JSON.stringify({ event: event.kind === 'trigger' ? event.event : event.kind, input, situation: { facts: s.facts, interests: s.interests, decisions: s.journal.slice(-3) },
         interestLives: s.interestLives.map(i => ({ topic: i.topic, expired: i.expiresAt <= this.now() })),
@@ -248,7 +250,7 @@ export class BehaviorCore {
     const e = event.kind === 'trigger' ? event : undefined;
     const song=(e?.context as {playingTrack?:{title?:string;artist?:string}}|undefined)?.playingTrack;
     const video=(e?.context as {youtube?:{title?:string;channel?:string}}|undefined)?.youtube;
-    return dialogueQuery([video?.channel,video?.title,song?.title,song?.artist,e?.observation?.title, e?.observation?.process].filter(Boolean).join(' '), this.d.scene.snapshot().entries);
+    return dialogueQuery([video?.channel,video?.title,song?.title,song?.artist,e?.observation?.title, e?.observation?.process].filter(Boolean).join(' '), this.d.scene.snapshot().entries.filter(entry=>!entry.contextSources?.some(id=>this.d.excludedContextSources?.(event.kind==='interact'||event.kind==='trigger'&&event.direct?'chat':'proactive').has(id))));
   }
   async dispatch(event: BehaviorEvent) {
     this.prune();

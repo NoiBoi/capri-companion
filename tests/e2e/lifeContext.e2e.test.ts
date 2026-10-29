@@ -33,7 +33,7 @@ it('shows controls and evidence, shares semantic context in chat, then revokes e
   const chat=requests.find(r=>!r.messages[0].content.includes('Choose one desktop-companion decision'));
   expect(chat.messages[0].content).toContain('LIFE CONTEXT EVIDENCE');expect(chat.messages[0].content).toContain('fitting constraints');expect(chat.messages[0].content).toContain('LASTING CAPRI GUIDE');
   expect(await a.evaluate(()=>(globalThis as any).__capri.history.recent(1)[0].meta.contextSources)).toEqual(['chrome']);
-  await panel.getByRole('button',{name:'Disconnect and forget',exact:true}).click();
+  await panel.locator('section.group').filter({has:panel.getByText('Chrome',{exact:true})}).getByRole('button',{name:'Disconnect and forget',exact:true}).click();
   expect(await a.evaluate(()=>(globalThis as any).__capri.life.ledger.current())).toEqual([]);
   expect(await a.evaluate(()=>(globalThis as any).__capri.conversationScene.snapshot().entries)).toEqual([]);
   await a.evaluate(async()=>{const a=(globalThis as any).__capri;await a.convo.send('Hello again.');await a.convo.settle();});
@@ -81,7 +81,7 @@ it('selects a fresh opportunity in presence arbitration and consumes only its de
   const{app:a,requests}=await boot();await evidence(a);
   await a.evaluate(()=>{const a=(globalThis as any).__capri;a.life.ledger.now=()=>Date.now()+21000;a.settings.update({behavior:{idleRemarks:true}});a.behavior.resumeInitiative();a.presenceTick();});
   await expect.poll(()=>requests.some(r=>r.messages[0].content.includes('Choose one desktop-companion decision'))).toBe(true);
-  await expect.poll(()=>a.evaluate(()=>(globalThis as any).__capri.life.ledger.view().candidates.at(-1)?.status)).toBe('delivered');
+  await expect.poll(()=>a.evaluate(()=>(globalThis as any).__capri.life.ledger.view().candidates.at(-1)?.status),{timeout:15000}).toBe('delivered');
   await a.evaluate(()=>{const a=(globalThis as any).__capri;const e=a.life.ledger.current()[0];a.life.ledger.ingest({...e,revision:e.revision+1,receivedAt:Date.now(),occurredAt:Date.now()});a.behavior.resumeInitiative();a.presenceTick();});
   expect(requests.filter(r=>r.messages[0].content.includes('Choose one desktop-companion decision'))).toHaveLength(1);
 });

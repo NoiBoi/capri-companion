@@ -1,0 +1,164 @@
+{
+  "version": "0.5.0",
+  "date": "2026-10-28T23:34:45.085818+00:00",
+  "typecheck": "passed",
+  "unit": {
+    "files": 60,
+    "passed": 591,
+    "failed": 0,
+    "skipped": 0
+  },
+  "packagedIntegrations": {
+    "files": 7,
+    "passed": 22,
+    "failed": 0,
+    "skipped": 3
+  },
+  "packagedNativeGrouped": {
+    "files": 1,
+    "passed": 5,
+    "failed": 1,
+    "skipped": 17
+  },
+  "packagedNativeIsolated": {
+    "files": 1,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 22
+  },
+  "realHonchoTransport": {
+    "synthetic": true,
+    "packaged": true,
+    "actualSourceImport": true,
+    "immediateRecallBlocked": true,
+    "deletion": "accepted by server; pending actual removal; durable tombstone retained",
+    "modelDerivation": "Not verified: existing local adapter allowance 64/64."
+  },
+  "performance": {
+    "synthetic": true,
+    "packaged": true,
+    "httpRequests": 26,
+    "modelRequestsDuringIngest": 0,
+    "ingestMs": 73,
+    "mainProcessCpuMs": 47,
+    "fixtureChatMs": 55
+  },
+  "packageLayout": {
+    "date": "2026-10-28T23:30:15.434Z",
+    "version": "0.5.0",
+    "checks": [
+      {
+        "name": "staged app version",
+        "ok": true,
+        "detail": "0.5.0"
+      },
+      {
+        "name": "asar matches built main/index.js",
+        "ok": true
+      },
+      {
+        "name": "asar matches built preload/preload.js",
+        "ok": true
+      },
+      {
+        "name": "asar matches built renderer/panel.js",
+        "ok": true
+      },
+      {
+        "name": "extension resource matches manifest.json",
+        "ok": true
+      },
+      {
+        "name": "extension resource matches capture.js",
+        "ok": true
+      },
+      {
+        "name": "extension resource matches observe.js",
+        "ok": true
+      },
+      {
+        "name": "extension resource matches worker.js",
+        "ok": true
+      },
+      {
+        "name": "extension resource matches popup.js",
+        "ok": true
+      },
+      {
+        "name": "extension resource matches popup.html",
+        "ok": true
+      },
+      {
+        "name": "native Koffi packaged",
+        "ok": true
+      },
+      {
+        "name": "no profile/environment files in asar",
+        "ok": true
+      }
+    ],
+    "ok": true
+  },
+  "limitations": [
+    "Google/Last.fm/Spotify accounts, Tailscale exposure and real iPhone delivery require user setup and were not authorized with real accounts.",
+    "Real Honcho derivation timed out for native and Stage 2 memory; existing adapter health reports allowance exhausted at 64/64. No limit reset.",
+    "Honcho deletion accepted remotely remains pending. Durable deletion barriers block old recall until actual absence is confirmed.",
+    "Earlier broad runs had native focus and transient panel/profile cleanup failures; final packaged integration checks and isolated native typing/Escape checks passed."
+  ],
+  "firstDialogue": "stage2-dialogue-first.json",
+  "installed": true,
+  "installedState": {
+    "date": "2026-10-28T23:36:25.538Z",
+    "runtime": {
+      "version": "0.5.0",
+      "userData": "C:\\Users\\matth\\Documents\\Capri Buddy",
+      "startupMs": 5198,
+      "approvedMemories": 40,
+      "connection": {
+        "state": "connected",
+        "provider": "codex",
+        "detail": "Codex is signed in with your existing account. Replies use your Codex usage."
+      },
+      "sources": [
+        {
+          "id": "chrome",
+          "collect": true,
+          "live": true
+        },
+        {
+          "id": "project:d15409e609fe8e04",
+          "collect": true,
+          "live": true
+        },
+        {
+          "id": "calendar",
+          "collect": false,
+          "live": false
+        },
+        {
+          "id": "lastfm",
+          "collect": false,
+          "live": false
+        },
+        {
+          "id": "owntracks",
+          "collect": false,
+          "live": false
+        }
+      ],
+      "bridge": "listening"
+    },
+    "packageMatches": true,
+    "rollback": "C:\\Users\\matth\\Documents\\Codex\\2026-10-25\\i-x20\\outputs\\Capri\\release\\rollback-before-stage2-0.5.0-20261028-193603",
+    "profileBackup": "C:\\Users\\matth\\Documents\\Codex\\2026-10-28\\files-pasted-by-the-user-capri-2\\work\\profile-before-stage2-0.5.0-20261028-193603",
+    "preserved": {
+      "memory.json": true,
+      "secrets.bin": true,
+      "relationship.json": true,
+      "historyPrefix": true,
+      "settingsExceptPosition": true
+    },
+    "ok": true
+  },
+  "nativeHonchoWorkspacePreserved": true
+}

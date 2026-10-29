@@ -903,15 +903,18 @@ function renderWelcome() {
 async function renderConnections() {
   const note = (text: string) => h('p',{class:'hint'},text);
   const state = await api.invoke('life:get');
+  const stage = await api.invoke('life:stage2');
+  const comm = await api.invoke('life:stage3');
   const run = async (action: () => Promise<unknown>) => { try { await action(); await go('connections'); } catch(e) { toast(e instanceof Error ? e.message : String(e),true); } };
-  const draftSave = h('div',{class:'hint',role:'status','aria-label':'Setup save status'},'Text drafts save automatically. Save source controls to apply sites and permissions.');
+  const draftSave = h('div',{class:'hint',role:'status','aria-label':'Setup save status'},'Chrome/project text drafts save automatically. Communication and phone forms require their Save buttons.');
   const saveDraft = (id:string,draft:import('../../shared/lifeContext').LifeDraft) => {draftSave.textContent='Saving setup draft…';void api.invoke('life:draft',{id,draft}).then(()=>{draftSave.textContent='Setup draft saved. Apply source controls to activate changes.';}).catch(e=>{draftSave.textContent='Draft could not save: '+String(e);});};
   const idInput = h('input',{type:'text','aria-label':'Chrome extension ID',placeholder:'32-letter ID from chrome://extensions',value:state.drafts.pairing?.extensionId ?? state.bridge.extensionId ?? '',oninput:(e:Event)=>saveDraft('pairing',{extensionId:(e.target as HTMLInputElement).value})});
   const token = h('input',{type:'text',readOnly:true,'aria-label':'Pairing token',placeholder:'Generated token appears here'});
   const pairStatus = h('div',{role:'status'});
   const sourceCards = state.sources.map(source => {
     const changed = structuredClone(source);
-    const permission = (key:'collect'|'live'|'retain'|'content', label:string) => field(label,h('input',{type:'checkbox',role:'switch','aria-label':`${source.name}: ${label}`,checked:changed.permissions[key],onchange:(e:Event)=>{changed.permissions[key]=(e.target as HTMLInputElement).checked;}}));
+    changed.permissions.proactive ??= changed.permissions.live;
+    const permission = (key:'collect'|'live'|'proactive'|'retain'|'content'|'learn', label:string) => field(label,h('input',{type:'checkbox',role:'switch','aria-label':`${source.name}: ${label}`,checked:changed.permissions[key],onchange:(e:Event)=>{changed.permissions[key]=(e.target as HTMLInputElement).checked;}}));
     const sites = h('textarea',{'aria-label':'Chrome allowed sites',value:state.drafts[source.id]?.sites ?? source.sites.join('\n'),oninput:(e:Event)=>saveDraft(source.id,{sites:(e.target as HTMLTextAreaElement).value}),rows:3,placeholder:'https://github.com\nhttps://developer.chrome.com'});
     const name = h('input',{type:'text','aria-label':`${source.name}: Display name`,value:state.drafts[source.id]?.name ?? source.name,maxLength:100,oninput:(e:Event)=>saveDraft(source.id,{name:(e.target as HTMLInputElement).value})});
     const days = h('input',{type:'number','aria-label':`${source.name}: Retention days`,value:state.drafts[source.id]?.retentionDays ?? source.retentionDays,min:1,max:30,oninput:(e:Event)=>saveDraft(source.id,{retentionDays:(e.target as HTMLInputElement).value})});
@@ -921,7 +924,8 @@ async function renderConnections() {
       health?.lastSync ? note('Last accepted sync: '+new Date(health.lastSync).toLocaleString()) : null,
       health?.lastFailure ? note('Last failure: '+new Date(health.lastFailure).toLocaleString()) : null,
       source.folder ? note('Selected folder: '+source.folder) : null,
-      field('Display name',name),permission('collect','Collect observations'),permission('live','Use in live dialogue'),permission('retain','Retain source history locally'),permission('content','Allow bounded content access'),
+      field('Display name',name),permission('collect','Collect observations'),permission('live','Use in live dialogue'),permission('proactive','Use in proactive remarks'),permission('retain','Retain source history locally'),permission('content','Allow bounded content access'),
+      (['calendar','lastfm','owntracks','academic'].includes(source.id)||/^(gmail|outlook|teams)-[01]$/.test(source.id)) ? permission('learn','Learn summarized observations in Honcho') : null,
       source.kind==='chrome' ? field('Allowed site origins, one per line',sites,'Chrome must also grant each site. Sensitive pages remain blocked.',true) : null,
       field('Retention days',days,'1 to 30 days; current state still expires sooner.'),
       h('div',{class:'row'},
@@ -930,20 +934,92 @@ async function renderConnections() {
         btn('Disconnect and forget',()=>run(()=>api.invoke('life:forget',{id:source.id})), 'quiet'),
         source.kind==='project'?btn('Remove folder',()=>run(()=>api.invoke('life:forget',{id:source.id,remove:true})), 'quiet'):null));
   });
+  const integration = structuredClone(stage.config);
+  const secretField = (key:'googleClient'|'googleClientSecret'|'lastfmKey',label:string) => {
+    const input=h('input',{type:'password','aria-label':label,autocomplete:'off',placeholder:stage.credentials[key]?'Saved securely; enter only to replace':'Not configured'});
+    return field(label,h('div',{},input,btn('Save '+label,()=>run(()=>api.invoke('life:stage2Key',{key,value:input.value})), 'quiet')),undefined,true);
+  };
+  const user=h('input',{type:'text','aria-label':'Last.fm username',value:integration.lastfmUser});
+  const device=h('input',{type:'text','aria-label':'OwnTracks device name',value:integration.device,placeholder:'Your chosen OwnTracks device name'});
+  const locationKey=h('input',{type:'text',readOnly:true,'aria-label':'OwnTracks generated credential'});
+  const credentialNotice=h('p',{class:'hint',role:'status'});
+  const places=h('div',{'aria-label':'Named places'});
+  const renderPlaces=()=>{
+    places.replaceChildren(...integration.places.map(place=>{
+      const text=(key:'name'|'lat'|'lon'|'radius',label:string)=>field(label,h('input',{type:key==='name'?'text':'number','aria-label':place.id+': '+label,value:place[key],step:key==='lat'||key==='lon'?'any':1,oninput:(e:Event)=>{const v=(e.target as HTMLInputElement).value;if(key==='name')place.name=v;else place[key]=Number(v);}}));
+      return group(place.name||'New place',text('name','Place name'),text('lat','Latitude'),text('lon','Longitude'),text('radius','Radius in metres'),
+        ...state.entities.map(entity=>field('Associate '+entity.name,h('input',{type:'checkbox',checked:place.entities.includes(entity.id),onchange:(e:Event)=>{place.entities=place.entities.filter(id=>id!==entity.id);if((e.target as HTMLInputElement).checked)place.entities.push(entity.id);}}))),
+        btn('Remove '+(place.name||'place'),()=>{integration.places=integration.places.filter(p=>p.id!==place.id);renderPlaces();},'quiet'));
+    }));
+  };renderPlaces();
+  const calendarChoices=stage.calendars.map(c=>field(c.name,h('input',{type:'checkbox','aria-label':'Monitor calendar '+c.name,checked:integration.calendars.includes(c.id),onchange:(e:Event)=>{integration.calendars=integration.calendars.filter(id=>id!==c.id);if((e.target as HTMLInputElement).checked)integration.calendars.push(c.id);}})));
+  const integrations=group('Calendar, listening history and phone location',
+    note('Setup alone does not enable collection. Save integration setup, then enable the corresponding source controls below. Learn requires retention, global automatic learning, and local Honcho. Pausing or changing a source clears its learned reading.'),
+    secretField('googleClient','Google Desktop client ID'),secretField('googleClientSecret','Google Desktop client secret'),
+    note(stage.credentials.googleRefresh?'Google refresh credential stored. Account access is verified only by successful sync.':'Google not authorized.'),
+    btn('Authorize Google',()=>run(()=>api.invoke('life:googleAuth')),'quiet'),btn('Load calendars',()=>run(()=>api.invoke('life:calendars')),'quiet'),
+    ...calendarChoices,note('Selected calendar IDs: '+(integration.calendars.join(', ')||'none')),
+    btn('Sync Calendar now',()=>run(()=>api.invoke('life:sync','calendar')),'quiet'),
+    secretField('lastfmKey','Last.fm API key'),field('Last.fm username',user),note(stage.spotifyScrobbling),
+    btn('Sync Last.fm now',()=>run(()=>api.invoke('life:sync','lastfm')),'quiet'),
+    note('OwnTracks: '+stage.receiver),field('OwnTracks device name',device),
+    btn('Generate OwnTracks credential',async()=>{try{const result=await api.invoke('life:locationKey');locationKey.value=result.username+':'+result.password;credentialNotice.textContent='Copy username and password now. '+(result.persistent?'Stored using OS encryption.':'Session only: OS encryption unavailable.');}catch(e){toast(String(e),true);}},'quiet'),field('Generated username:password',locationKey),credentialNotice,
+    places,btn('Add named place',()=>{if(integration.places.length>=30){toast('At most 30 named places.',true);return;}integration.places.push({id:'place-'+Date.now(),name:'',lat:0,lon:0,radius:150,entities:[]});renderPlaces();},'quiet'),note('Coordinates stay local. Use a radius from 50 to 5000 metres. Save integration setup to apply additions or removals.'),
+    btn('Save integration setup',()=>run(async()=>{integration.lastfmUser=user.value.trim();integration.device=device.value.trim();await api.invoke('life:stage2Setup',integration);})),
+    note('Phone receiver: 127.0.0.1:43130/pub. Use private Tailscale Serve HTTPS. Never Funnel. Read resources/integrations/SETUP.md for exact account and phone setup. A listening receiver does not prove phone connectivity.'),
+    ...stage.recentTracks.map(t=>note(new Date(t.at).toLocaleString()+' | '+t.artist+': '+t.title)),
+    ...Object.entries(stage.learning).map(([id,status])=>note(id+' learning: '+status.state+'. '+status.detail)),
+    ...state.events.filter(e=>e.source==='lastfm'&&e.type==='music-now-playing').slice(0,1).map(e=>note(e.summary)));
+
+  const accountCards=[...comm.config.accounts].sort((a,b)=>Number(a.id.startsWith('gmail'))-Number(b.id.startsWith('gmail'))).map(original=>{
+    const account=structuredClone(original),parts:Child[]=[];
+    const input=(key:'clientId'|'tenant',label:string)=>field(label,h('input',{type:'text','aria-label':account.id+': '+label,value:account[key],oninput:(e:Event)=>{account[key]=(e.target as HTMLInputElement).value.trim();}}),undefined,true);
+    const lines=(key:'labels'|'folders'|'senders'|'excludedSenders'|'excludedWords'|'selectedMessages'|'chats'|'excludedRecords',label:string,help?:string)=>field(label,h('textarea',{rows:2,'aria-label':account.id+': '+label,value:account[key].join('\n'),oninput:(e:Event)=>{account[key]=(e.target as HTMLTextAreaElement).value.split('\n').map(s=>s.trim()).filter(Boolean);}}),help,true);
+    parts.push(note(comm.authorization[account.id]??''),note(comm.authorized[account.id]?'Refresh credential stored. API/tenant access is verified only by a successful sync.':'Not authorized. This source can stay disconnected.'),input('clientId','Desktop application client ID'));
+    if(!account.id.startsWith('gmail'))parts.push(input('tenant','Microsoft tenant'));
+    else parts.push(note('Blank client ID reuses the Google Desktop client configured above. Gmail and Calendar keep separate refresh credentials. The shared Google Desktop client secret above is used if supplied.'));
+    parts.push(btn('Authorize '+account.id,()=>run(()=>api.invoke('life:accountAuth',account.id)),'quiet'),btn('Load choices for '+account.id,()=>run(()=>api.invoke('life:accountChoices',account.id)),'quiet'));
+    for(const choice of comm.choices[account.id]??[]){const key=account.id.startsWith('gmail')?'labels':account.id.startsWith('teams')?'chats':'folders';parts.push(field(choice.name,h('input',{type:'checkbox',checked:account[key].includes(choice.id),onchange:(e:Event)=>{account[key]=account[key].filter(id=>id!==choice.id);if((e.target as HTMLInputElement).checked)account[key].push(choice.id);}})));}
+    if(account.id.startsWith('gmail'))parts.push(lines('labels','Selected Gmail label IDs','Use a small selected label. No arbitrary Gmail search is used with metadata-only access.'));
+    else if(account.id.startsWith('outlook'))parts.push(lines('folders','Selected Outlook folder IDs','Remove inbox if you want only a narrower folder. Load choices after authorization.'));
+    else{
+      parts.push(lines('chats','Selected Teams chat IDs'));
+      parts.push(field('Selected Teams channels',h('textarea',{rows:2,'aria-label':account.id+': Teams channels',value:account.channels.map(c=>c.team+' | '+c.channel).join('\n'),oninput:(e:Event)=>{account.channels=(e.target as HTMLTextAreaElement).value.split('\n').filter(s=>s.trim()).map(line=>{const [team,channel]=line.split('|').map(s=>s.trim());return{team,channel:channel??''};});}}),'One team ID | channel ID per line. Adding channels requires explicit Graph channel consent.',true));
+    }
+    parts.push(lines('senders','Only these senders','Optional sender/address text matches; empty allows all in the selected containers.'),lines('excludedSenders','Excluded senders'),lines('excludedWords','Excluded subject or content phrases'));
+    if(!account.id.startsWith('teams'))parts.push(lines('selectedMessages','Selected message IDs for body access','Optional. Bodies are read only for these IDs, with source content permission and explicit read-body authorization. Metadata remains the default.'));
+    parts.push(lines('excludedRecords','Excluded record IDs','Exclude a record from Current understanding to populate this list. Remove an ID and save to permit it again.'));
+    parts.push(btn('Save '+account.id+' setup',()=>run(()=>api.invoke('life:stage3Setup',{...comm.config,accounts:comm.config.accounts.map(a=>a.id===account.id?account:a)}))),btn('Sync '+account.id,()=>run(()=>api.invoke('life:accountSync',account.id)),'quiet'));
+    return h('details',{class:'group'},h('summary',{},account.id+' account setup'),...parts);
+  });
+  const social=structuredClone(comm.config),socialLines=(key:'discordChannels'|'gameProcesses'|'discordExcludedAuthors',label:string)=>field(label,h('textarea',{rows:2,'aria-label':label,value:social[key].join('\n'),oninput:(e:Event)=>{social[key]=(e.target as HTMLTextAreaElement).value.split('\n').map(s=>s.trim()).filter(Boolean);}}),undefined,true);
+  const socialText=(key:'voiceGuild'|'voiceUser',label:string)=>field(label,h('input',{type:'text','aria-label':label,value:social[key],oninput:(e:Event)=>{social[key]=(e.target as HTMLInputElement).value.trim();}}),undefined,true);
+  const botKey=h('input',{type:'password',autocomplete:'off','aria-label':'Discord bot token',placeholder:comm.authorized['discord-bot']?'Saved securely':'Not configured'});
+  const academicCourse=h('input',{type:'text','aria-label':'Academic course'}),academicAssignment=h('input',{type:'text','aria-label':'Academic assignment'}),academicEvidence=h('textarea',{rows:2,'aria-label':'Academic evidence note'}),academicDue=h('input',{type:'text','aria-label':'Academic due time',placeholder:'Optional ISO time with timezone offset'});
+  const academicStatus=h('select',{'aria-label':'Academic status'},...['assigned','due','submitted','graded','feedback','cancelled'].map(value=>h('option',{value},value)));
+  const stage3Controls=group('Communication and academic connections',note('No account setup is needed for ordinary chat or movement. Metadata stays local until you enable live dialogue or proactive remarks. Each source has independent controls below. No sending or modification is implemented.'),...accountCards,
+    h('details',{class:'group'},h('summary',{},'Discord local and authorized bot setup'),note(comm.capabilities.discordVoice),note(comm.capabilities.discordMessages),socialLines('gameProcesses','Known game process names'),socialLines('discordChannels','Authorized Discord channel IDs'),socialLines('discordExcludedAuthors','Excluded Discord author IDs'),socialText('voiceGuild','Optional voice guild ID'),socialText('voiceUser','Optional voice user ID'),field('Bot token',botKey),btn('Save Discord bot token',()=>run(()=>api.invoke('life:botKey',botKey.value)),'quiet'),btn('Save Discord setup',()=>run(()=>api.invoke('life:stage3Setup',social))),note('Local process/foreground awareness does not authorize account messages or calls. Enable Discord local activity separately.')),
+    h('details',{class:'group'},h('summary',{},'Gradescope alternatives and academic records'),note(comm.capabilities.gradescope),note('Enable Academic imports collection below first. These are explicitly supplied records, not Gradescope API verification. Submission, grading and completion are distinct.'),field('Course',academicCourse),field('Assignment',academicAssignment),field('Status',academicStatus),field('Due time',academicDue),field('Evidence note',academicEvidence,undefined,true),btn('Add academic record',()=>run(()=>api.invoke('life:academic',[{id:academicCourse.value+':'+academicAssignment.value,course:academicCourse.value,assignment:academicAssignment.value,status:academicStatus.value as 'assigned',at:new Date().toISOString(),...(academicDue.value?{due:academicDue.value}:{}),evidence:academicEvidence.value,entities:[]}]))),btn('Import academic JSON file',()=>run(()=>api.invoke('life:academicFile')),'quiet')),
+    note('See resources/integrations/FINAL_SETUP.md for one consolidated Windows/iPhone guide. Discord messages and local activity have no automatic Honcho learning. Communication/academic opt-in learning exports aggregate counts and explicit project associations, never private messages or grades.'));
   const entities = state.entities.map(entity=>{
     const aliases=h('textarea',{rows:2,value:state.drafts[entity.id]?.aliases ?? entity.aliases.join('\n'),oninput:(e:Event)=>saveDraft(entity.id,{aliases:(e.target as HTMLTextAreaElement).value}),'aria-label':`${entity.name}: Aliases`});
-    return h('div',{class:'item',style:'display:block'},h('strong',{},entity.name),note(`${entity.id} | ${entity.certainty} | ${entity.evidence}`),field('Explicit aliases, one per line',aliases,'Use a repository URL, folder path, or distinctive project name.',true),btn('Save explicit aliases',()=>run(()=>api.invoke('life:associate',{...entity,aliases:aliases.value.split('\n').map(a=>a.trim()).filter(Boolean),certainty:'explicit',evidence:'User edited explicit aliases in Connections'})),'quiet'));
+    return h('div',{class:'item',style:'display:block'},h('strong',{},entity.name),note(`${entity.id} | ${entity.certainty} | ${entity.evidence}`),field('Explicit aliases, one per line',aliases,'Use a repository URL, folder path, or distinctive project name.',true),btn('Save explicit aliases',()=>run(()=>api.invoke('life:associate',{...entity,aliases:aliases.value.split('\n').map(a=>a.trim()).filter(Boolean),certainty:'explicit',evidence:'User edited explicit aliases in Connections'})),'quiet'),btn('Forget association',()=>run(()=>api.invoke('life:forgetEntity',entity.id)),'quiet'));
   });
-  const current = state.current.map(event=>{
+  const associationName=h('input',{type:'text','aria-label':'New association name'}),associationAliases=h('textarea',{rows:2,'aria-label':'New association aliases'}),associationKind=h('select',{'aria-label':'New association type'},...['project','person','course','commitment'].map(value=>h('option',{value},value)));
+  const addAssociation=group('Add an explicit association',field('Name',associationName),field('Type',associationKind),field('Distinctive aliases',associationAliases,'One person address, project name or course identifier per line.',true),btn('Add explicit association',()=>run(()=>api.invoke('life:associate',{id:associationKind.value+':'+crypto.randomUUID(),name:associationName.value,aliases:associationAliases.value.split('\n').map(v=>v.trim()).filter(Boolean),evidence:'Explicitly configured in Connections',certainty:'explicit'}))));
+  const currentRecords=[...new Map([...state.current,...state.proactiveCurrent].map(e=>[e.source+':'+e.recordId,e])).values()];
+  const current = currentRecords.map(event=>{
     const correction=h('input',{type:'text',value:event.summary,maxLength:1200,'aria-label':`Correct ${event.recordId}`});
-    return h('div',{class:'item',style:'display:block'},h('strong',{},event.summary),note(`${event.source} | ${event.quality} | ${new Date(event.occurredAt).toLocaleString()} | expires ${new Date(event.expiresAt).toLocaleTimeString()}`),note(event.detail),field('Your correction',correction,undefined,true),btn('Apply correction',()=>run(()=>api.invoke('life:correct',{source:event.source,recordId:event.recordId,summary:correction.value})),'quiet'));
+    return h('div',{class:'item',style:'display:block'},h('strong',{},event.summary),note(`${event.source} | ${event.quality} | ${new Date(event.occurredAt).toLocaleString()} | expires ${new Date(event.expiresAt).toLocaleTimeString()}`),note(event.detail),field('Your correction',correction,undefined,true),btn('Apply correction',()=>run(()=>api.invoke('life:correct',{source:event.source,recordId:event.recordId,summary:correction.value})),'quiet'),comm.config.accounts.some(a=>a.id===event.source)||['academic','discord-bot'].includes(event.source)?btn('Exclude this record',()=>run(()=>api.invoke('life:exclude',{source:event.source,recordId:event.recordId})),'quiet'):null);
   });
   view.replaceChildren(viewHead('Connections / Life Context'), h('div',{class:'scroll'},draftSave,
-    group('Private by choice',note('Sources add evidence to Capri’s existing context and attention. Displayed pages do not prove reading; file changes do not prove success. Enable Memory and local desktop context to use connected evidence.'),note(state.learning),note('Future Calendar, Last.fm / Spotify history, OwnTracks, mail, Teams, Gradescope and Discord adapters are disconnected contracts, not active connections.'),btn('Refresh diagnostics',()=>go('connections'),'quiet')),
+    group('Private by choice',note('Sources add evidence to Capri’s existing context and attention. Displayed pages do not prove reading; file changes do not prove success. Enable Memory and local desktop context to use connected evidence.'),note(state.learning),note('All account services are optional. New communication/academic/Discord sources start disconnected. Direct Gradescope access and general Discord client calls are unsupported; see supported alternatives below.'),btn('Refresh diagnostics',()=>go('connections'),'quiet')),
     group('Chrome extension',note(`Bridge: ${state.bridge.state}. Local port ${state.bridge.port}.`),field('Chrome extension ID',idInput,undefined,true),btn('Generate new pairing token',async()=>{try{const result=await api.invoke('life:pair',idInput.value.trim());token.value=result.token;pairStatus.textContent=result.persistent?'Copy this token into the extension popup. Rotating invalidates the old token.':'OS credential encryption is unavailable. Pairing lasts only for this session.';}catch(e){toast(String(e),true);}}),field('Pairing token',token,undefined,true),pairStatus,note('Load the supplied extensions/chrome folder using Chrome’s Load unpacked button. Add the same exact site origins here and in the extension popup. Content access permits one-time selected text or article excerpts, never automatic full-page bodies.')),
+    integrations,stage3Controls,
     ...sourceCards,
     group('Local projects',note('Select a specific project folder. Default collection uses filenames and Git metadata. Content access is a separate permission. Changes to source controls invalidate its old contextual records.'),btn('Add project folder',()=>run(()=>api.invoke('life:addProject')))),
     group('Project identities and associations',...(entities.length?entities:[emptyLine('Select a project folder to create an explicit project identity.')])),
+    addAssociation,
     group('Current understanding',...(current.length?current:[emptyLine('No fresh authorized evidence.')])),
     group('Recent accepted events',...state.events.slice(0,15).map(e=>h('div',{class:'item',style:'display:block'},h('span',{},e.summary),note(`${e.source} / ${e.recordId} revision ${e.revision}; ${e.operation}; ${new Date(e.receivedAt).toLocaleString()}`)))),
     group('Attention opportunities',...state.candidates.slice(-12).reverse().map(c=>h('div',{class:'item',style:'display:block'},h('span',{},`${c.source}: ${c.status}`),note(c.reason),['pending','deferred'].includes(c.status)?btn('Dismiss opportunity',()=>run(()=>api.invoke('life:candidate',{id:c.id})),'quiet'):null)),emptyLine('Silence is valid. Opportunities expire; repeated evidence does not earn repeated callbacks.')),

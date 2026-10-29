@@ -1,0 +1,9 @@
+{
+  "synthetic": true,
+  "packaged": true,
+  "httpRequests": 26,
+  "modelRequestsDuringIngest": 0,
+  "ingestMs": 73,
+  "mainProcessCpuMs": 47,
+  "fixtureChatMs": 55
+}

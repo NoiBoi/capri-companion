@@ -1,9 +1,9 @@
 {
-  "date": "2026-10-28T22:42:18.171Z",
+  "date": "2026-10-29T00:56:30.943Z",
   "runtime": {
-    "version": "0.4.1",
+    "version": "0.6.0",
     "userData": "C:\\Users\\matth\\Documents\\Capri Buddy",
-    "startupMs": 1075,
+    "startupMs": 2900,
     "approvedMemories": 40,
     "connection": {
       "state": "connected",
@@ -13,15 +13,80 @@
     "sources": [
       {
         "id": "chrome",
+        "collect": true,
+        "live": true
+      },
+      {
+        "id": "project:d15409e609fe8e04",
+        "collect": true,
+        "live": true
+      },
+      {
+        "id": "calendar",
+        "collect": false,
+        "live": false
+      },
+      {
+        "id": "lastfm",
+        "collect": false,
+        "live": false
+      },
+      {
+        "id": "owntracks",
+        "collect": false,
+        "live": false
+      },
+      {
+        "id": "gmail-0",
+        "collect": false,
+        "live": false
+      },
+      {
+        "id": "gmail-1",
+        "collect": false,
+        "live": false
+      },
+      {
+        "id": "outlook-0",
+        "collect": false,
+        "live": false
+      },
+      {
+        "id": "outlook-1",
+        "collect": false,
+        "live": false
+      },
+      {
+        "id": "teams-0",
+        "collect": false,
+        "live": false
+      },
+      {
+        "id": "teams-1",
+        "collect": false,
+        "live": false
+      },
+      {
+        "id": "discord-local",
+        "collect": false,
+        "live": false
+      },
+      {
+        "id": "discord-bot",
+        "collect": false,
+        "live": false
+      },
+      {
+        "id": "academic",
         "collect": false,
         "live": false
       }
     ],
-    "bridge": "off"
+    "bridge": "listening"
   },
   "packageMatches": true,
-  "rollback": "C:\\Users\\matth\\Documents\\Codex\\2026-10-25\\i-x20\\outputs\\Capri\\release\\rollback-before-life-0.4.1-20261028-184201",
-  "profileBackup": "C:\\Users\\matth\\Documents\\Codex\\2026-10-28\\files-pasted-by-the-user-capri\\work\\profile-before-life-0.4.1-20261028-184201",
+  "rollback": "C:\\Users\\matth\\Documents\\Codex\\2026-10-25\\i-x20\\outputs\\Capri\\release\\rollback-before-stage3-0.6.0-20261028-205548",
+  "profileBackup": "C:\\Users\\matth\\Documents\\Codex\\2026-10-28\\files-pasted-by-the-user-capri-2\\work\\profile-before-stage3-0.6.0-20261028-205548",
   "preserved": {
     "memory.json": true,
     "secrets.bin": true,

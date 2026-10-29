@@ -1,4 +1,12 @@
-# Stage 1 setup
+# Consolidated setup
+
+Start with [FINAL_SETUP.md](FINAL_SETUP.md), the complete Windows/iPhone guide for all three stages. Existing account setup is optional; ordinary chat and movement work with every integration disconnected.
+
+# Capri integration setup
+
+For Google Calendar, Last.fm, Spotify Scrobbling, Tailscale and OwnTracks use the numbered [Stage 2 setup checklist](STAGE2-SETUP.md). All new sources are disabled until explicitly configured and enabled.
+
+## Existing Stage 1 setup
 
 As of 0.4.1, typed Connections setup text is autosaved as a local draft, including incomplete website entries. Restarting or changing tabs restores it. Press **Save source controls** to validate and apply the websites and permissions; saving a draft alone does not grant access. Normal settings edits also flush when leaving the panel. The Chrome extension files are unchanged from 0.4.0, so a loaded extension does not need reinstalling for these app-side fixes.
 
@@ -34,7 +42,7 @@ If disconnected: verify Capri is running, the source collection switch is on, th
 
 Use **Your correction** under a current record, then **Apply correction**. It is a user statement, wins over passive updates until that record expires, and does not become an approved long-term memory. Use **Dismiss opportunity** to prevent an optional callback. No conversation is required to acknowledge a candidate.
 
-Each source separately controls collection, live dialogue, retained event history and content access. Saving source-control changes clears its old evidence; new samples are governed by the new policy. Honcho source learning is unavailable in this release. While connected live sources are enabled, auto-learning from model exchanges is suspended to avoid storing untraceable derivatives. Disable sources to resume normal native auto-learning. Existing memories are preserved.
+Each source separately controls collection, live dialogue, retained event history and content access. Saving source-control changes clears its old evidence; new samples are governed by the new policy. Chrome/project source learning remains unavailable. Calendar, Last.fm and OwnTracks have separate opt-in summarized learning; see STAGE2-SETUP.md. While connected live sources are enabled, auto-learning from model exchanges is suspended to avoid storing untraceable derivatives. Disable sources to resume normal native auto-learning. Existing memories are preserved.
 
 **Disconnect all and clear Life Context** disables sources and clears this subsystem's evidence and associations. Existing saved Chat, approved memories, movement preferences and other credentials remain. For whole-application history/memory deletion use Capri's existing privacy controls separately.
 

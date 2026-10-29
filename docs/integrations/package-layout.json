@@ -1,11 +1,11 @@
 {
-  "date": "2026-10-28T22:40:35.162Z",
-  "version": "0.4.1",
+  "date": "2026-10-29T00:52:34.098Z",
+  "version": "0.6.0",
   "checks": [
     {
       "name": "staged app version",
       "ok": true,
-      "detail": "0.4.1"
+      "detail": "0.6.0"
     },
     {
       "name": "asar matches built main/index.js",

@@ -1,0 +1,23 @@
+{
+  "date": "2026-10-28T23:25:40.965Z",
+  "synthetic": true,
+  "workspace": "capri-stage2-verify-816240d7-c97d-48e3-b046-e3abdeae96c5",
+  "checks": {
+    "actualSourceImport": true,
+    "derivedReadingAvailable": false,
+    "actualWorkspaceDeletion": false
+  },
+  "limitation": "The existing local model adapter reports its request allowance exhausted. No limit reset or bypass was attempted; real derivation is unverified.",
+  "modelAdapter": {
+    "requests": 64,
+    "limit": 64
+  },
+  "queue": {
+    "totalWorkUnits": 1,
+    "completedWorkUnits": 0,
+    "inProgressWorkUnits": 0,
+    "pendingWorkUnits": 1
+  },
+  "deletionVerification": "SDK workspace listing after successful session/workspace DELETE",
+  "ok": false
+}

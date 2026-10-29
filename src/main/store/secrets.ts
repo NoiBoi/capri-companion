@@ -46,7 +46,7 @@ export class SecretStore {
   has(k: SecretKey) { return !!this.cache.get(k); }
   set(k: SecretKey, v: string) {
     const value = v.trim();
-    if (!value || value.length > 500 || /[\r\n]/.test(value)) throw new Error('Invalid credential format');
+    if (!value || value.length > (k.startsWith('lifeOAuth')?32768:['googleRefresh','googleClientSecret'].includes(k)?8192:500) || /[\r\n]/.test(value)) throw new Error('Invalid credential format');
     this.cache.set(k, value);
     this.save();
   }
