@@ -61,19 +61,22 @@ export class BuddyBubble {
   private collapseTimer:NodeJS.Timeout|null=null;
   private hasDraft=false;
   private previousFocus=0n;
+  private activationRequested=false;
+  private focusEpoch=0;
   escape(){
     const previous=this.previousFocus;this.previousFocus=0n;this.dismiss();
     if(!OFFSCREEN&&previous){
-      restoreChatFocus(previous);
       // Electron-owned windows also need their webContents focus restored.
       const owned=BrowserWindow.getAllWindows().find(w=>!w.isDestroyed()&&handleToBigint(w.getNativeWindowHandle())===previous);
       if(owned){owned.focus();owned.webContents.focus();}
+      // Finish with native activation, after Electron's own focus bookkeeping.
+      restoreChatFocus(previous);
     }
   }
   draft(present:boolean){this.hasDraft=present;this.scheduleCollapse();}
   private scheduleCollapse(){
     if(this.collapseTimer)clearTimeout(this.collapseTimer);
-    if(!this.state.composer||this.hoveredAt||this.hasDraft||this.disposed)return;
+    if(!this.state.composer||this.hoveredAt||this.hasDraft||this.disposed||this.nativeActive)return;
     this.collapseTimer=setTimeout(()=>{
       if(this.state.phase!=='idle'&&this.state.phase!=='error'){this.scheduleCollapse();return;}
       this.state.composer=false;this.state.delivery='aside';this.send();this.expire();
@@ -101,18 +104,19 @@ export class BuddyBubble {
   }
   private lastBounds: Rectangle | null = null;
   constructor(private d: { anchor(): Rectangle | null; head?(): { x: number; y: number }; body?(): Rectangle | undefined; inverted?(): boolean; enabled(): boolean; filterText?(text: string): string; preload: string; log: Logger }) {}
-  get nativeActive(){return !!this.window&&foregroundHandle()===handleToBigint(this.window.getNativeWindowHandle());}
+  get nativeActive(){const active=foregroundHandle();return !!active&&!!this.window&&!this.window.isDestroyed()&&active===handleToBigint(this.window.getNativeWindowHandle());}
   get hasVisibleText() { return this.visible && (!!this.state.text||this.previous.length>0); }
   private ensure() {
     if (this.window && !this.window.isDestroyed()) return this.window;
     const win = (this.window = createBubbleWindow(this.d.preload, this.d.log));
     this.lastBounds = null;
-    win.webContents.once('did-finish-load', () => { this.send(); if (this.visible) { reveal(win, this.state.composer); if (this.state.composer) this.focusInput(); } });
+    win.webContents.once('did-finish-load', () => { this.send(); if (this.visible) { const focus = this.state.composer && this.activationRequested; reveal(win, focus); if (focus) this.focusInput(); } });
     win.on('closed', () => { if (this.window === win) this.window = null; });
+    win.on('blur', () => { this.activationRequested=false; this.focusEpoch++; this.scheduleCollapse(); });
     return win;
   }
   private send() { if (this.window && !this.window.isDestroyed() && !this.window.webContents.isLoadingMainFrame()) this.window.webContents.send('bubble:state', this.state); }
-  private focusInput() { const w = this.window; if (!w || w.isDestroyed() || w.webContents.isLoadingMainFrame()) return; if (!OFFSCREEN) { w.setFocusable(true);w.setIgnoreMouseEvents(false);w.show();activateChatWindow(w.getNativeWindowHandle());w.focus(); w.webContents.focus(); } w.webContents.send('bubble:focus', null); }
+  private focusInput() { const w = this.window; if (!w || w.isDestroyed() || w.webContents.isLoadingMainFrame()) return; if (!OFFSCREEN) { w.setFocusable(true);w.setIgnoreMouseEvents(false);w.show();w.focus();w.webContents.focus();activateChatWindow(w.getNativeWindowHandle()); } w.webContents.send('bubble:focus', null); }
   private show(focus = false) {
     if (this.disposed || this.dismissed || (!this.d.enabled() && !this.state.composer)) return false;
     this.visible = true;
@@ -131,7 +135,7 @@ export class BuddyBubble {
     this.expiresAt=this.clock()+duration;this.state.fading=false;
     this.scheduleExpiry();
   }
-  open() { if(!OFFSCREEN){const focused=foregroundHandle(),own=this.window&&!this.window.isDestroyed()?handleToBigint(this.window.getNativeWindowHandle()):0n;if(focused&&focused!==own)this.previousFocus=focused;}this.dismissed = false; this.state.composer = true; if (this.timer) clearTimeout(this.timer); this.show(true); this.focusInput();for(const delay of [80,240])setTimeout(()=>{if(this.visible&&this.state.composer&&!this.disposed)this.focusInput();},delay);this.scheduleCollapse(); }
+  open() { const epoch=++this.focusEpoch;this.activationRequested=true;if(!OFFSCREEN){const focused=foregroundHandle(),own=this.window&&!this.window.isDestroyed()?handleToBigint(this.window.getNativeWindowHandle()):0n;if(focused&&focused!==own)this.previousFocus=focused;}this.dismissed = false; this.state.composer = true; if (this.timer) clearTimeout(this.timer); this.show(true); this.focusInput();for(const delay of [80,240])setTimeout(()=>{if(epoch===this.focusEpoch&&this.activationRequested&&this.visible&&this.state.composer&&!this.disposed)this.focusInput();},delay);this.scheduleCollapse(); }
   company(label: string) { if (this.state.company !== label) { this.state.company = label; this.send(); } }
   private archive(){
     if(!this.visible||!this.state.text.trim())return;

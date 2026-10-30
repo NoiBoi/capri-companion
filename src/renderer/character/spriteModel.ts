@@ -65,6 +65,8 @@ export class CapriSpriteModel extends VectorModel {
   private wasBlinking = false;
   private squish = 0;
   private motionTime = 0;
+  private flightLean = 0;
+  private wasFlying = false;
   private hitCanvas = document.createElement('canvas');
   private hitCtx = this.hitCanvas.getContext('2d', { willReadFrequently: true })!;
   private teleportUntil = 0;
@@ -103,9 +105,13 @@ export class CapriSpriteModel extends VectorModel {
   override pat() { this.reactionUntil = this.t + 3; this.patUntil = this.t + 1.2; }
   override glitchNow(_kind: 'slice' | 'shatter' | 'ghost' | 'tear' = 'slice', len = 0.3) { this.burstUntil = this.t + len; }
 
-  override draw(ctx: CanvasRenderingContext2D, p: Params, dt: number, inp: ModelInputs & { personality?: LifeFrame; standing?: boolean; attachment?: 'perch' | 'inverted' | 'moving' | null; perchMotion?: 'dangle' | 'stand' | null; taskbar?: boolean; intensity?: number; animation?: 'auto' | SpriteClip; previewClip?: SpriteClip; secondaryPose?: SecondaryPose; secondaryEnabled?: boolean; secondaryRestPreview?: boolean; secondaryMotion?: 'animated' | 'still'; support?: PoseSupport; hovering?: boolean; inspectingBelow?: boolean; moving?: boolean; sleeping?: boolean; facing?: 'cursor' | 'original' | 'left' | 'right' }, W: number, H: number) {
+  override draw(ctx: CanvasRenderingContext2D, p: Params, dt: number, inp: ModelInputs & { personality?: LifeFrame; standing?: boolean; attachment?: 'perch' | 'inverted' | 'moving' | null; perchMotion?: 'dangle' | 'stand' | null; taskbar?: boolean; intensity?: number; animation?: 'auto' | SpriteClip; previewClip?: SpriteClip; secondaryPose?: SecondaryPose; secondaryEnabled?: boolean; secondaryRestPreview?: boolean; secondaryMotion?: 'animated' | 'still'; support?: PoseSupport; hovering?: boolean; inspectingBelow?: boolean; moving?: boolean; travel?: number; sleeping?: boolean; facing?: 'cursor' | 'original' | 'left' | 'right' }, W: number, H: number) {
     this.t += dt; this.sceneHand = undefined;
     const intensity = Math.max(0, inp.intensity ?? 1);
+    const flying = !!inp.travel && !inp.dragging && !inp.sleeping;
+    if (this.wasFlying && !flying && inp.ledge && intensity > 0) this.squish = Math.max(this.squish, .025);
+    this.wasFlying = flying;
+    this.flightLean += ((flying ? inp.travel! * .055 : 0) - this.flightLean) * (1 - Math.exp(-dt * 9));
     const motionDt = dt * intensity * (inp.personality?.motion ?? 1);
     this.motionTime += motionDt;
     this.spritePose = inp.pose;
@@ -148,6 +154,7 @@ export class CapriSpriteModel extends VectorModel {
     const beingPatted = this.t < this.patUntil && !sleeping && !inp.dragging && !inp.perchMotion && this.t >= this.teleportUntil && !inp.previewClip;
     if (beingPatted) clip = inp.attachment === 'perch' || inp.attachment === 'inverted' || clip.startsWith('perch') ? 'perch_blink' : 'blink';
     if (inp.perchMotion) clip = inp.perchMotion === 'dangle' ? 'dangle' : 'idle';
+    if (flying && !inp.previewClip) clip = this.motionTime < this.blinkUntil ? 'blink' : 'idle';
     if (inp.previewClip) clip = inp.previewClip;
     const secondaryScene = this.secondaryBehavior.update(dt * (inp.secondaryRestPreview ? 6 : 1), {
       enabled: inp.secondaryEnabled !== false,
@@ -164,7 +171,7 @@ export class CapriSpriteModel extends VectorModel {
       this.secondaryReason = 'preview';
     }
     const facing = inp.facing ?? 'cursor';
-    const target = facing === 'left' ? -1 : facing === 'right' ? 1 : this.turns.update(this.lookDirection, this.t * 1000, this.t < this.facingHeldUntil, this.activeSecondary === 'recline');
+    const target = facing === 'left' ? -1 : facing === 'right' ? 1 : flying ? Math.sign(inp.travel!) : this.turns.update(this.lookDirection, this.t * 1000, this.t < this.facingHeldUntil, this.activeSecondary === 'recline');
     const direction = facing === 'original' || clip === 'sleep' ? 1 : !target ? this.direction : spriteFacing(target, this.direction, clip);
     if (!inp.dragging) this.direction = direction;
     if (clip !== this.activeClip) { this.activeClip = clip; this.clipTime = 0; }
@@ -202,6 +209,7 @@ export class CapriSpriteModel extends VectorModel {
     const emerge = Math.min(1, Math.max(0, (this.t - this.entranceAt) / .35));
     if (emerge < 1) { ctx.globalAlpha = emerge; ctx.translate(W / 2, H * .3); ctx.scale(.65 + emerge * .35, .12 + emerge * .88); ctx.translate(-W / 2, -H * .3); }
     ctx.translate(W / 2, anchor);
+    ctx.rotate(this.flightLean * intensity);
     const gesture = this.flourish && !sleeping && !inp.dragging && !inp.moving && !this.activeSecondary
       ? flourishMotion(this.flourish.kind, this.t - this.flourish.at, !!inp.ledge, this.flourish.side) : null;
     if (gesture?.done || sleeping || inp.dragging || inp.moving) this.flourish = null;

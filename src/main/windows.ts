@@ -85,26 +85,26 @@ export function createCharacterWindow(s: Settings, preload: string, log: Logger)
 
 export function createPanelWindow(near: Rectangle, preload: string, log: Logger, tab?: string): BrowserWindow {
   const display = screen.getDisplayMatching(near).workArea;
-  const size = { width: tab === 'developer' ? Math.min(780, display.width) : 420, height: tab === 'developer' ? Math.min(800, display.height) : 620 };
+  const size = { width: Math.min(tab === 'developer' ? 1060 : 880, display.width), height: Math.min(780, display.height) };
   // prefer the left side of the character, else the right
   let x = near.x - size.width - 8;
   if (x < display.x) x = near.x + near.width + 8;
   const y = Math.min(Math.max(display.y, near.y + near.height - size.height), display.y + display.height - size.height);
-  const r = clampToDisplays({ x, y, ...size }, displaysNow(), size.width);
+  const r = { x: Math.round(Math.max(display.x, Math.min(x, display.x + display.width - size.width))), y: Math.round(y), ...size };
   const win = new BrowserWindow({
     ...r,
-    minWidth: 340,
-    minHeight: 420,
+    minWidth: Math.min(620, display.width),
+    minHeight: Math.min(480, display.height),
     frame: true,
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#0c0b0f', symbolColor: '#ece9f1', height: 40 },
-    minimizable: false,
-    maximizable: false,
-    backgroundColor: '#0b0912',
+    titleBarOverlay: { color: '#111017', symbolColor: '#f6f0fa', height: 48 },
+    minimizable: true,
+    maximizable: true,
+    backgroundColor: '#111017',
     show: false,
-    title: 'Capri',
+    title: tab === 'developer' ? 'Capri - Developer' : 'Capri - Companion',
     icon: capriIconPath(),
-    alwaysOnTop: true,
+    alwaysOnTop: false,
     webPreferences: { offscreen: OFFSCREEN, preload, contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: true },
   });
   harden(win, log);
@@ -127,7 +127,7 @@ export function createBubbleWindow(preload: string, log: Logger): BrowserWindow 
 
 export const capriIconPath = () => app.isPackaged ? path.join(process.resourcesPath, 'icon.ico') : path.join(RENDERER_DIR, 'capri', 'mochiiwuff', 'icon.ico');
 export function createTaskbarWindow(preload: string, log: Logger): BrowserWindow {
-  const win = new BrowserWindow({ width: 400, height: 590, resizable: false, maximizable: false,
+  const win = new BrowserWindow({ width: 420, height: 670, resizable: false, maximizable: false,
     show: false, title: 'Capri', icon: capriIconPath(), backgroundColor: '#14101c', autoHideMenuBar: true,
     webPreferences: { offscreen: OFFSCREEN, preload, contextIsolation: true, sandbox: true, nodeIntegration: false } });
   if (process.platform === 'win32') win.setAppDetails({ appId: 'dev.capri.buddy', appIconPath: capriIconPath(), appIconIndex: 0, relaunchDisplayName: 'Capri', ...(app.isPackaged ? { relaunchCommand: `"${process.execPath}" --open-capri` } : {}) });

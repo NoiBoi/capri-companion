@@ -18,7 +18,11 @@ export function perchSpot(win: Rect, size: { width: number; height: number }, di
   if (y < a.y - size.height * 0.2 || win.y > a.y + a.height - 60 || win.width < size.width + 40) return null;
   const lo = Math.max(win.x + 10, a.x), hi = Math.min(win.x + win.width - size.width - 10, a.x + a.width - size.width);
   if (hi < lo) return null;
-  let x = Math.round(lo + (hi - lo) * rand());
+  // Favor a shoulder of the window, away from the pointer and the title-bar buttons.
+  const shoulders = [lo + (hi - lo) * .12, lo + (hi - lo) * .78];
+  const xScore = (x: number) => Math.min(600, Math.abs(x + size.width / 2 - cursor.x)) - (x + size.width > win.x + win.width - 140 ? 180 : 0);
+  let x = Math.round(shoulders.sort((a, b) => xScore(b) - xScore(a))[0] + (rand() - .5) * Math.min(30, (hi - lo) * .08));
+  x = Math.max(lo, Math.min(hi, x));
   if (cursor.x >= x && cursor.x < x + size.width && cursor.y < win.y + 4 && cursor.y > y) x = cursor.x < (lo + hi) / 2 + size.width / 2 ? Math.min(hi, cursor.x + 30) : Math.max(lo, cursor.x - size.width - 30);
   return { x, y, width: size.width, height: size.height, kind: 'perch' };
 }

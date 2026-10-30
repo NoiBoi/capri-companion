@@ -1432,9 +1432,9 @@ describe('interface', () => {
       for (const t of ['chat', 'model', 'voice', 'character', 'memory', 'privacy', 'system']) {
         await panel.evaluate((x) => (window as unknown as { capri: { invoke(c: string, a: string): Promise<unknown> } }).capri.invoke('panel:open', x), t);
         await panel.waitForTimeout(t === 'system' || t === 'character' || t === 'model' || t === 'privacy' ? 900 : 250);
-        const o = await panel.evaluate(() => { const r = document.getElementById('closeBtn')!.getBoundingClientRect(); return { sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, close: r.width > 0 && r.right <= innerWidth + 1 }; });
+        const o = await panel.evaluate(() => { return { sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, nativeControls: !!(navigator as any).windowControlsOverlay }; });
         expect(o.sw, `${t} @ ${size}`).toBeLessThanOrEqual(o.cw + 1);
-        expect(o.close, `close button visible on ${t} @ ${size}`).toBe(true);
+        expect(o.nativeControls, `native window controls available on ${t} @ ${size}`).toBe(true);
       }
     }
   });
@@ -1525,16 +1525,17 @@ describe('postures & placement', () => {
     await char.waitForTimeout(2300);
     expect((await dbg(char)).surface).toBe('window');
     expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => x.getTitle() === 'Capri' && !x.isFocusable())!.getBounds().y)).toBe(b.y);
-    // Hold the mouse while moving: idle at the old spot until release.
+    // Hold the mouse while moving: small geometry changes stay attached.
     await app.evaluate(() => { (globalThis as Record<string, unknown>).__capriWindowHeld = true; });
     // Move and resize the attached window without focusing it.
     await app.evaluate(() => { (globalThis as Record<string, unknown>).__capriWindowsOverride = [{ handle: 11n, rect: { x: 400, y: 650, width: 700, height: 400 } }]; });
     await char.waitForTimeout(600);
-    expect(await char.evaluate(() => (window as any).__capriDebug.model.activeClip)).toBe('dangle');
-    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => x.getTitle() === 'Capri' && !x.isFocusable())!.getBounds().y)).toBe(b.y);
+    expect(await char.evaluate(() => (window as any).__capriDebug.attachment)).toBe('perch');
+    const riding = await app.evaluate(() => (globalThis as any).__capri.charWin.getBounds());
+    expect(Math.abs(riding.y + riding.height * SEAT_RATIO - 650)).toBeLessThanOrEqual(4);
+    expect(await app.evaluate(() => (globalThis as any).__capri.teleporter.active)).toBe(false);
     await app.evaluate(() => { (globalThis as Record<string, unknown>).__capriWindowHeld = false; });
-    await char.waitForFunction(() => (window as any).__capriDebug.model.activeClip === 'perch_glitch');
-    await char.waitForTimeout(1700);
+    await char.waitForTimeout(350);
     const after = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => x.getTitle() === 'Capri' && !x.isFocusable())!.getBounds());
     expect(Math.abs(after.y + after.height * SEAT_RATIO - 650)).toBeLessThanOrEqual(4);
     expect((await dbg(char)).surface).toBe('window');
@@ -2679,7 +2680,7 @@ describe('contextual companion interactions', () => {
     const recovered = await replacement;
     await recovered.getByLabel('Provider', { exact: true }).waitFor();
     const closed = recovered.waitForEvent('close');
-    await recovered.getByRole('button', { name: 'Close', exact: true }).click();
+    await recovered.evaluate(() => window.capri.invoke('panel:close')).catch(error => { if (!recovered.isClosed()) throw error; });
     await closed;
   });
   it('keeps one settings window during rapid navigation and uses the final requested tab', async () => {

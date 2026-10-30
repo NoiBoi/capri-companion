@@ -169,6 +169,8 @@ it('activates the native reply window and accepts typing after a shortcut-style 
   const opened=a.waitForEvent('window');await a.evaluate(()=>{(globalThis as any).__capri.bubble.open();});const page=await opened;await page.waitForURL('**/bubble.html');
   await a.evaluate(async({BrowserWindow})=>{const g=globalThis as any;g.__priorWindow=new BrowserWindow({width:300,height:200,show:true});await g.__priorWindow.loadURL('about:blank');g.__priorWindow.focus();});
   await expect.poll(()=>a.evaluate(()=>(globalThis as any).__priorWindow.isFocused())).toBe(true);
+  await page.waitForTimeout(350); // A delayed activation must not steal focus back after switching away.
+  expect(await a.evaluate(()=>(globalThis as any).__priorWindow.isFocused())).toBe(true);
   await a.evaluate(()=>{(globalThis as any).__capri.bubble.open();});
   await expect.poll(()=>a.evaluate(()=>(globalThis as any).__capri.bubble.nativeActive)).toBe(true);
   await expect.poll(()=>page.evaluate(()=>document.activeElement?.id)).toBe('input');

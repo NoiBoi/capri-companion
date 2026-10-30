@@ -1,7 +1,7 @@
 import type { BrowserWindow } from 'electron';
 import { createTaskbarWindow, reveal } from './windows';
 import type { Logger } from './log';
-export type TaskbarCommand = 'open' | 'minimize' | 'intro' | 'settings' | 'quit' | 'normal' | 'explore' | 'sleep';
+export type TaskbarCommand = 'open' | 'chat' | 'minimize' | 'intro' | 'settings' | 'quit' | 'normal' | 'explore' | 'sleep';
 export class TaskbarControls {
   window: BrowserWindow;
   private disposing = false;
@@ -16,7 +16,7 @@ export class TaskbarControls {
   command(c: TaskbarCommand) {
     if (c === 'minimize') { this.d.minimize(); return; }
     this.d.command(c);
-    if (c === 'open' || c === 'intro' || c === 'settings') this.park();
+    if (c === 'open' || c === 'chat' || c === 'intro' || c === 'settings') this.park();
   }
   close() { this.disposing = true; if (!this.window.isDestroyed()) this.window.destroy(); }
 }

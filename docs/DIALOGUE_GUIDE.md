@@ -70,6 +70,8 @@ quotations, user memories, or a playlist of fallback lines.
 
 ## Cumulative preference ledger
 
+- **2026-10-30, 1.1.2 movement correction:** Small window adjustments no longer carry Capri continuously. Wait for release and a settled edge, relocate once, and keep blocked destinations quiet. Favor forgiving, visible drop snapping to exposed mid-height window edges. This supersedes 1.1.1's small-move riding; cursor visits, tours, lower rests, user placement and quiet controls remain available.
+
 - **2026-10-29, Stages 5/6:** Character and reliability have equal weight. Coordinate speech with verified body state and quiet commitments. Retire exact authored IDs only; generated feedback remains bounded diagnostics, never permanent personal memory. Criticism ends a subject without another callback.
 
 - **2026-10-28, movement correction:** Avoid video centers and pointer visits over video windows. Briefly inspect from a side, then move clear. Honor timed stays and named-window avoidance, move directly to a named window using Capri's own body controls, vary cursor arrival/tracking and window outings, and increase simple perch-to-perch opportunities. During a requested stay, doze after a few minutes and wake near its end with one helpful Capri-like warning. Supported top perches and lower-edge lying are both valid.

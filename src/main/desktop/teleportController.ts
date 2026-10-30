@@ -70,8 +70,8 @@ export class TeleportController {
 
   /** Fly straight to a spot (computer control: she follows what she's working on). Skips if she's mid-move. */
   /** Teleport (glitch out, reappear) to an exact spot: she follows what she's working on. Skips if busy. */
-  async jumpTo(dest: Destination | (() => Destination), animation?: 'perch_glitch', cancelled?: () => boolean) {
-    if (this.busy) return;
+  async jumpTo(dest: Destination | (() => Destination | null), animation?: 'perch_glitch', cancelled?: () => boolean) {
+    if (this.busy) return false;
     this.busy = true;
     const revision = this.revision;
     const id = ++this.seq, fx = this.d.settings().teleport.effects;
@@ -81,15 +81,17 @@ export class TeleportController {
       await departure;
       let target: Destination | undefined;
       if (revision === this.revision && !cancelled?.()) {
-        target = typeof dest === 'function' ? dest() : dest;
-        if (this.d.canOccupy?.(target) === false) target = undefined;
+        target = (typeof dest === 'function' ? dest() : dest) ?? undefined;
+        if (target && this.d.canOccupy?.(target) === false) target = undefined;
         if (target) { await this.d.prepareFlight?.(); if(revision!==this.revision||cancelled?.())target=undefined; }
+        if (target && this.d.canOccupy?.(target) === false) target = undefined;
         if (target) { this.d.move(target, 'teleport'); this.d.moved?.(target, 'teleport'); }
       }
       const arrival = this.waitAck(id, 'in', fx ? 1800 : 400);
       this.d.cue({ type: 'teleport', phase: 'in', id, effects: fx, animation });
       await arrival;
       if (target) this.d.arrived?.(target, 'direct');
+      return !!target;
     } finally { this.busy = false; }
   }
 
@@ -108,18 +110,21 @@ export class TeleportController {
     const cur = this.d.bounds();
     if (!cur) return false;
     const dx = dest.x - cur.x, dy = dest.y - cur.y;
-    const dur = (options.gentle ? Math.min(5500, Math.max(2800, Math.hypot(dx, dy) / 0.22)) : Math.min(2200, Math.max(850, Math.hypot(dx, dy) / 0.7))) * Math.max(.6, Math.min(1.6, options.pace ?? 1));
+    const distance = Math.hypot(dx, dy);
+    if (distance < 2) return true;
+    const dur = (options.gentle ? Math.min(3800, Math.max(800, distance / .32)) : Math.min(2400, Math.max(520, distance / .72))) * Math.max(.6, Math.min(1.6, options.pace ?? 1));
     this.d.cue({ type: 'dash', dir: dx < 0 ? -1 : 1 });
     const t0 = Date.now();
     const complete = await new Promise<boolean>((resolve) => {
       const step = () => {
         if (options.cancelled?.()) { clearInterval(timer); resolve(false); return; }
         const u = Math.min(1, (Date.now() - t0) / dur);
-        const e = u < 0.5 ? 4 * u * u * u : 1 - (-2 * u + 2) ** 3 / 2; // ease in-out
-        const bend = Math.sin(Math.PI * e) * (options.curve ?? 0), length = Math.max(1, Math.hypot(dx, dy));
+        // Minimum-jerk timing: zero velocity AND acceleration at takeoff and contact.
+        const e = u * u * u * (10 + u * (-15 + 6 * u));
+        const bend = Math.sin(Math.PI * e) * Math.max(-distance * .15, Math.min(distance * .15, options.curve ?? 0)), length = Math.max(1, distance);
         const step = { ...dest, x: Math.round(cur.x + dx * e - dy / length * bend), y: Math.round(cur.y + dy * e + dx / length * bend) };
         if (this.d.canOccupy?.(step) === false || options.canOccupy && !options.canOccupy(step)) { clearInterval(timer); resolve(false); return; }
-        this.d.move(step);
+        this.d.move(step, 'glide');
         if (u >= 1) { clearInterval(timer); resolve(true); }
       };
       const timer = setInterval(step, 16);
@@ -145,9 +150,9 @@ export class TeleportController {
     if (!dest) return { ok: false, detail: target === 'perch' ? 'No window to sit on (needs a non-maximised window with room above it)' : 'No free spot to teleport to' };
     this.busy = true;
     const revision = this.revision;
-    // short hops on the same screen are sometimes a glide instead of a teleport
+    // Local travel keeps visible continuity; distant/cross-monitor travel teleports.
     const near = Math.hypot(dest.x - cur.x, dest.y - cur.y) < 900 && this.d.displays().some((x) => x.workArea.x <= cur.x + cur.width / 2 && cur.x + cur.width / 2 < x.workArea.x + x.workArea.width && x.workArea.x <= dest.x + dest.width / 2 && dest.x + dest.width / 2 < x.workArea.x + x.workArea.width);
-    if (how === 'glide' || (how === 'either' && near && Math.random() < 0.4)) {
+    if (how === 'glide' || (how === 'either' && near)) {
       try {
         const completed = await this.glide(dest, { cancelled: () => revision !== this.revision || reason === 'auto' && !!this.automaticBlock() });
         if (!completed) return { ok: false, detail: this.automaticBlock() ?? 'Automatic movement interrupted.' };

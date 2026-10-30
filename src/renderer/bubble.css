@@ -21,3 +21,6 @@ html,body{width:100%}#stack{width:100%;display:flex;flex-direction:column;gap:9p
 
 /* The composer remains reachable when a previous transmission fills the window. */
 body[data-composing="true"] #previous{display:none}
+
+/* The same quiet surfaces and controls as the companion window. */
+body{--ink:#19161f;--violet:#51425f;--accent:#c493f4;color:var(--text);font-family:var(--ui)}#card{filter:drop-shadow(0 5px 12px #0006)}#plate{clip-path:none;border:1px solid var(--line-strong);border-radius:12px}#portrait-frame,#portrait{clip-path:none;border-radius:8px}#status{clip-path:none;border-radius:5px}#who{color:var(--accent)}#message{line-height:1.55}.earlier{background:var(--surface);border:1px solid var(--line);box-shadow:none;border-radius:10px}textarea{background:var(--bg);border-color:var(--line-strong)}textarea:focus{border-color:var(--accent);box-shadow:none}#composer{border-color:var(--line)}button:hover,button:focus-visible{background:var(--raised);outline-color:var(--accent)}

@@ -1,3 +1,5 @@
+import { searchBox, type SearchItem } from './search';
+import { SETTINGS_SEARCH } from './settingsSearch';
 import {authoredLineId} from '../../shared/dialogue';
 import type { ActionRequest, ActionResult, AssistantPhase, ChatMessage, ConnectionStatus, Diagnostics, MemoryItem, Note, Reminder } from '../../shared/ipc';
 import { TOOL_NAMES, type Settings, type ToolName } from '../../shared/settings';
@@ -34,20 +36,27 @@ let secretStatus: Record<string, boolean> = {};
 let phase: AssistantPhase = 'idle';
 let phaseDetail = '';
 let conn: ConnectionStatus | null = null;
+const developerOnly = location.hash.slice(1) === 'developer';
+document.body.classList.toggle('developer-window', developerOnly);
+document.title = developerOnly ? 'Capri - Developer' : 'Capri - Companion';
 let tab = location.hash.slice(1) || 'chat';
+let searchTarget: SearchItem | undefined;
+let revealDeveloperSearch: ((item: SearchItem) => void) | undefined;
 const TABS: { id: string; label: string; icon: string }[] = [
   { id: 'chat', label: 'Chat', icon: 'chat' },
-  { id: 'model', label: 'Model', icon: 'model' },
-  { id: 'voice', label: 'Voice', icon: 'voice' },
-  { id: 'character', label: 'Character', icon: 'eye' },
+  { id: 'settings', label: 'Settings', icon: 'shield' },
+  { id: 'model', label: 'Brain & replies', icon: 'model' },
+  { id: 'attention', label: 'Attention & quiet', icon: 'pulse' },
+  { id: 'voice', label: 'Voice & listening', icon: 'voice' },
+  { id: 'character', label: 'Desktop character', icon: 'eye' },
   { id: 'memory', label: 'Memory', icon: 'memory' },
   { id: 'connections', label: 'Connections', icon: 'shield' },
-  { id: 'privacy', label: 'Privacy', icon: 'shield' },
-  { id: 'system', label: 'System', icon: 'pulse' },
+  { id: 'privacy', label: 'Access & privacy', icon: 'shield' },
+  { id: 'system', label: 'App & shortcuts', icon: 'pulse' },
   { id: 'developer', label: 'Developer', icon: 'model' },
 ];
 // older entry points (tray menu, shortcuts, tests) still land somewhere sensible
-const ALIASES: Record<string, string> = { settings: 'model', look: 'character', move: 'character', behavior: 'character', permissions: 'privacy', diagnostics: 'system' };
+const ALIASES: Record<string, string> = { look: 'character', move: 'character', behavior: 'character', permissions: 'privacy', diagnostics: 'system' };
 const view = document.getElementById('view')!;
 
 function setByPath(path: string, value: unknown): Record<string, unknown> {
@@ -140,7 +149,22 @@ function renderConn() {
 // ---------------------------------------------------------------- navigation
 function renderRail() {
   const rail = document.getElementById('rail')!;
-  rail.replaceChildren(...TABS.map((t) => h('button', { role: 'tab', 'aria-selected': String(t.id === tab), 'aria-label': t.label, onclick: () => go(t.id) }, icon(t.icon), h('span', { class: 'tip' }, t.label))));
+  if (developerOnly) { rail.hidden = true; return; }
+  rail.replaceChildren(h('div', { class: 'rail-label' }, 'COMPANION'), ...TABS.filter(t => t.id !== 'developer').map(t =>
+    h('button', { role: 'tab', 'aria-selected': String(t.id === tab), 'aria-label': t.label, onclick: () => go(t.id) }, icon(t.icon), h('span', {}, t.label))),
+    h('div', { class: 'grow' }), h('div', { class: 'rail-label' }, 'WORKSHOP'),
+    btn('Developer tools ↗', () => api.invoke('panel:open', 'developer'), 'quiet'),
+    h('p', { class: 'rail-note' }, 'Live diagnostics in a separate window.'));
+}
+function highlightResult(item: SearchItem) {
+  const candidates = [...view.querySelectorAll<HTMLElement>('.field, .group > .label, .dev-card h2, .settings-tile, h1')];
+  const target = candidates.find(el => (el.querySelector('label')?.textContent ?? el.textContent)?.trim() === item.label)
+    ?? candidates.find(el => el.textContent?.toLowerCase().includes(item.label.toLowerCase()));
+  if (!target) return;
+  for (let parent = target.parentElement; parent; parent = parent.parentElement) if (parent instanceof HTMLDetailsElement) parent.open = true;
+  target.scrollIntoView({ block: 'center', behavior: 'smooth' }); target.classList.add('search-hit');
+  const control = target.querySelector<HTMLElement>('input, select, button, textarea');
+  (control ?? target).focus({ preventScroll: true }); setTimeout(() => target.classList.remove('search-hit'), 2200);
 }
 let navigationRevision = 0;
 let developerPoll: number | undefined;
@@ -150,6 +174,8 @@ function go(t: string) {
   if (developerPoll !== undefined) { clearInterval(developerPoll); developerPoll = undefined; }
   navigationRevision++;
   t = ALIASES[t] ?? t;
+  if (t === 'developer' && !developerOnly) { void api.invoke('panel:open', 'developer'); return; }
+  if (developerOnly) t = 'developer';
   if (t !== 'welcome' && !TABS.some((x) => x.id === t)) t = 'chat';
   tab = t;
   void api.invoke('panel:viewed', t).catch(() => {});
@@ -158,7 +184,7 @@ function go(t: string) {
   view.replaceChildren();
   view.className = 'enter';
   const revision = navigationRevision;
-  void Promise.resolve().then(() => (RENDER[t] ?? renderChat)()).catch((error: unknown) => {
+  void Promise.resolve().then(async () => { await (RENDER[t] ?? renderChat)(); if (revision !== navigationRevision) return; if (searchTarget) { const item = searchTarget; searchTarget = undefined; if (developerOnly) revealDeveloperSearch?.(item); else highlightResult(item); } }).catch((error: unknown) => {
     if (revision !== navigationRevision) return;
     view.replaceChildren(viewHead(t === 'memory' ? 'Memory' : t), h('div', { class: 'scroll' },
       h('p', {}, 'Could not load this panel. Your saved data has not been deleted.'),
@@ -195,7 +221,7 @@ function msgEl(m: ChatMessage): HTMLElement {
   if(m.role==='assistant'&&m.meta?.speech?.kind.startsWith('generated')&&!m.meta?.private) {
     const feedback=h('div',{class:'row'});
     for(const [kind,label] of [['repetitive','Repetitive'],['generic','Too generic'],['character','Out of character'],['intrusive','Poor timing']] as const)feedback.append(btn(label,async()=>{try{await api.invoke('dialogue:feedback',{messageId:m.id,kind});feedback.remove();toast('Feedback saved locally.');}catch(e){toast((e as Error).message,true);}},'quiet'));
-    el.append(feedback);
+    el.append(h('details', { class: 'message-feedback' }, h('summary', {}, 'Give feedback'), feedback));
   }
   return el;
 }
@@ -234,11 +260,11 @@ async function renderChat() {
     const v = (value ?? ta.value).trim();
     if (!v) return;
     ta.value = ''; autosize();
-    try { await api.invoke('chat:send', { text: v }); } catch (e) { toast((e as Error).message, true); }
+    try { await api.invoke('chat:send', { text: v }); } catch (e) { if (!ta.value) { ta.value = v; autosize(); } toast((e as Error).message, true); }
   };
   const autosize = () => { ta.style.height = 'auto'; ta.style.height = `${Math.min(140, Math.max(34, ta.scrollHeight + 2))}px`; };
   ta.addEventListener('input', autosize);
-  ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } });
+  ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); void send(); } });
   const micBtn = h('button', { class: 'btn icon-only', type: 'button', title: S.voice.micPermission ? 'Hold to talk (Ctrl+Alt+T)' : 'Microphone is off (Voice settings)', 'aria-label': 'Push to talk' }, icon('mic'));
   micBtn.disabled = !S.voice.micPermission;
   const micStart = () => { if (mic) return; mic = true; micBtn.classList.add('rec'); void api.invoke('voice:ptt', 'start'); };
@@ -415,7 +441,7 @@ async function renderModel() {
       field('Context turns', num('ai.historyTurns', 'Context turns', 0, 100)),
       field('Timeout (s)', num('ai.requestTimeoutSec', 'Timeout', 5, 600))),
   );
-  view.append(viewHead('Model'), sc);
+  view.append(viewHead('Brain & replies'), sc);
 }
 
 // ---------------------------------------------------------------- voice
@@ -460,7 +486,7 @@ async function renderVoice() {
       field('Key', h('span', { class: 'row' }, keyIn, btn('Save', async () => { if (keyIn.value.trim()) { await api.invoke('secrets:set', { key: 'openaiVoice', value: keyIn.value.trim() }); go('voice'); } }),
         secretStatus.openaiVoice ? btn('Remove', async () => { await api.invoke('secrets:delete', 'openaiVoice'); go('voice'); }, 'danger') : null))) : '',
   );
-  view.append(viewHead('Voice'), sc);
+  view.append(viewHead('Voice & listening'), sc);
 }
 
 // ---------------------------------------------------------------- character: appearance, behavior, movement
@@ -494,9 +520,18 @@ async function renderCharacter() {
     group('Movement',
       field('Teleport now', h('span', { class: 'row' }, tp('auto', 'Anywhere'), tp('near_cursor', 'To cursor'), tp('perch', 'On window')), undefined, true),
       field('Teleport on her own', toggle('teleport.auto', 'Teleport on her own'), t.auto ? (t.armed ? `Next in ${t.nextInSec !== null ? Math.max(1, Math.ceil(t.nextInSec / 60)) : '—'} min` : `Waiting: ${t.blockedReason ?? 'AI offline'}`) : undefined),
-      field('Every (minutes)', h('span', { class: 'row' }, num('teleport.minMinutes', 'Minimum minutes', 1, 240), h('span', { class: 'sub' }, 'to'), num('teleport.maxMinutes', 'Maximum minutes', 1, 480))),
+      field('Travel spacing (minutes)', h('span', { class: 'row' }, num('teleport.minMinutes', 'Minimum minutes', 1, 240), h('span', { class: 'sub' }, 'to'), num('teleport.maxMinutes', 'Maximum minutes', 1, 480))),
       sw('Avoid the active window', 'teleport.avoidActiveWindow'),
       sw('Teleport effects', 'teleport.effects')),
+  );
+  const advanced = [...sc.children].find(el => el.querySelector('.label')?.textContent === 'Little spectacles');
+  if (advanced) { const details = h('details', { class: 'advanced-settings' }, h('summary', {}, 'Extra effects and occasional spectacles')); advanced.replaceWith(details); details.append(advanced); }
+  view.append(viewHead('Desktop character'), sc);
+}
+
+function renderAttention() {
+  const sc = h('div', { class: 'scroll' });
+  sc.append(
     group('Conversation cues',
       sw('Occasional cursor visits and brief following', 'behavior.cursorVisits'),
       sw('Visit newly opened windows', 'behavior.newWindowVisits'),
@@ -514,13 +549,13 @@ async function renderCharacter() {
       field('Sleep after (minutes)', num('behavior.sleepAfterMinutes', 'Sleep after', 1, 240)),
       sw('Quiet hours', 'behavior.quietHours.enabled'),
       field('From', h('span', { class: 'row' }, timeIn('behavior.quietHours.start', 'Quiet hours start'), h('span', { class: 'sub' }, 'to'), timeIn('behavior.quietHours.end', 'Quiet hours end'))),
-      sw('Idle remarks', 'behavior.idleRemarks'),
-      S.behavior.idleRemarks ? sw('Say remarks out loud', 'behavior.proactiveVoice') : null,
+      sw('Spontaneous conversation', 'behavior.idleRemarks'),
+      sw('Say remarks out loud', 'behavior.proactiveVoice'),
       S.behavior.idleRemarks ? h('p', { class: 'hint' }, 'Attention responds to new windows, settled document changes and unresolved curiosities. She can look without speaking; recent conversation, repetition and focus controls limit interruptions.') : null,
       sw('Explore background windows', 'behavior.explore'),
       h('div', { class: 'hint' }, 'Allows visits in Company mode too. Visits are paced over minutes and pause for games, sleep, quiet hours and conversation. Occasional observations share a limited background request budget.')),
   );
-  view.append(viewHead('Character'), sc);
+  view.append(viewHead('Attention & quiet'), sc);
 }
 
 // ---------------------------------------------------------------- memory
@@ -699,16 +734,42 @@ async function renderPrivacy() {
           if (confirm('Delete all Capri data (settings, keys, history, memory, notes)? This cannot be undone.') && confirm('Really delete everything?')) await api.invoke('app:resetAll');
         }, 'danger', 'trash'))),
   );
-  view.append(viewHead('Privacy'), sc);
+  view.append(viewHead('Access & privacy'), sc);
+}
+
+function capabilityControl() {
+  const input = h('input', { type: 'checkbox', class: 'switch', role: 'switch', checked: S.capabilityBoost.enabled, 'aria-label': 'More capable Capri' });
+  input.addEventListener('change', async () => {
+    input.disabled = true;
+    try { await flushSettings(); const result = await api.invoke('settings:capabilities', input.checked); S = result.settings; toast(input.checked ? 'Capability preferences enabled.' : 'Previous preferences restored.'); }
+    catch (error) { input.checked = S.capabilityBoost.enabled; toast((error as Error).message, true); }
+    finally { input.disabled = false; }
+  });
+  return group('More capable Capri', field('Enable capability preferences', input),
+    h('p', { class: 'hint' }, 'Gives Capri greater access to your PC: automatic screen previews may be sent to your chosen AI provider, local desktop context, push-to-talk microphone access, saved conversation history and automatic memory learning. Also enables spontaneous conversation, spoken asides, cursor and background-window visits, and autonomous travel. Quiet hours and Do not disturb still apply.'),
+    h('p', { class: 'hint' }, 'Turning this off restores only the preferences this switch changed. Choices already enabled stay enabled; later individual edits are kept. Learned memories remain saved. Conversation history follows your restored history-saving preference.'),
+    h('details', {}, h('summary', {}, 'Scope and connection requirements'), h('p', { class: 'hint' }, 'Includes personality, bubbles, small activities, local context, contextual pings, song reactions, cursor visits, new-window visits, background-window outings, spontaneous dialogue, proactive voice, automatic travel, interaction lines, push-to-talk permission, memory, automatic learning, interaction profile, saved history and Allow screen reading. Does not enable always-listening wake words, computer control, pranks, or new accounts and folders. Configured integrations keep their own consent and setup. Speech requires your voice settings.')));
+}
+function renderSettings() {
+  const descriptions: Record<string, string> = {
+    character: 'Presence, movement and expression', attention: 'Curiosity, conversation, quiet hours and rest', voice: 'Speaking, voices and push-to-talk', model: 'AI connection and reply preferences',
+    memory: 'What she remembers and how she learns', connections: 'Browser, projects and connected services', privacy: 'Desktop access, actions and your data', system: 'Startup, shortcuts and app health',
+  };
+  const sc = h('div', { class: 'scroll settings-home' }, h('p', { class: 'page-intro' }, 'Make room for a little company. Choose how Capri lives on your desktop.'),
+    h('div', { class: 'settings-grid' }, ...['character','attention','voice','model','memory','connections','privacy','system'].map(id => {
+      const item = TABS.find(t => t.id === id)!;
+      return h('button', { class: 'settings-tile', onclick: () => go(id) }, icon(item.icon), h('strong', {}, item.label), h('span', {}, descriptions[id]));
+    })), capabilityControl());
+  view.append(viewHead('Settings'), sc);
 }
 
 // ---------------------------------------------------------------- system: startup, shortcuts, health, logs
 async function renderSystem() {
   const revision = navigationRevision;
   const sc = h('div', { class: 'scroll' });
-  view.append(viewHead('System'), sc);
+  view.append(viewHead('App & shortcuts'), sc);
   sc.append(
-    group('Developer tools', btn('Open developer panel', () => go('developer')), h('p', { class: 'hint' }, 'Preview animations, run action cycles and inspect local behavior.')),
+    group('Developer tools', btn('Open developer panel ↗', () => api.invoke('panel:open', 'developer')), h('p', { class: 'hint' }, 'Preview animations, run action cycles and inspect local behavior.')),
     group('Startup',
       sw('Launch at sign-in', 'startup.launchOnLogin'),
       sw('Reminder notifications', 'notifications.reminders'),
@@ -744,10 +805,12 @@ async function renderSystem() {
 // ---------------------------------------------------------------- developer panel
 async function renderDeveloper() {
   const revision = navigationRevision;
-  const header = viewHead('Capri / developer'), sc = h('div', { class: 'scroll dev-scroll' }); view.append(header, sc);
+  const header = viewHead('Developer tools'), sc = h('div', { class: 'scroll dev-scroll' }); view.append(header, sc);
   const status = h('p', { role: 'status', id: 'dev-status', class: 'dev-status' }, 'Connecting…');
   const log = h('pre', { class: 'logs', id: 'dev-log' });
   const state = h('div', { id: 'dev-state' }), mind = h('div', { id: 'dev-mind' });
+  const decisionQuery = h('input', { type: 'search', placeholder: 'Filter event, action or reason…', 'aria-label': 'Filter decision history' });
+  decisionQuery.addEventListener('input', () => renderDetailViews());
   const decisions = h('div', { class: 'dev-decisions' }), catalog = h('div', { class: 'dev-catalog' });
   const runButtons: HTMLButtonElement[] = [];
   const seconds = h('input', { type: 'number', min: .5, max: 8, step: .5, value: 2, 'aria-label': 'Preview duration in seconds' });
@@ -765,10 +828,12 @@ async function renderDeveloper() {
     element.replaceChildren(h('div', {}, ...children));
     for (const e of element.querySelectorAll('details')) if (expanded.has(e.querySelector('summary')?.textContent)) e.open = true;
   };
-  let reading = false;
+  let reading = false, paused = false;
+  const pause = btn('Pause live view', () => { paused = !paused; pause.textContent = paused ? 'Resume live view' : 'Pause live view'; if (!paused) void refresh(); });
+  header.append(h('div', { class: 'row' }, btn('Open companion ↗', () => api.invoke('panel:open', 'settings'), 'quiet'), pause));
   let renderDetailViews = () => {};
   const refresh = async () => {
-    if (reading || revision !== navigationRevision) return; reading = true;
+    if (reading || paused || revision !== navigationRevision) return; reading = true;
     try {
       const d: DevSnapshot = await api.invoke('dev:get'); if (revision !== navigationRevision) return;
       status.textContent = `${d.job.result.toUpperCase()}${d.job.label ? ' · ' + d.job.label : ''} · ${d.job.step || 'No preview running. Live state refreshes every second.'}`;
@@ -814,7 +879,7 @@ async function renderDeveloper() {
         card('Character tastes', ...m.relationship.tastes.map(t => h('article', { class: 'dev-entry' }, h('h3', {}, t.topic), h('p', {}, t.text), evidence('Supporting quote', [t.source.evidence]))), m.relationship.tastes.length ? null : empty('No learned character taste.')),
         card('Ongoing projects', ...m.relationship.threads.map(t => h('article', { class: 'dev-entry' }, h('h3', {}, `${t.title} / ${t.status}`), h('p', {}, t.summary))), m.relationship.threads.length ? null : empty('No ongoing project thread.')),
       );
-      if (!panes.get('Results')!.hidden) fill(decisions, ...m.situation.journal.slice().reverse().map(j => h('article', { class: 'dev-entry' }, h('h3', {}, `${clock(j.at)} · ${j.event} → ${j.action}`), h('p', {}, j.reason), j.interpretation ? note(`Tentative interpretation: ${j.interpretation}`) : null, note(`Host accepted expression: ${j.delivered ? 'yes' : 'no'}`))), m.situation.journal.length ? null : empty('No recent decision journal.'));
+      if (!panes.get('Results')!.hidden) fill(decisions, ...m.situation.journal.slice().reverse().filter(j => `${j.event} ${j.action} ${j.reason} ${j.interpretation ?? ''}`.toLowerCase().includes(decisionQuery.value.toLowerCase())).map(j => h('article', { class: 'dev-entry' }, h('h3', {}, `${clock(j.at)} · ${j.event} → ${j.action}`), h('p', {}, j.reason), j.interpretation ? note(`Tentative interpretation: ${j.interpretation}`) : null, note(`Host accepted expression: ${j.delivered ? 'yes' : 'no'}`))), m.situation.journal.length ? null : empty('No recent decision journal.'));
       };
       renderDetailViews();
       log.textContent = d.job.log.map(entry => `${clock(entry.at)}  ${entry.text}`).join('\n') || 'Preview results appear here.';
@@ -837,7 +902,8 @@ async function renderDeveloper() {
   const panes = new Map<string, HTMLElement>();
   const show = (name: string) => { for (const [id, pane] of panes) pane.hidden = name !== id; for (const b of nav.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.textContent === name)); renderDetailViews(); };
   for (const name of ['Overview', 'Mind & memory', 'Playground', 'Live checks', 'Results']) { const pane = h('div', { class: 'dev-pane', hidden: name !== 'Overview' }); panes.set(name,pane); nav.append(btn(name, () => show(name))); }
-  sc.append(note('Live understanding, behavior diagnostics and a complete preview library.'), nav, toolbar, status, ...panes.values());
+  sc.append(note('What she notices, what she chooses, and what gets in the way.'), nav, status, ...panes.values());
+  panes.get('Playground')!.append(toolbar);
   show('Overview');
   panes.get('Overview')!.append(state);
   panes.get('Mind & memory')!.append(mind);
@@ -875,10 +941,11 @@ async function renderDeveloper() {
     section.dataset.category = categories[title] ?? 'movement';
     section.dataset.search = [section.textContent, ...Array.from(section.querySelectorAll('option')).map(o => o.value)].join(' ').toLowerCase();
   }
+  revealDeveloperSearch = item => { show(item.section ?? 'Playground'); if ((item.section ?? 'Playground') === 'Playground') { search.value = item.terms ?? item.label; category.value = 'all'; filter(); if(item.control) { const control = [...catalog.querySelectorAll<HTMLSelectElement>('select')].find(el => el.getAttribute('aria-label') === item.control); if(control) control.value = item.value ?? ''; } } else highlightResult(item); };
   const filter = () => { const query = search.value.toLowerCase().trim(); for (const section of Array.from(catalog.children) as HTMLElement[]) section.hidden = (category.value !== 'all' && section.dataset.category !== category.value) || !section.dataset.search?.includes(query); };
   search.addEventListener('input', filter); category.addEventListener('change', filter);
   panes.get('Live checks')!.prepend(note('These controls use real exposed-window context and can spend model usage. They honor privacy, focus and request limits. A denied or quiet result is shown in Overview and Results.'));
-  panes.get('Results')!.append(card('Preview log', log), card('Recent decisions', note('A bounded journal of compact decisions from actual events. Local previews have a separate log.'), decisions));
+  panes.get('Results')!.append(card('Preview log', log), card('Recent decisions', decisionQuery, note('A bounded journal of compact decisions from actual events. Local previews have a separate log.'), decisions));
   await refresh(); if (revision === navigationRevision) developerPoll = window.setInterval(() => void refresh(), 1000);
 }
 
@@ -1029,8 +1096,32 @@ async function renderConnections() {
 }
 
 const RENDER: Record<string, () => unknown> = {
-  chat: renderChat, model: renderModel, voice: renderVoice, character: renderCharacter, memory: renderMemory, connections: renderConnections, privacy: renderPrivacy, system: renderSystem, developer: renderDeveloper, welcome: renderWelcome,
+  attention: renderAttention, settings: renderSettings, chat: renderChat, model: renderModel, voice: renderVoice, character: renderCharacter, memory: renderMemory, connections: renderConnections, privacy: renderPrivacy, system: renderSystem, developer: renderDeveloper, welcome: renderWelcome,
 };
+
+const DEV_SEARCH: SearchItem[] = [
+  ...['Current direction','What she is attending to','Why she may be quiet','Body and continuity','Request allowance','Latest contextual outcome'].map(label => ({ page: 'developer', label, detail: 'Live overview', section: 'Overview', terms: 'attention blockers decision diagnostics reason movement connection budget' })),
+  ...['Current interests','Observed evidence','Visual readings','Shared conversation','Remembered experiences and wants','Character tastes','Ongoing projects'].map(label => ({ page: 'developer', label, detail: 'Mind & memory', section: 'Mind & memory', terms: 'cognition memory evidence context history' })),
+  { page: 'developer', label: 'Recent decisions', detail: 'Results · event and decision history', section: 'Results', terms: 'history timeline why reason blocked failed action journal' },
+  { page: 'developer', label: 'Live contextual checks', detail: 'Live checks · uses real context and model usage', section: 'Live checks', terms: 'screenshot inspection model window drop return' },
+  ...([
+    ['Sprite strip', 'Animation preview', DEV_ANIMATIONS], ['Activity', 'Activity preview', DEV_ACTIVITIES], ['Interaction', 'Interaction preview', DEV_INTERACTIONS],
+    ['Scenario', 'Behavior scenario', DEV_SCENARIOS], ['Dialogue', 'Dialogue event', DEV_DIALOGUE], ['Reaction', 'Reaction preview', DEV_REACTIONS],
+    ['Secondary artwork', 'Secondary pose', SECONDARY_POSES], ['Mood', 'Mood preview', MOODS], ['Life event', 'Life event preview', LIFE_EVENTS], ['Phase', 'Phase preview', DEV_PHASES],
+  ] as const).flatMap(([kind, control, names]) => names.map(name => ({ page: 'developer', label: name.replaceAll('_', ' '), detail: `Playground · ${kind}`, terms: name, control, value: name }))),
+  ...[...FLOURISHES, ...SCENES].map(name => ({ page: 'developer', label: name.replaceAll('_', ' '), detail: 'Playground · construct moment', terms: name })),
+  ...['Run local checks','Replay opening','Simulate idle','Simulate sleep','Return now','Stop preview'].map(label => ({ page: 'developer', label, detail: 'Playground · testing controls', terms: label })),
+];
+const settingsItems = [...SETTINGS_SEARCH, ...TOOL_NAMES.map(name => ({ page: 'privacy', label: TOOL_INFO[name], detail: 'Access & privacy · action permission', terms: name.replaceAll('_', ' ') }))];
+const popularSettings = ['More capable Capri','Quiet hours','Volume','Conversation activity','Microphone','Search folders'];
+settingsItems.sort((a,b) => { const rank = (item: SearchItem) => { const index = popularSettings.indexOf(item.label); return index < 0 ? 100 : index; }; return rank(a)-rank(b); });
+const search = searchBox(developerOnly ? DEV_SEARCH : settingsItems, developerOnly ? 'Search diagnostics & tests' : 'Search settings', item => {
+  if (developerOnly) { revealDeveloperSearch?.(item); return; }
+  searchTarget = item; go(item.page);
+});
+document.querySelector('.titlebar .spacer')!.before(search);
+if (developerOnly) document.getElementById('wordmark')!.textContent = 'CAPRI / DEV';
+document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); search.querySelector('input')!.focus(); } });
 
 // ---------------------------------------------------------------- boot
 document.getElementById('closeBtn')!.append(icon('close'));
@@ -1051,7 +1142,7 @@ async function startPanel() {
     if (state.status === 'fulfilled') phase = state.value.phase;
     if (connection.status === 'fulfilled') conn = connection.value;
     renderConn(); renderPhase();
-    if (!S.firstRunComplete && tab !== 'welcome') tab = 'welcome';
+    if (!developerOnly && !S.firstRunComplete && tab !== 'welcome') tab = 'welcome';
     booted = true; go(tab);
     window.dispatchEvent(new Event('capri:panel-ready'));
     await api.invoke('panel:ready');

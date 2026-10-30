@@ -75,6 +75,7 @@ export type CharacterCue =
   | { type: 'connection'; state: ConnectionStatus['state'] }
   | { type: 'teleport'; phase: 'out' | 'in'; id: number; effects: boolean; animation?: 'perch_glitch' }
   | { type: 'attachment'; mode: 'perch' | 'inverted' | 'moving' | null }
+  | { type: 'dropHint'; edge: { x: number; y: number; width: number } | null }
   | { type: 'clip'; name: string }
   | { type: 'surface'; surface: 'taskbar' | 'window' | 'air' | 'edge_left' | 'edge_right' }
     | { type: 'poseSupport'; support: import('./secondaryBehavior').PoseSupport }
@@ -171,11 +172,12 @@ export interface InvokeMap {
   'intro:done': [number, void];
   'theatre:ready': [undefined, void];
   'theatre:done': [number, void];
-  'taskbar:command': ['open' | 'minimize' | 'intro' | 'settings' | 'quit' | 'normal' | 'explore' | 'sleep', void];
+  'taskbar:command': ['open' | 'chat' | 'minimize' | 'intro' | 'settings' | 'quit' | 'normal' | 'explore' | 'sleep', void];
   'taskbar:mode': [void, 'normal' | 'explore' | 'sleep'];
   'settings:get': [void, Settings];
   'settings:set': [Partial<Settings> | Record<string, unknown>, { settings: Settings; repaired: string[] }];
   'settings:reset': [void, Settings];
+  'settings:capabilities': [boolean, { settings: Settings; repaired: string[] }];
   'secrets:status': [void, Record<string, boolean>];
   'secrets:set': [{ key: string; value: string }, boolean];
   'secrets:delete': [string, boolean];
@@ -271,7 +273,7 @@ export const INVOKE_CHANNELS: InvokeChannel[] = [
   'bubble:reply',
   'dev:get', 'dev:run', 'dev:stop',
   'theatre:ready', 'theatre:done', 'intro:done', 'taskbar:command', 'taskbar:mode',
-  'settings:get', 'settings:set', 'settings:reset', 'secrets:status', 'secrets:set', 'secrets:delete',
+  'settings:get', 'settings:set', 'settings:reset', 'settings:capabilities', 'secrets:status', 'secrets:set', 'secrets:delete',
   'chat:send', 'chat:stop', 'chat:state', 'chat:history', 'chat:clear', 'memory:list', 'memory:add', 'memory:approve',
   'memory:undo', 'memory:update', 'memory:delete', 'memory:clear', 'memory:patterns', 'memory:clearPatterns', 'notes:list', 'notes:delete', 'reminders:list', 'reminders:cancel',
   'relationship:get', 'relationship:taste', 'relationship:thread', 'relationship:status', 'relationship:remove', 'dialogue:retire', 'dialogue:restore', 'dialogue:feedback',

@@ -7,6 +7,8 @@
   <style>
     html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; user-select: none; width: 100%; height: 100%; }
     canvas { display: block; }
+    #drop-hint { position: absolute; height: 2px; background: #74ffe1; box-shadow: 0 0 8px #22d6bb; border-radius: 2px; pointer-events: none; }
+    #drop-hint::after { content: ''; position: absolute; left: 50%; top: -3px; width: 6px; height: 6px; border: 1px solid #bcfff0; border-radius: 50%; background: #143b35; }
     #bubble {
       position: absolute; left: 50%; top: 4px; transform: translateX(-50%) translateY(-6px); max-width: 86%;
       font: 600 12px/1.35 "Segoe UI Variable", "Segoe UI", sans-serif; color: #eafff3; background: rgba(10,7,16,.92);
@@ -18,6 +20,7 @@
 </head>
 <body>
   <canvas id="stage"></canvas>
+  <div id="drop-hint" hidden aria-hidden="true"></div>
   <div id="bubble" role="status" aria-live="polite"></div>
   <script src="character.js"></script>
 </body>

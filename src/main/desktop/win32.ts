@@ -184,7 +184,8 @@ export function activateChatWindow(handle:Buffer):boolean{
     to=foreground?Number(api.GetWindowThreadProcessId(foreground,new Uint32Array(1))):0;
     if(to&&from!==to)linked=!!api.AttachThreadInput(from,to,true);
     if(target&&target!==from&&target!==to)targetLinked=!!api.AttachThreadInput(from,target,true);
-    api.SwitchToThisWindow(native,true);return !!api.SetForegroundWindow(native);
+    api.SwitchToThisWindow(native,true);api.SetForegroundWindow(native);api.SetFocus(native);
+    const active=api.GetForegroundWindow();return !!active&&api.address(active)===native;
   }catch{return false;}finally{if(targetLinked)try{api.AttachThreadInput(from,target,false);}catch{}if(linked)try{api.AttachThreadInput(from,to,false);}catch{}}
 }
 export function restoreChatFocus(handle:bigint):boolean{

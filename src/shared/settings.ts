@@ -37,6 +37,7 @@ export const Policy = z.enum(['allow', 'confirm', 'deny']);
 export type Policy = z.infer<typeof Policy>;
 
 export const SettingsSchema = z.object({
+  capabilityBoost: z.object({ enabled: z.boolean(), previous: z.record(z.string(), z.union([z.boolean(), z.string()])) }).default({ enabled: false, previous: {} }),
   version: z.literal(1),
   firstRunComplete: z.boolean(),
   dialogue: z.object({ activityLevel: z.enum(DIALOGUE_ACTIVITY_LEVELS), localContext: z.boolean(), weatherCity: z.string().max(100), spotifyBanter: z.boolean(), contextPings: z.boolean() }),
@@ -155,6 +156,7 @@ export const DEFAULT_POLICIES: Record<ToolName, Policy> = {
 export const CAPRI_VOICE_DELIVERY = 'Speak in a playful, mischievous, confident feminine voice with a light raspy edge. Keep the delivery intimate and conversational, with dry teasing, a smile in the voice, and brief expressive bursts of excitement. Use crisp consonants, natural pauses, and varied intonation at an easy conversational pace. Let sincere moments sound softer and warmer. Avoid a polished announcer delivery, exaggerated squeakiness, or constant shouting. Read only the supplied dialogue; do not add words, stage directions, or sound effects.';
 
 export const DEFAULT_SETTINGS: Settings = {
+  capabilityBoost: { enabled: false, previous: {} },
   version: 1,
   firstRunComplete: false,
   dialogue: { activityLevel: 'lively', localContext: true, weatherCity: '', spotifyBanter: true, contextPings: true },

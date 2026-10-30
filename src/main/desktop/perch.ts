@@ -17,9 +17,16 @@ export function windowAttachment(pet: Rect, window: Rect, seatRatio: number, scr
 }
 
 /** Snap by the visible seat, rather than the large transparent renderer rectangle. */
-export function snapWindow(windows: PerchWindow[], pet: Rect, seatRatio: number, distance = 56, screenTop?: (window: Rect) => number): PerchWindow | null {
+export function snapWindow(windows: PerchWindow[], pet: Rect, seatRatio: number, distance = 56, screenTop?: (window: Rect) => number, canSnap?: (window: PerchWindow) => boolean): PerchWindow | null {
   const x = pet.x + pet.width / 2, y = pet.y + pet.height * seatRatio;
-  return windows.find(({ rect: w }) => x >= w.x && x <= w.x + w.width && (Math.abs(y - w.y) <= distance || (screenTop && w.y - screenTop(w) < pet.height * (seatRatio - 0.14) && Math.abs(pet.y + pet.height * INVERTED_SEAT_RATIO - w.y) <= distance))) ?? null;
+  return windows.map(window => {
+    const w = window.rect;
+    const inverted = screenTop && windowAttachment(pet, w, seatRatio, screenTop(w)).mode === 'inverted';
+    const gap = Math.min(Math.abs(y - w.y), inverted ? Math.abs(pet.y + pet.height * INVERTED_SEAT_RATIO - w.y) : Infinity);
+    return { window, gap, within: x >= w.x && x <= w.x + w.width };
+  }).filter(c => c.within && c.gap <= distance)
+    .sort((a, b) => a.gap - b.gap)
+    .find(c => !canSnap || canSnap(c.window))?.window ?? null;
 }
 
 export function attachToWindow(pet: Rect, window: Rect, seatRatio: number, fraction?: number, footprint = .22): { bounds: Rect; fraction: number } {

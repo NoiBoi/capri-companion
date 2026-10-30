@@ -16,7 +16,7 @@ const bundles = await Promise.all([
   build({ ...common, entryPoints: [path.join(root, 'src/preload/preload.ts')], outfile: path.join(out, 'preload/preload.js'), platform: 'node', format: 'cjs', external: ['electron'] }),
   build({ ...common, entryPoints: { theatre: path.join(root, 'src/renderer/theatre.ts'), trail: path.join(root, 'src/renderer/trail.ts'), intro: path.join(root, 'src/renderer/intro.ts'), taskbar: path.join(root, 'src/renderer/taskbar.ts'), character: path.join(root, 'src/renderer/character/main.ts'), panel: path.join(root, 'src/renderer/panel/main.ts'), panelStartup: path.join(root, 'src/renderer/panel/startup.ts'), bubble: path.join(root, 'src/renderer/bubble.ts') }, outdir: path.join(out, 'renderer'), platform: 'browser', format: 'iife' }),
 ]);
-for (const f of ['theatre.html', 'theatre.css', 'trail.html', 'trail.css', 'intro.html', 'intro.css', 'taskbar.html', 'taskbar.css', 'character.html', 'panel.html', 'panel.css', 'bubble.html', 'bubble.css']) {
+for (const f of ['theme.css', 'theatre.html', 'theatre.css', 'trail.html', 'trail.css', 'intro.html', 'intro.css', 'taskbar.html', 'taskbar.css', 'character.html', 'panel.html', 'panel.css', 'bubble.html', 'bubble.css']) {
   const src = path.join(root, 'src/renderer', f);
   if (fs.existsSync(src)) fs.copyFileSync(src, path.join(out, 'renderer', f));
 }

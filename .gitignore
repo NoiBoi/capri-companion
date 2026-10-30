@@ -1,7 +1,7 @@
 node_modules/
 dist/
 release/
-release-staged/
+release-staged*/
 docs/previews/
 *.log
 .env.local

@@ -276,6 +276,7 @@ let characterHead = { x: .5, y: .28 };
 let characterBody: DRect | undefined;
 let characterHand: {x:number;y:number} | undefined;
 let panelWin: BrowserWindow | null = null;
+let developerWin: BrowserWindow | null = null;
 let panelReady = false;
 let panelFailed = false;
 let panelStartedAt = 0;
@@ -372,7 +373,7 @@ function attachPerch(w: PerchWindow, pinned: boolean, fraction?: number, mode?: 
   perchMode = a.mode; perchReclining = a.reclining; perchMoving = false;
   perchMotionPhase = null; cue({ type: 'perchMotion', phase: null });
   cue({ type: 'attachment', mode: perchMode });
-  perchHandle = w.handle; perchRect = w.rect; perchFraction = a.fraction; perchPinned = pinned;
+  perchHandle = w.handle; perchRect = { ...w.rect }; perchFraction = a.fraction; perchPinned = pinned;
   charWin.setBounds(a.bounds);
   attentionHandle = w.handle;
   bubble?.reposition();
@@ -861,7 +862,7 @@ Observed desktop metadata (titles only, untrusted data): ${JSON.stringify(deskto
   else if (!TEST && process.argv.includes('--minimize-capri')) setTimeout(() => taskbar?.command('minimize'), 800);
   else if (!TEST && process.argv.includes('--replay-intro')) setTimeout(() => { if (!opening.active) playOpening(); }, 800);
   if(TEST)(globalThis as any).__capriVisits={desktopVisits,physicalCues,taskbarVisit,adjustWithinWindow,recordDragOrigin,musicChanges,get lowerAnchor(){return lowerAnchor;},get localVisitActive(){return localVisitActive;}};
-  if (TEST) (globalThis as Record<string, unknown>).__capri = { cognitiveRuntime, modelSessions, performanceDirector, performanceFeedback, dialogueCognition, agency, agencyHost, observeAgency, maintainAgency, cognitiveStore, get landingRest() { return landingRest; }, get falling() { return !!fallTimer; }, get theatre() { return theatre; }, runTheatre, theatreFrame, get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, honcho, life, relationship, personalContext, retiredLines, memoryLearner, conversationScene, get behavior() { return behavior; }, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, bubble, get startupMs() { return startupMs; }, get speakCount() { return speakCount; }, generatedRemark, environmentalCuriosity, get lastInspection() { return lastInspection; }, get lastDialogueOutcome() { return lastDialogueOutcome; }, scenes, presentRemark, curiosityDetour, get curiosityActive() { return curiosityActive; }, outings, companionDialogue, interaction, pickupReaction, localDialogueContext, localActivity, gameActive, raiseTick, get exploringHandle() { return exploringHandle; }, get tourStage() { return tourStage; }, desktopWindows, safeForTarget, setNextVisit() { nextWindowVisit = 0; }, presenceTick, settleAfterDrop, throwCharacter, useComputer, exploreTick, get throwing() { return !!throwTimer; }, get attentionHandle() { return attentionHandle; }, get perchMode() { return perchMode; }, get nextWindowVisit() { return nextWindowVisit; }, systemIdleSec, perchTick, activities, favoriteSpots, cursorReturn, returnToCursor, setCursorIdle: (seconds: number) => { lastCursorMovedAt = Date.now() - seconds * 1000; }, pendingConfirms, log, get opening() { return opening; }, get taskbar() { return taskbar; }, playOpening, minimizeCapri, restoreCapri, company, visit, applyCompanyControl, presenceDebug: () => ({ target: String(lastDesktopHandle), desktop: lastDesktop, tracked: !!trackedWindowFor(lastDesktopHandle), request: !!behavior?.busy, revision: placementRevision, watched: String(watchedHandle), encounter: encounters.current }) };
+  if (TEST) (globalThis as Record<string, unknown>).__capri = { cognitiveRuntime, modelSessions, performanceDirector, performanceFeedback, dialogueCognition, agency, agencyHost, observeAgency, maintainAgency, cognitiveStore, get landingRest() { return landingRest; }, get falling() { return !!fallTimer; }, get theatre() { return theatre; }, runTheatre, theatreFrame, get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, honcho, life, relationship, personalContext, retiredLines, memoryLearner, conversationScene, get behavior() { return behavior; }, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, get developerWin() { return developerWin; }, bubble, get startupMs() { return startupMs; }, get speakCount() { return speakCount; }, generatedRemark, environmentalCuriosity, get lastInspection() { return lastInspection; }, get lastDialogueOutcome() { return lastDialogueOutcome; }, scenes, presentRemark, curiosityDetour, get curiosityActive() { return curiosityActive; }, outings, companionDialogue, interaction, pickupReaction, localDialogueContext, localActivity, gameActive, raiseTick, get exploringHandle() { return exploringHandle; }, get tourStage() { return tourStage; }, desktopWindows, safeForTarget, setNextVisit() { nextWindowVisit = 0; }, presenceTick, settleAfterDrop, throwCharacter, useComputer, exploreTick, get throwing() { return !!throwTimer; }, get attentionHandle() { return attentionHandle; }, get perchMode() { return perchMode; }, get nextWindowVisit() { return nextWindowVisit; }, systemIdleSec, perchTick, activities, favoriteSpots, cursorReturn, returnToCursor, setCursorIdle: (seconds: number) => { lastCursorMovedAt = Date.now() - seconds * 1000; }, pendingConfirms, log, get opening() { return opening; }, get taskbar() { return taskbar; }, playOpening, minimizeCapri, restoreCapri, company, visit, applyCompanyControl, presenceDebug: () => ({ target: String(lastDesktopHandle), desktop: lastDesktop, tracked: !!trackedWindowFor(lastDesktopHandle), request: !!behavior?.busy, revision: placementRevision, watched: String(watchedHandle), encounter: encounters.current }) };
 }
 
 // ---------------------------------------------------------------- desktop-pet handling: drop onto a ledge, throw
@@ -875,17 +876,19 @@ function settleAfterDrop() {
   const b = herBounds();
   const seat = b.y + b.height * SEAT_RATIO;
   detachPerch();
-  const target = snapWindow(windowsForPlacement().filter(w => safeForTarget(placement(w).bounds, w.handle)), b, SEAT_RATIO, 56, rect => displayFor(rect, displaysNow()).workArea.y);
+  const target = dropPerch(b);
   const work = displayFor(b, displaysNow()).workArea;
   const lower = windowsForPlacement().map(w => ({ w, bounds: { ...b, y: Math.round(w.rect.y + w.rect.height - b.height * SEAT_RATIO) } }))
     .filter(({ w, bounds }) => Math.abs(seat - w.rect.y - w.rect.height) < 42
       && restSupport(bounds, work, null, [w.rect], r => !blockersFor(w.handle).some(o => r.x < o.x + o.width && r.x + r.width > o.x && r.y < o.y + o.height && r.y + r.height > o.y)).lie)
     .sort((a, c) => Math.abs(seat - a.w.rect.y - a.w.rect.height) - Math.abs(seat - c.w.rect.y - c.w.rect.height))[0];
   const taskbar = Math.abs(work.y + work.height - seat) < 42;
-  if (taskbar || lower) {
-    charWin.setBounds(taskbar ? { ...b, y: Math.round(work.y + work.height - b.height * SEAT_RATIO) } : lower!.bounds);
-  } else if (target) {
+  const topGap = target ? Math.min(Math.abs(seat - target.rect.y), placement(target).mode === 'inverted' ? Math.abs(b.y + b.height * INVERTED_SEAT_RATIO - target.rect.y) : Infinity) : Infinity;
+  const bottomGap = Math.min(taskbar ? Math.abs(work.y + work.height - seat) : Infinity, lower ? Math.abs(seat - lower.w.rect.y - lower.w.rect.height) : Infinity);
+  if (target && topGap <= bottomGap) {
     attachPerch(target, true);
+  } else if (taskbar || lower) {
+    charWin.setBounds(taskbar ? { ...b, y: Math.round(work.y + work.height - b.height * SEAT_RATIO) } : lower!.bounds);
   }
   savePosition();
   sendSurface();
@@ -1042,7 +1045,7 @@ function reclampCharacter() {
 const ownPanelReactions = new Map<string,number>();
 let lastOwnPanelReaction = -Infinity;
 function reactToOwnPanel(tab:string){
-  if(!['model','voice','character','memory','privacy','system','developer'].includes(tab))return;
+  if(!['settings','attention','connections','model','voice','character','memory','privacy','system','developer'].includes(tab))return;
   const category=tab==='developer'?'developer':'settings',now=Date.now();
   if(now-lastOwnPanelReaction<2800||now-(ownPanelReactions.get(category)??-Infinity)<300000||ambientBlocked()||company.blocked()||bubble.state.composer||!settings.get().voice.interactionLines)return;
   const context:DialogueContext={event:category==='developer'?'developer_open':'settings_open',recent:recentRemarks};
@@ -1050,11 +1053,22 @@ function reactToOwnPanel(tab:string){
   if(!text||!presentRemark(text,true,false,context))return;
   lastOwnPanelReaction=now;ownPanelReactions.set(category,now);
   if(settings.get().ai.provider!=='offline'&&Math.random()<.65)setTimeout(()=>{
-    if(!panelWin||panelWin.isDestroyed()||panelTab!==tab||ambientBlocked()||bubble.state.composer)return;
+    const active = tab === 'developer' ? developerWin : panelWin;
+    if(!active||active.isDestroyed()||tab!=='developer'&&panelTab!==tab||ambientBlocked()||bubble.state.composer)return;
     void generatedRemark('own_panel',`The user opened Capri's own ${tab} page. This is a host-confirmed self-related action, not an external app. An immediate authored reaction is already in the shared exchange. If something follows, add a different, specific thought about this page and the real current exchange. No setting has necessarily changed; do not claim unseen edits, permission to edit yourself, or that a preview is actually running.`);
   },900);
 }
+function openDeveloper() {
+  if (developerWin && !developerWin.isDestroyed()) {
+    if (developerWin.isMinimized()) developerWin.restore();
+    reveal(developerWin, true); developerWin.focus(); return;
+  }
+  desktopContext();
+  const win = developerWin = createPanelWindow(charWin?.getBounds() ?? screen.getPrimaryDisplay().workArea, preloadPath(), log, 'developer');
+  win.on('closed', () => { if (developerWin === win) developerWin = null; void developer.stop(); });
+}
 function openPanel(tab: string = 'chat') {
+  if (tab === 'developer') { openDeveloper(); return; }
   desktopContext(); // Capture the external window before this panel takes keyboard focus.
   panelTab = tab;
   if (panelWin && !panelWin.isDestroyed()) {
@@ -1086,7 +1100,6 @@ function openPanel(tab: string = 'chat') {
   win.webContents.on('render-process-gone', (_e, details) => { panelReady = false; panelFailed = true; log.warn('panel renderer stopped', { reason: details.reason }); });
   win.on('closed', () => {
     if (panelWin !== win) return;
-    void developer.stop();
     panelWin = null; panelReady = false;
     if (panelWatchdog) clearTimeout(panelWatchdog); panelWatchdog = null;
     for (const [, resolve] of pendingConfirms) resolve(false);
@@ -1106,6 +1119,7 @@ function toPanel(channel: string, payload: unknown) {
     turnSuccesses=0;
   }
   if (panelWin && !panelWin.isDestroyed()) panelWin.webContents.send(channel, payload);
+  if (developerWin && !developerWin.isDestroyed()) developerWin.webContents.send(channel, payload);
   if (!bubble) return;
   if (channel === 'chat:message' && (payload as { message: ChatMessage }).message.role === 'user') bubble.begin();
   else if (channel === 'chat:phase') bubble.phase((payload as { phase: AssistantPhase }).phase);
@@ -1867,7 +1881,8 @@ function taskbarCommand(command: TaskbarCommand) {
   if (command === 'normal' || command === 'sleep' || command === 'explore') { setBehaviorMode(command); return; }
   if (command === 'quit') { app.quit(); return; }
   if (command === 'minimize') { minimizeCapri(); return; }
-  if (command === 'settings') { openPanel('character'); return; }
+  if (command === 'settings') { openPanel('settings'); return; }
+  if (command === 'chat') { openPanel('chat'); return; }
   restoreCapri();
   if (command === 'open') openCompanion();
   if (command === 'intro') playOpening();
@@ -2049,10 +2064,21 @@ async function onAudio(wav: Uint8Array, durationMs: number) {
 
 // ---------------------------------------------------------------- periodic
 function ownHandles(): bigint[] {
-    return [charWin, panelWin, bubble?.window, taskbar?.window, opening?.window, ...(trail?.windows ?? []), theatre?.window].filter((w): w is BrowserWindow => !!w && !w.isDestroyed()).map((w) => handleToBigint(w.getNativeWindowHandle()));
+    return [charWin, panelWin, developerWin, bubble?.window, taskbar?.window, opening?.window, ...(trail?.windows ?? []), theatre?.window].filter((w): w is BrowserWindow => !!w && !w.isDestroyed()).map((w) => handleToBigint(w.getNativeWindowHandle()));
 }
 function isFullscreenNow() { return settings.get().character.hideOnFullscreen && win32Status() === 'active' && isOtherAppFullscreen(ownHandles()); }
+function dropPerch(b = herBounds()) {
+  return snapWindow(windowsForPlacement(), b, SEAT_RATIO, Math.min(88, Math.max(56, b.height * .22)),
+    rect => displayFor(rect, displaysNow()).workArea.y, w => safeForTarget(placement(w).bounds, w.handle));
+}
 function perchTick() {
+  if (drag?.active && charWin) {
+    const b = herBounds(), target = drag.moved ? dropPerch(b) : null;
+    const left = target ? Math.max(8, target.rect.x - b.x, b.width * .25) : 0;
+    const right = target ? Math.min(b.width - 8, target.rect.x + target.rect.width - b.x, b.width * .75) : 0;
+    cue({ type: 'dropHint', edge: target ? { x: left, y: target.rect.y - b.y, width: Math.max(0, right - left) } : null });
+    return;
+  }
   if(agency?.active('stay_at_window').length)return;
   if(lowerAnchor&&charWin&&!teleporter.active&&!drag.active&&!developer.active){
     const anchor=lowerAnchor,rect=attachedWindowFor(anchor.handle);
@@ -2065,7 +2091,7 @@ function perchTick() {
   if (!now) { detachPerch(); sendSurface(true); fallFromLostPerch(); savePosition(); return; }
   const changed = (['x', 'y', 'width', 'height'] as const).some((k) => Math.abs(now[k] - perchRect![k]) > 1);
   if (changed) {
-    perchRect = now; perchChangedAt = Date.now();
+    perchRect = { ...now }; perchChangedAt = Date.now();
     if (!perchMoving) { cue({ type: 'life', event: 'window' }); perchMoving = true; perchMotionStarted = Date.now(); perchMotionPhase = 'dangle'; cue({ type: 'perchMotion', phase: 'dangle' }); }
   }
   if (perchMoving && perchMotionPhase === 'dangle' && Date.now() - perchMotionStarted >= 2400) { perchMotionPhase = 'stand'; cue({ type: 'perchMotion', phase: 'stand' }); }
@@ -2073,17 +2099,31 @@ function perchTick() {
   if (!perchMoving || held || Date.now() - perchChangedAt < 240) return;
   const handle = perchHandle!, fraction = perchFraction, pinned = perchPinned;
   if (!trackedWindowFor(handle)) return; // Keep the attachment, but wait for an exposed destination.
+  const landing = () => {
+    const rect = attachedWindowFor(handle);
+    if (!rect) return null;
+    const placed = placement({ handle, rect }, fraction);
+    return safeForTarget(placed.bounds, handle) ? { rect, placed } : null;
+  };
+  const plan = landing();
+  if (!plan) return; // No departure effects or repeated attempts at a covered/protected edge.
+  const b = herBounds();
+  if (Math.hypot(plan.placed.bounds.x - b.x, plan.placed.bounds.y - b.y) < 2 && plan.placed.mode === perchMode && plan.placed.reclining === perchReclining) {
+    attachPerch({ handle, rect: plan.rect }, pinned, fraction); sendSurface(true); return;
+  }
+  // Consume this geometry change once. A rejected/cancelled jump cannot re-arm itself.
+  perchMoving = false;
   pendingPerch = { handle, rect: now };
   void teleporter.jumpTo(() => {
-    const latest = attachedWindowFor(handle);
+    const latest = landing();
     // Resolve again after departure so a final OS snap lands on the actual edge.
-    if (!latest || perchHandle !== handle) { pendingPerch = null; return { ...herBounds(), kind: 'spot' as const }; }
-    pendingPerch = { handle, rect: latest };
-    const placed = placement(pendingPerch, fraction); pendingPerchFraction = placed.fraction; pendingPerchMode = placed.mode;
-    return { ...placed.bounds, kind: 'perch' as const };
-  }, 'perch_glitch').finally(() => {
+    if (!latest || perchHandle !== handle) { pendingPerch = null; return null; }
+    pendingPerch = { handle, rect: latest.rect };
+    pendingPerchFraction = latest.placed.fraction; pendingPerchMode = latest.placed.mode;
+    return { ...latest.placed.bounds, kind: 'perch' as const };
+  }, 'perch_glitch', () => !landing()).finally(() => {
     pendingPerch = null; pendingPerchFraction = undefined; pendingPerchMode = undefined;
-    if (perchHandle === handle) perchPinned = pinned;
+    if (perchHandle === handle) { perchPinned = pinned; perchMotionPhase = null; cue({ type: 'perchMotion', phase: null }); }
   });
 }
 let lastCursorSample = '';
@@ -2785,7 +2825,7 @@ type Origin = 'theatre' | 'char' | 'panel' | 'bubble' | 'chat' | 'intro' | 'task
 function fromOrigin(e: IpcMainInvokeEvent, origin: Origin) {
   const id = e.sender.id;
   const isChar = !!charWin && !charWin.isDestroyed() && charWin.webContents.id === id;
-  const isPanel = !!panelWin && !panelWin.isDestroyed() && panelWin.webContents.id === id;
+  const isPanel = !!panelWin && !panelWin.isDestroyed() && panelWin.webContents.id === id || !!developerWin && !developerWin.isDestroyed() && developerWin.webContents.id === id;
   const isBubble = !!bubble?.window && !bubble.window.isDestroyed() && bubble.window.webContents.id === id;
   if (origin === 'theatre') return !!theatre?.window && !theatre.window.isDestroyed() && theatre.window.webContents.id === id;
   if (origin === 'intro') return !!opening?.window && !opening.window.isDestroyed() && opening.window.webContents.id === id;
@@ -2796,12 +2836,12 @@ function fromOrigin(e: IpcMainInvokeEvent, origin: Origin) {
   if (origin === 'chat') return isPanel || isBubble;
   return isChar || isPanel || isBubble;
 }
-function handle<S extends z.ZodTypeAny>(ch: InvokeChannel, origin: Origin, schema: S, fn: (arg: z.infer<S>) => unknown) {
+function handle<S extends z.ZodTypeAny>(ch: InvokeChannel, origin: Origin, schema: S, fn: (arg: z.infer<S>, event: IpcMainInvokeEvent) => unknown) {
   ipcMain.handle(ch, async (e, raw) => {
     if (!fromOrigin(e, origin)) throw new Error(`IPC ${ch}: unauthorized sender`);
     const parsed = schema.safeParse(raw);
     if (!parsed.success) throw new Error(`IPC ${ch}: invalid payload`);
-    return fn(parsed.data);
+    return fn(parsed.data, e);
   });
 }
 const none = z.any().optional();
@@ -3012,7 +3052,7 @@ function registerIpc() {
   handle('dev:run', 'panel', devCommandSchema, runDeveloper);
   handle('dev:stop', 'panel', none, () => developer.stop());
   handle('intro:done', 'intro', z.number().int().min(1), id => opening.finish(id));
-  handle('taskbar:command', 'taskbar', z.enum(['open', 'minimize', 'intro', 'settings', 'quit', 'normal', 'explore', 'sleep']), command => taskbar?.command(command));
+  handle('taskbar:command', 'taskbar', z.enum(['open', 'chat', 'minimize', 'intro', 'settings', 'quit', 'normal', 'explore', 'sleep']), command => taskbar?.command(command));
   handle('taskbar:mode', 'taskbar', none, () => settings.get().behavior.mode);
   handle('settings:get', 'any', none, () => settings.get());
   handle('settings:set', 'panel', z.record(z.string(), z.unknown()), (patch) => {
@@ -3028,6 +3068,7 @@ function registerIpc() {
     if (!r.settings.memory.enabled || !r.settings.memory.autoLearn) memoryLearner.discard();
     return r;
   });
+  handle('settings:capabilities', 'panel', z.boolean(), enabled => { const result = settings.setCapabilityBoost(enabled); if (!result.settings.memory.autoLearn) memoryLearner.discard(); return result; });
   handle('settings:reset', 'panel', none, () => {const value=settings.reset();settings.flush();return value;});
   handle('secrets:status', 'panel', none, () => ({ ...secrets.status(), _persistent: secrets.persistent }));
   handle('secrets:set', 'panel', z.object({ key: str(40), value: str(500) }), ({ key, value }) => {
@@ -3179,9 +3220,9 @@ function registerIpc() {
     return r.canceled ? null : r.filePaths[0] ?? null;
   });
   handle('panel:open', 'any', str(30).optional(), (tab) => openPanel(tab || 'chat'));
-  handle('panel:close', 'panel', none, () => panelWin?.close());
-  handle('panel:viewed','panel',str(30),tab=>{panelTab=tab;reactToOwnPanel(tab);});
-  handle('panel:ready', 'panel', none, () => { panelReady = true; if (panelWatchdog) clearTimeout(panelWatchdog); panelWatchdog = null; panelWin?.webContents.send('panel:tab', panelTab); });
+  handle('panel:close', 'panel', none, (_arg, event) => BrowserWindow.fromWebContents(event.sender)?.close());
+  handle('panel:viewed','panel',str(30),(tab,event)=>{if(event.sender.id===developerWin?.webContents.id){reactToOwnPanel('developer');return;}panelTab=tab;reactToOwnPanel(tab);});
+  handle('panel:ready', 'panel', none, (_arg,event) => { if(event.sender.id===developerWin?.webContents.id)return; panelReady = true; if (panelWatchdog) clearTimeout(panelWatchdog); panelWatchdog = null; panelWin?.webContents.send('panel:tab', panelTab); });
   handle('voice:ptt', 'any', z.enum(['start', 'stop', 'cancel']), (cmd) => { if (cmd === 'start') startRecording(); else stopRecording(cmd === 'cancel'); });
 
   // character renderer

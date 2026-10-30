@@ -93,7 +93,7 @@ document.getElementById('retire')!.addEventListener('click', () => {
   const line = shownText(); if (!line) return;
   if(state.speech?.kind==='authored')void api.invoke('dialogue:retire', state.speech.lineId).catch(() => {});
 });
-document.getElementById('settings')!.addEventListener('click', () => { void api.invoke('panel:open', 'character'); });
+document.getElementById('settings')!.addEventListener('click', () => { void api.invoke('panel:open', 'settings'); });
 document.getElementById('close')!.addEventListener('click', () => { void api.invoke('bubble:close'); });
 stop.addEventListener('click', () => { void api.invoke('chat:stop'); });
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') {e.preventDefault();void api.invoke('bubble:escape');} });
