@@ -42,6 +42,55 @@ async function perch(a: ElectronApplication) {
   }, SEAT_RATIO);
 }
 
+it('lets explicit feet placement catch a YouTube top while autonomous video avoidance stays active',async()=>{
+  const {a,char}=await boot();
+  await a.evaluate((_e,ratio)=>{
+    const g=globalThis as any,a=g.__capri,w=g.__capriWindowsOverride[0],b=a.charWin.getBounds();
+    g.__capriWindowInfo['17']={title:'2500 Miles to Limp Home From the Arctic - YouTube',process:'chrome.exe'};
+    w.rect={...w.rect,y:0,height:900};
+    a.charWin.setBounds({...b,x:w.rect.x+w.rect.width/2-b.width/2,y:Math.round(-b.height*(1-ratio))});
+    g.__autoUnsafe=!a.safeForTarget(a.placement(w).bounds,17n);a.settleAfterDrop();
+  },SEAT_RATIO);
+  expect(await a.evaluate(()=>(globalThis as any).__autoUnsafe)).toBe(true);
+  await expect.poll(()=>char.evaluate(()=>(window as any).__capriDebug.attachment)).toBe('inverted');
+  expect(await a.evaluate(()=>String((globalThis as any).__capri.attentionHandle))).toBe('17');
+  await a.evaluate(()=>{const g=globalThis as any;g.__capriWindowHeld=true;g.__capriWindowsOverride[0].rect.x+=24;g.__capri.perchTick();g.__capriWindowHeld=false;g.__capri.perchTick();});
+  await expect.poll(()=>a.evaluate(()=>(globalThis as any).__capri.teleporter.active)).toBe(false);
+  await expect.poll(()=>char.evaluate(()=>(window as any).__capriDebug.attachment)).toBe('inverted');
+});
+
+it('uses seated, grounded standing and reclining phases on the actual taskbar support',async()=>{
+  const {a,char}=await boot();
+  await a.evaluate(({screen},ratio)=>{const g=globalThis as any,a=g.__capri,b=a.charWin.getBounds(),area=screen.getPrimaryDisplay().workArea;g.__capriWindowsOverride=[];a.charWin.setBounds({...b,x:area.x+500,y:Math.round(area.y+area.height-b.height*ratio)});a.settleAfterDrop();},SEAT_RATIO);
+  await char.waitForTimeout(200);
+  await char.evaluate(()=>{const d=(window as any).__capriDebug;d.manual(true);d.model.resetSecondary();d.step(.1);});
+  expect(await char.evaluate(()=>(window as any).__capriDebug.model.activeClip)).toMatch(/^perch/);
+  if(process.env.CAPRI_QA_DIR){fs.mkdirSync(process.env.CAPRI_QA_DIR,{recursive:true});await char.screenshot({path:path.join(process.env.CAPRI_QA_DIR,'taskbar-sitting.png')});}
+  await char.evaluate(()=>(window as any).__capriDebug.step(1,40));
+  expect(await char.evaluate(()=>(window as any).__capriDebug.model.activeClip)).toMatch(/^(idle|blink)$/);
+  if(process.env.CAPRI_QA_DIR)await char.screenshot({path:path.join(process.env.CAPRI_QA_DIR,'taskbar-standing.png')});
+  await char.evaluate(()=>(window as any).__capriDebug.step(1,30));
+  expect(await char.evaluate(()=>(window as any).__capriDebug.model.secondaryRendererState.pose)).toBe('recline');
+  if(process.env.CAPRI_QA_DIR)await char.screenshot({path:path.join(process.env.CAPRI_QA_DIR,'taskbar-lying.png')});
+});
+
+it('snaps feet to a window bottom, advertises the edge, remembers support and releases a closed window',async()=>{
+  const {a,char}=await boot();
+  await a.evaluate((_e,ratio)=>{
+    const g=globalThis as any,a=g.__capri,w=g.__capriWindowsOverride[0].rect,b=a.charWin.getBounds();
+    a.charWin.setBounds({...b,x:w.x+200,y:Math.round(w.y+w.height-b.height*ratio-30)});
+    const placed=a.charWin.getBounds();g.__capriDragInput={down:true,point:{x:placed.x+100,y:placed.y+100}};
+  },SEAT_RATIO);
+  await char.evaluate(()=>window.capri.invoke('char:drag','start'));
+  await a.evaluate(()=>{const g=globalThis as any;g.__capriDragInput.point={...g.__capriDragInput.point,x:g.__capriDragInput.point.x+15};});
+  await expect.poll(()=>char.locator('#drop-hint').isVisible()).toBe(true);
+  await a.evaluate(()=>{(globalThis as any).__capriDragInput.down=false;});
+  await expect.poll(()=>a.evaluate(()=>String((globalThis as any).__capriVisits.lowerAnchor?.handle))).toBe('17');
+  await expect.poll(()=>char.evaluate(()=>(window as any).__capriDebug.model.activeClip)).toMatch(/^perch/);
+  await a.evaluate(()=>{const g=globalThis as any;g.__capriWindowsOverride=[];g.__capri.perchTick();});
+  expect(await a.evaluate(()=>(globalThis as any).__capriVisits.lowerAnchor)).toBeNull();
+});
+
 it('waits for release, immediately interrupts falling, teleports once, then stays still', async () => {
   const { a, char } = await boot(); await perch(a);
   const before = await a.evaluate(() => (globalThis as any).__capri.charWin.getBounds());

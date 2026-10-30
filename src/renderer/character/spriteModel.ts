@@ -162,6 +162,7 @@ export class CapriSpriteModel extends VectorModel {
       support: inp.support ?? { sit: inp.ledge, lie: inp.ledge && inp.attachment !== 'inverted', kind: inp.ledge ? 'window_top' : 'none' },
       inverted: inp.attachment === 'inverted', hovering: !!inp.hovering, inspectingBelow: !!inp.inspectingBelow, patting: this.t < this.rubUntil,
     });
+    if(secondaryScene.standing)clip=this.motionTime<this.blinkUntil?'blink':'idle';
     this.activeSecondary = secondaryScene.pose;
     this.secondaryReason = secondaryScene.reason;
     this.secondaryClosed = secondaryScene.closed || !!this.activeSecondary && beingPatted || Math.max(p.blinkL, p.blinkR) > .75;

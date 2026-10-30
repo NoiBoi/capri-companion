@@ -36,7 +36,6 @@ import { runTask, type Screen } from './agent/computer';
 import { findCodex, runCodex, configureCodexCooldown, configureCodexDiagnostics, codexRequests } from './ai/codexAccount';
 import { claudeSignIn, claudeSignOut, claudeStatus, claudeSubmitCode } from './ai/claudeAccount';
 import { newId, writeJsonAtomic } from './store/jsonFile';
-import { openingGreeting } from '../shared/openingGreeting';
 import * as hands from './desktop/input';
 import { z } from 'zod';
 import type { ActionRequest, CharacterCue, Diagnostics, InvokeChannel, ChatMessage, AssistantPhase } from '../shared/ipc';
@@ -214,11 +213,7 @@ function makeTheatre() {
         const id=theatre!.id;
         setTimeout(() => { if (theatre?.active === kind && theatre.id === id && charWin && !charWin.isDestroyed()) { theatreHidden=true; conceal(charWin); bubble.hide(); } },650);
       }
-      if (!theatrePreview && settings.get().voice.interactionLines && !convo.busy && !recording) {
-        const context = { event: kind, recent: recentRemarks };
-        const line=companionDialogue.choose(context, { remember: false });
-        if(line)presentRemark(line,false,false,context);
-      }
+
     },
     end: (kind, completed) => {
       cue({ type:'theatre',kind:null });
@@ -230,7 +225,6 @@ function makeTheatre() {
         if (kind==='possession') cue({type:'cutin',kind:'laugh'});
         if (!theatrePreview) {
           rememberScene('action',kind==='satellite'?'Reached toward a decorative satellite, sent up a red spark, and watched it answer.':kind==='possession'?'Briefly appeared as eyes and a grin over an exposed window, then reformed.':'Playfully sent a harmless visual spark toward the cursor.');
-          if(settings.get().voice.interactionLines && !convo.busy && !recording) { const context = {event:kind,returning:true,recent:recentRemarks}; presentRemark(companionDialogue.choose(context, { remember: false }),false,false,context); }
         }
       }
     }
@@ -300,7 +294,7 @@ let pendingPerchFraction: number | undefined;
 let pendingPerchMode: 'perch' | 'inverted' | undefined;
 let perchMode: 'perch' | 'inverted' = 'perch';
 let perchReclining = false;
-let lowerAnchor: { handle: bigint; fraction: number } | null = null;
+let lowerAnchor: { handle: bigint; fraction: number; manual?: boolean } | null = null;
 let dragOrigin: { handle: bigint; x: number; y: number } | null = null;
 function recordDragOrigin(){
   const origin=herBounds(),center={x:origin.x+origin.width*.5,y:origin.y+origin.height*.4};
@@ -671,7 +665,7 @@ async function init() {
       if (!message.meta?.contextSources?.length) learner.attachReply(userId, message.content, message.id, message.ts);
       try { relationship.delivered(message.content); } catch { log.warn('project follow-up state could not be saved'); }
     },
-    onUserMessage: message => { cognitiveRuntime.preempt(message.id); stopAgencyMovement(); if(!message.meta?.private&&settings.get().memory.enabled&&settings.get().dialogue.localContext){life.ledger.userMessage(message.content,message.id,message.ts);for(const project of relationship.reconcileUserStatus({role:'user',messageId:message.id,evidence:message.content,at:message.ts})){life.ledger.projectStatement(project,message.content,message.id,message.ts);cognitiveRuntime.transition('project:'+project.id,project.status==='active'?'revised':'resolved');}} cognitiveRuntime.observeMessage(message); chatEvidence.reset(); personalContext.userMessage({ messageId: message.id, text: message.content, at: message.ts }, !!message.meta?.private); if (behavior?.userInput(message.content, message.id)) { environmentalCuriosity.clear(); lastInspection = null; } interactionProfile.touch('chat'); conversationScene.record({ id: message.id, role: 'user', text: message.content, at: message.ts, event: 'chat' }); },
+    onUserMessage: message => { cognitiveRuntime.preempt(message.id,0); stopAgencyMovement(); if(!message.meta?.private&&settings.get().memory.enabled&&settings.get().dialogue.localContext){life.ledger.userMessage(message.content,message.id,message.ts);for(const project of relationship.reconcileUserStatus({role:'user',messageId:message.id,evidence:message.content,at:message.ts})){life.ledger.projectStatement(project,message.content,message.id,message.ts);cognitiveRuntime.transition('project:'+project.id,project.status==='active'?'revised':'resolved');}} cognitiveRuntime.observeMessage(message); chatEvidence.reset(); personalContext.userMessage({ messageId: message.id, text: message.content, at: message.ts }, !!message.meta?.private); if (behavior?.userInput(message.content, message.id)) { environmentalCuriosity.clear(); lastInspection = null; } interactionProfile.touch('chat'); conversationScene.record({ id: message.id, role: 'user', text: message.content, at: message.ts, event: 'chat' }); },
     pauseLearning: () => { learner.pause(); cancelBehavior(); visit.cancel(); },
     queueLearning: (text, messageId) => { learner.enqueue(text, messageId); },
     contextSources: () => chatEvidence.snapshot(),
@@ -763,11 +757,8 @@ Observed desktop metadata (titles only, untrusted data): ${JSON.stringify(deskto
   try { companionDialogue.restore(JSON.parse(fs.readFileSync(dialogueFile, 'utf8'))); } catch { /* fresh dialogue history */ }
   companionDialogue.setPersistence(state => writeJsonAtomic(dialogueFile, state));
   clearPingHistory(false);
-  const greetingFile = path.join(dir, 'opening-greeting.json');
-  let lastOpeningGreeting = '';
-  try { lastOpeningGreeting = JSON.parse(fs.readFileSync(greetingFile, 'utf8')).last ?? ''; } catch { /* first greeting */ }
   opening = new Opening({ preload: preloadPath(), log,
-    greeting: () => { const approved = settings.get().memory.enabled ? memory.approved() : []; const line = openingGreeting(new Date().getHours(), approved.map(m => m.text), lastOpeningGreeting, Math.random, preferredUserName(approved)); lastOpeningGreeting = line; rememberScene('said', line, 'greeting'); try { writeJsonAtomic(greetingFile, { last: line }); } catch { /* greeting can work without persistence */ } return line; },
+    greeting: () => '',
     begin: () => { theatre?.cancel(); visit.cancel(); cancelBehavior(); bubble.hide(); if (charWin && !charWin.isDestroyed()) conceal(charWin); cue({ type: 'pause', paused: true }); },
     end: landed => { if (quitting || userHidden || fullscreenHidden || !charWin || charWin.isDestroyed()) return; setCharacterVisible(true); if (landed) cue({ type: 'entrance' }); raiseCharacter(); } });
   createCharacter();
@@ -874,7 +865,7 @@ Observed desktop metadata (titles only, untrusted data): ${JSON.stringify(deskto
   else if (!TEST && process.argv.includes('--minimize-capri')) setTimeout(() => taskbar?.command('minimize'), 800);
   else if (!TEST && process.argv.includes('--replay-intro')) setTimeout(() => { if (!opening.active) playOpening(); }, 800);
   if(TEST)(globalThis as any).__capriVisits={desktopVisits,physicalCues,taskbarVisit,adjustWithinWindow,recordDragOrigin,musicChanges,get lowerAnchor(){return lowerAnchor;},get localVisitActive(){return localVisitActive;}};
-  if (TEST) (globalThis as Record<string, unknown>).__capri = { cognitiveRuntime, modelSessions, performanceDirector, performanceFeedback, dialogueCognition, agency, agencyHost, observeAgency, maintainAgency, cognitiveStore, get landingRest() { return landingRest; }, get falling() { return !!fallTimer; }, get theatre() { return theatre; }, runTheatre, theatreFrame, get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, honcho, life, relationship, personalContext, retiredLines, memoryLearner, conversationScene, get behavior() { return behavior; }, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, get developerWin() { return developerWin; }, bubble, get startupMs() { return startupMs; }, get speakCount() { return speakCount; }, generatedRemark, environmentalCuriosity, get lastInspection() { return lastInspection; }, get lastDialogueOutcome() { return lastDialogueOutcome; }, scenes, presentRemark, curiosityDetour, get curiosityActive() { return curiosityActive; }, outings, companionDialogue, interaction, pickupReaction, localDialogueContext, localActivity, gameActive, raiseTick, get exploringHandle() { return exploringHandle; }, get tourStage() { return tourStage; }, desktopWindows, safeForTarget, setNextVisit() { nextWindowVisit = 0; }, presenceTick, settleAfterDrop, throwCharacter, useComputer, exploreTick, get throwing() { return !!throwTimer; }, get attentionHandle() { return attentionHandle; }, get perchMode() { return perchMode; }, get nextWindowVisit() { return nextWindowVisit; }, systemIdleSec, perchTick, activities, favoriteSpots, cursorReturn, returnToCursor, setCursorIdle: (seconds: number) => { lastCursorMovedAt = Date.now() - seconds * 1000; }, pendingConfirms, log, get opening() { return opening; }, get taskbar() { return taskbar; }, playOpening, minimizeCapri, restoreCapri, company, visit, applyCompanyControl, presenceDebug: () => ({ target: String(lastDesktopHandle), desktop: lastDesktop, tracked: !!trackedWindowFor(lastDesktopHandle), request: !!behavior?.busy, revision: placementRevision, watched: String(watchedHandle), encounter: encounters.current }) };
+  if (TEST) (globalThis as Record<string, unknown>).__capri = { cognitiveRuntime, modelSessions, performanceDirector, performanceFeedback, dialogueCognition, agency, agencyHost, observeAgency, maintainAgency, cognitiveStore, get landingRest() { return landingRest; }, get falling() { return !!fallTimer; }, get theatre() { return theatre; }, runTheatre, theatreFrame, get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, honcho, life, relationship, personalContext, retiredLines, memoryLearner, conversationScene, get behavior() { return behavior; }, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, get developerWin() { return developerWin; }, bubble, get startupMs() { return startupMs; }, get speakCount() { return speakCount; }, generatedRemark, reactToOwnPanel, dropPerch, dropLower, placement, environmentalCuriosity, get lastInspection() { return lastInspection; }, get lastDialogueOutcome() { return lastDialogueOutcome; }, scenes, presentRemark, curiosityDetour, get curiosityActive() { return curiosityActive; }, outings, companionDialogue, interaction, pickupReaction, localDialogueContext, localActivity, gameActive, raiseTick, get exploringHandle() { return exploringHandle; }, get tourStage() { return tourStage; }, desktopWindows, safeForTarget, setNextVisit() { nextWindowVisit = 0; }, presenceTick, settleAfterDrop, throwCharacter, useComputer, exploreTick, get throwing() { return !!throwTimer; }, get attentionHandle() { return attentionHandle; }, get perchMode() { return perchMode; }, get nextWindowVisit() { return nextWindowVisit; }, systemIdleSec, perchTick, activities, favoriteSpots, cursorReturn, returnToCursor, setCursorIdle: (seconds: number) => { lastCursorMovedAt = Date.now() - seconds * 1000; }, pendingConfirms, log, get opening() { return opening; }, get taskbar() { return taskbar; }, playOpening, minimizeCapri, restoreCapri, company, visit, applyCompanyControl, presenceDebug: () => ({ target: String(lastDesktopHandle), desktop: lastDesktop, tracked: !!trackedWindowFor(lastDesktopHandle), request: !!behavior?.busy, revision: placementRevision, watched: String(watchedHandle), encounter: encounters.current }) };
 }
 
 // ---------------------------------------------------------------- desktop-pet handling: drop onto a ledge, throw
@@ -890,17 +881,16 @@ function settleAfterDrop() {
   detachPerch();
   const target = dropPerch(b);
   const work = displayFor(b, displaysNow()).workArea;
-  const lower = windowsForPlacement().map(w => ({ w, bounds: { ...b, y: Math.round(w.rect.y + w.rect.height - b.height * SEAT_RATIO) } }))
-    .filter(({ w, bounds }) => Math.abs(seat - w.rect.y - w.rect.height) < 42
-      && restSupport(bounds, work, null, [w.rect], r => !blockersFor(w.handle).some(o => r.x < o.x + o.width && r.x + r.width > o.x && r.y < o.y + o.height && r.y + r.height > o.y)).lie)
-    .sort((a, c) => Math.abs(seat - a.w.rect.y - a.w.rect.height) - Math.abs(seat - c.w.rect.y - c.w.rect.height))[0];
+  const lower = dropLower(b);
   const taskbar = Math.abs(work.y + work.height - seat) < 42;
   const topGap = target ? Math.min(Math.abs(seat - target.rect.y), placement(target).mode === 'inverted' ? Math.abs(b.y + b.height * INVERTED_SEAT_RATIO - target.rect.y) : Infinity) : Infinity;
   const bottomGap = Math.min(taskbar ? Math.abs(work.y + work.height - seat) : Infinity, lower ? Math.abs(seat - lower.w.rect.y - lower.w.rect.height) : Infinity);
   if (target && topGap <= bottomGap) {
     attachPerch(target, true);
   } else if (taskbar || lower) {
-    charWin.setBounds(taskbar ? { ...b, y: Math.round(work.y + work.height - b.height * SEAT_RATIO) } : lower!.bounds);
+    const onTaskbar=taskbar && (!lower || Math.abs(work.y+work.height-seat)<=Math.abs(seat-lower.w.rect.y-lower.w.rect.height));
+    charWin.setBounds(onTaskbar ? { ...b, y: Math.round(work.y + work.height - b.height * SEAT_RATIO) } : lower!.bounds);
+    if(!onTaskbar && lower) { lowerAnchor={handle:lower.w.handle,fraction:(lower.bounds.x+b.width/2-lower.w.rect.x)/lower.w.rect.width,manual:true}; attentionHandle=lower.w.handle; }
   }
   savePosition();
   sendSurface();
@@ -914,9 +904,9 @@ function settleAfterDrop() {
     && !blockersFor(w.handle).some(r => face.x >= r.x && face.x <= r.x + r.width && face.y >= r.y && face.y <= r.y + r.height));
   const targetHandle=perchHandle??lower?.w.handle??under?.handle??null;
   const movedAside=!!dragOrigin&&dragOrigin.handle===targetHandle&&Math.hypot(b.x-dragOrigin.x,b.y-dragOrigin.y)>35;
-  dragOrigin=null;
+  const fromHandle=dragOrigin?.handle;dragOrigin=null;
   if(movedAside)rememberScene('action','The user moved Capri to a different spot within the same window, making room around her previous position.','same_window');
-  reactToPlacement(targetHandle,movedAside);
+  reactToPlacement(targetHandle,movedAside,fromHandle);
 }
 let throwTimer: NodeJS.Timeout | null = null;
 let fallTimer: NodeJS.Timeout | null = null;
@@ -1054,21 +1044,10 @@ function reclampCharacter() {
   if (c.x !== b.x || c.y !== b.y) { charWin.setBounds(c); savePosition(); }
 }
 
-const ownPanelReactions = new Map<string,number>();
-let lastOwnPanelReaction = -Infinity;
 function reactToOwnPanel(tab:string){
   if(!['settings','attention','connections','model','voice','character','memory','privacy','system','developer'].includes(tab))return;
-  const category=tab==='developer'?'developer':'settings',now=Date.now();
-  if(now-lastOwnPanelReaction<2800||now-(ownPanelReactions.get(category)??-Infinity)<300000||ambientBlocked()||company.blocked()||bubble.state.composer||!settings.get().voice.interactionLines)return;
-  const context:DialogueContext={event:category==='developer'?'developer_open':'settings_open',recent:recentRemarks};
-  const text=companionDialogue.choose(context,{required:true,remember:false});
-  if(!text||!presentRemark(text,true,false,context))return;
-  lastOwnPanelReaction=now;ownPanelReactions.set(category,now);
-  if(settings.get().ai.provider!=='offline'&&Math.random()<.65)setTimeout(()=>{
-    const active = tab === 'developer' ? developerWin : panelWin;
-    if(!active||active.isDestroyed()||tab!=='developer'&&panelTab!==tab||ambientBlocked()||bubble.state.composer)return;
-    void generatedRemark('own_panel',`The user opened Capri's own ${tab} page. This is a host-confirmed self-related action, not an external app. An immediate authored reaction is already in the shared exchange. If something follows, add a different, specific thought about this page and the real current exchange. No setting has necessarily changed; do not claim unseen edits, permission to edit yourself, or that a preview is actually running.`);
-  },900);
+  if(ambientBlocked()||company.blocked()||bubble.state.composer||!settings.get().voice.interactionLines)return;
+  void generatedRemark('own_panel',`The user opened Capri's own ${tab} page. No setting has necessarily changed. Only speak if this adds a specific thought to the current exchange; navigation alone needs no acknowledgement.`);
 }
 function openDeveloper() {
   if (developerWin && !developerWin.isDestroyed()) {
@@ -1145,7 +1124,6 @@ function cue(c: CharacterCue) {
   if (c.type === 'bubble' || c.type === 'remark') bubble?.remark(c.text);
   if (charWin && !charWin.isDestroyed()) charWin.webContents.send('cue', c);
 }
-let lastInteractionBubble = 0;
 let companionMood: Mood = 'neutral';
 const company = new Company();
 const visit = new VisitSequence();
@@ -1283,17 +1261,9 @@ const encounters = new Encounters();
 let watchedHandle: bigint | null = null;
 let watchUntil = 0;
 let watchedPoint: { x: number; y: number; until: number } | null = null;
-let touchCount = 0, lastTouchAt = 0;
+let touchCount = 0, lastTouchAt = 0, touchStartedAt = 0;
 let lastTouchKind:'pat'|'poke'|null=null;
 let touchBurstTimer:NodeJS.Timeout|null=null;
-function instantInteraction(event: 'pat'|'poke'|'pickup'|'putdown'|'move_aside', repeated = false) {
-  const s=settings.get();
-  const blocked=event==='pickup'?developer.active||s.behavior.mode==='sleep'||!!farewell?.active||!!opening?.active||gameActive()||userHidden||fullscreenHidden||!!agentCtrl||recording||convo.busy||!mayInterrupt(s,{fullscreen:false,hidden:userHidden}):ambientBlocked();
-  if (!s.voice.interactionLines || blocked || company.blocked() || bubble.state.composer) return false;
-  const context: DialogueContext={event,mood:companionMood,repeated,inverted:!!perchHandle&&perchMode==='inverted',recent:recentRemarks};
-  const line=companionDialogue.choose(context,{required:true,remember:false});
-  return !!line && presentRemark(line,true,false,context);
-}
 function watchWindow(handle: bigint | null, seconds = 12) {
   watchedPoint = null;
   watchedHandle = handle; watchUntil = Date.now() + seconds * 1000;
@@ -1316,12 +1286,11 @@ function updateAttention() {
 let lastCompanionEvent: LifeEvent | null = null;
 let lastCompanionEventAt = 0;
 function interaction(kind: 'pat' | 'poke') {
-  cognitiveRuntime.preempt(kind,15000);
+  cognitiveRuntime.preempt(kind,0);
   if(touchBurstTimer){clearTimeout(touchBurstTimer);touchBurstTimer=null;}
   theatre?.cancel();
   cancelBehavior();
   if (settings.get().behavior.mode === 'sleep') return;
-  const interestTarget = watchedHandle ?? attentionHandle;
   if (tourRunning) {
     visit.cancel(); cancelBehavior();
     nextWindowVisit = Math.max(nextWindowVisit, Date.now() + nextExploreDelay());
@@ -1331,20 +1300,15 @@ function interaction(kind: 'pat' | 'poke') {
   lastInteraction = Date.now(); cue({ type: 'life', event: kind });
   cue({ type: 'attention', point: null, seconds: 0 }); watchedHandle = null; watchedPoint = null;
   touchCount = kind!==lastTouchKind||Date.now() - lastTouchAt > 15000 ? 1 : touchCount + 1; lastTouchAt = Date.now();lastTouchKind=kind;
-  const burst=touchCount===3||touchCount===5;
-  if (touchCount > 1 && !burst) return;
-  if (settings.get().voice.interactionLines && (burst||Date.now() - lastInteractionBubble > 2800)) {
-    lastInteractionBubble=Date.now();
-    const immediate=(!burst||settings.get().ai.provider==='offline')&&Math.random()<.8 && instantInteraction(kind,touchCount>1);
-    if(burst&&settings.get().ai.provider!=='offline'){
-      const count=touchCount;
-      touchBurstTimer=setTimeout(()=>{touchBurstTimer=null;if(touchCount!==count||lastTouchKind!==kind||convo.busy)return;
-        void generatedRemark(kind,`The user has ${kind==='pat'?'patted':'poked'} Capri ${count} consecutive times in this short interaction. Give a proper personal reaction to being ${kind==='pat'?'petted':'poked'} this much, grounded in the actual current exchange and your existing opinion. Keep your preference or argument rather than restarting. Enjoyment, playful negotiation or a sassy boundary may fit; do not assume annoyance. No need to recite the exact count.`);
-      },2800);return;
-    }
-    if(settings.get().ai.provider!=='offline' && (burst||!immediate || Math.random()<(kind==='pat'?.8:.55)))
-      void generatedRemark(kind,burst?`The user has ${kind==='pat'?'patted':'poked'} Capri ${touchCount} consecutive times in this short interaction, with no long gap or switch of touch kind. Generate a proper personal reaction to being ${kind==='pat'?'petted':'poked'} this much, connected to the actual current conversation, your own opinion or what you are really doing. Keep your existing preference or argument. Enjoyment, playful negotiation or a sassy boundary can fit; do not assume annoyance or restart with a generic acknowledgement. No need to recite the exact count.`:immediate?'An immediate authored contact reaction has just been delivered and is in the shared exchange. Continue with a different thought tied to the actual conversation, your own opinion, or this interaction. Do not repeat the acknowledgement. Silence is fine if nothing follows.':'',{target:interestTarget&&trackedWindowFor(interestTarget)?interestTarget:undefined});
-  }
+  if(touchCount===1)touchStartedAt=lastTouchAt;
+  // Coalesce sustained handling; an engaged exchange can also color a single touch.
+  if (touchCount < 3 && !cognitiveRuntime.dialogueEngaged() || !settings.get().voice.interactionLines) return;
+  const count=touchCount, generation=cognitiveRuntime.executionRevision();
+  touchBurstTimer=setTimeout(()=>{
+    touchBurstTimer=null;
+    if(touchCount!==count||lastTouchKind!==kind||convo.busy)return;
+    void generatedRemark(kind,`The user has ${kind==='pat'?'patted':'poked'} Capri ${count} times in this interaction. This is actual contact history, not proof of affection, teasing or annoyance. Let your reaction develop from the handling, your current activity and prior words, without resetting your opinion or repeating an acknowledgement. A playful objection, enjoyment or a new thought can fit; silence is also a choice.`,{interactionGeneration:generation,interactionDevelopment:`${touchStartedAt}:${Math.floor(count/3)}`});
+  },900);
 }
 let behavior: BehaviorCore;
 let lastObservedDesktop = '';
@@ -1357,7 +1321,6 @@ let lastDesktopHandle = 0n;
 let attentionHandle: bigint | null = null;
 let placementRevision = 0;
 let placementTimer: NodeJS.Timeout | null = null;
-let lastPlacementReaction = 0;
 const songBanter = new SongBanterGate();
 let musicChanges: MusicChanges;
 const musicWatcher=new MusicWatcher(track=>musicChanges.observe(track,Date.now()));
@@ -1528,20 +1491,11 @@ async function curiosityDetour(text: string, tourValid?: () => boolean, develope
   }
 }
 let lastArrivalRemark = 0;
-let lastPickupLine = 0;
 function pickupReaction() {
-  cognitiveRuntime.preempt('pickup',15000);
+  cognitiveRuntime.preempt('pickup',0);
   cancelBehavior();
   if (settings.get().behavior.mode !== 'sleep') cue({ type: 'life', event: 'hover' });
-  const s = settings.get();
   if (!developer.active && !devAbsence) conversationScene.record({ id: newId('pickup'), role: 'user', text: '[The user picks Capri up.]', at: Date.now(), event: 'pickup' });
-  // Called on actual movement past the drag threshold, never just on mouse-down.
-  if (!s.voice.interactionLines || s.behavior.mode === 'sleep' || company.blocked() || convo.busy || recording || gameActive() || userHidden || fullscreenHidden || bubble.state.composer || !mayInterrupt(s, { fullscreen: false, hidden: false })) return;
-  const now = Date.now();
-  if (now - lastPickupLine < 12000) return;
-  const repeated=now-lastPickupLine<30000;lastPickupLine = now;
-  const immediate=Math.random()<.8&&instantInteraction('pickup',repeated);
-  if(s.ai.provider!=='offline'&&(!immediate||Math.random()<.65))return generatedRemark('pickup',immediate?'A short pickup reaction has already been delivered. A fresh contextual continuation is optional, not another acknowledgement.':'');
 }
 function arrivalRemark(reason: 'manual' | 'auto' | 'ai' | 'direct') {
   if (returningToCursor || tourRunning || curiosityActive) return;
@@ -1550,18 +1504,18 @@ function arrivalRemark(reason: 'manual' | 'auto' | 'ai' | 'direct') {
   lastArrivalRemark = Date.now();
   // Movement alone does not request another model turn.
 }
-let lastPlacementSignature='',lastPlacementSignatureAt=0;
-function reactToPlacement(handle: bigint | null, movedAside = false) {
+let lastPlacementSignature='',lastPlacementSignatureAt=0,placementCount=0;
+function reactToPlacement(handle: bigint | null, movedAside = false, fromHandle?:bigint) {
   const b=herBounds(),signature=JSON.stringify([String(handle),b.x,b.y,movedAside]);
   if(signature===lastPlacementSignature&&Date.now()-lastPlacementSignatureAt<12000)return;
+  placementCount=Date.now()-lastPlacementSignatureAt<120000?placementCount+1:1;
   lastPlacementSignature=signature;lastPlacementSignatureAt=Date.now();
   if (settings.get().behavior.mode === 'sleep') return;
   visit.cancel();
   if (quitting) return;
   cognitiveRuntime.preempt('placement',0);
-  const interactionGeneration=cognitiveRuntime.executionRevision();
   lastInteraction = Date.now(); nextWindowVisit = Math.max(Date.now() + 150000, loungeUntil);
-  attentionHandle = handle; const revision = ++placementRevision;
+  attentionHandle = handle; ++placementRevision;
   encounters.visit(handle ? observedWindow(handle) : null, Date.now());
   if (handle) {
     favoriteSpots.set(handle, (favoriteSpots.get(handle) ?? 0) + 1);
@@ -1574,31 +1528,17 @@ function reactToPlacement(handle: bigint | null, movedAside = false) {
   watchWindow(handle);
   if (company.focused() || settings.get().behavior.mode === 'sleep') return;
   if (!settings.get().voice.interactionLines || !mayInterrupt(settings.get(), { fullscreen: false, hidden: false }) || bubble.state.composer) return;
-  if(movedAside){
-    instantInteraction('move_aside');
-    if(settings.get().ai.provider!=='offline'&&Math.random()<.75)placementTimer=setTimeout(()=>{
-      placementTimer=null;if(revision!==placementRevision||!handle||!trackedWindowFor(handle))return;
-      void generatedRemark('putdown','The user just moved Capri to a different spot WITHIN THE SAME WINDOW, making space where she was. A short sassy acknowledgement already played. You can react to being in the way and the actual shared task without greeting a new window or claiming to know their private motive.',{target:handle,placement:revision,interactionGeneration});
-    },900);
-    return;
-  }
-  if (loungeHeld()) {
-    lastPlacementReaction = Date.now();
-    void generatedRemark('putdown', 'Placed on a lower ledge to rest.');
-    return;
-  }
-  if (!handle) {
-    if (Date.now() - lastPlacementReaction < 12000 || Math.random() < .55) return;
-    lastPlacementReaction = Date.now();
-    void generatedRemark('putdown', 'Placed on the desktop.'); return;
-  }
-  // Debounce the final drop, including ordinary/revisited windows. Generation keeps
-  // the shared persisted request ceiling; rapid rearranging never queues requests.
-  placementTimer = setTimeout(() => {
-    placementTimer = null;
-    if (revision !== placementRevision || attentionHandle !== handle || !trackedWindowFor(handle)) return;
-    void generatedRemark('placed_window', 'The user deliberately placed Capri on this window. Respond to this view and the current local context.', { target: handle, placement: revision, interactionGeneration });
-  }, 1100);
+  const moves=placementCount;
+  const different=!!handle && handle!==fromHandle;
+  if(!different && moves<2 && !cognitiveRuntime.dialogueEngaged())return;
+  const revision=placementRevision,generation=cognitiveRuntime.executionRevision();
+  placementTimer=setTimeout(()=>{
+    placementTimer=null;
+    if(revision!==placementRevision||handle&&!trackedWindowFor(handle))return;
+    void generatedRemark(different?'placed_window':'putdown',
+      `User placement complete: ${movedAside?'moved aside within the same window':different?'transported to a different window':handle?'repositioned on the same window':'returned to the desktop'}. ${moves} placements in the last two minutes. Previous support: ${fromHandle?String(fromHandle):'desktop or unrecorded'}. Let the actual destination, interrupted activity and accumulating handling affect your own reaction. Do not assume a motive, greet every window or repeat your last objection. One fresh reaction or silence.`,
+      {target:handle??undefined,placement:revision,interactionGeneration:generation,interactionDevelopment:signature+':'+moves});
+  },1100);
 }
 
 let lastDialogueOutcome = 'No contextual request yet';
@@ -1609,7 +1549,7 @@ let optionalObservationActive = false;
 
 function ambientRequestWaitSeconds() {
   return Math.max(0, behavior.diagnostics().retrySeconds,
-    backgroundBudget.snapshot().find(b => b.purpose === 'ambient')?.retrySeconds ?? 0);
+    behavior.canReserve('ambient') ? 0 : backgroundBudget.snapshot().find(b => b.purpose === 'ambient')?.retrySeconds ?? 0);
 }
 let lastInspection: { handle: bigint; title: string; at: number; points: InterestPoint[]; bounds?: DRect } | null = null;
 function behaviorAllowed(event?: BehaviorEvent) {
@@ -1627,7 +1567,7 @@ function localBehaviorFallback(event: BehaviorEvent): Expression | null {
     return { action: 'investigate', line: '', gesture: 'curious', target: event.observation?.target };
   if (['pat', 'poke', 'pickup'].includes(event.event)) return { action: 'gesture', line: '', gesture: 'nod' };
   // Authored acknowledgements remain useful offline. Optional failure never invents an observation.
-  if (!event.direct) return null;
+  if (!event.direct || !['greeting','return','mute','unmute'].includes(event.event)) return null;
   const observed = event.observation;
   const text = event.event === 'placed_window' && observed ? dropLine(observed, recentRemarks)
     : companionDialogue.choose({ event: (['greeting','return','mute','unmute','putdown'].includes(event.event) ? event.event : 'putdown') as DialogueEvent, recent: recentRemarks }, { required: true, remember: false });
@@ -1671,7 +1611,7 @@ function expressBehavior(expression: Expression, event: BehaviorEvent) {
   return true;
 }
 
-async function generatedRemark(event: string, detail = '', options: { target?: bigint; placement?: number; interactionGeneration?: number; developer?: boolean; song?:PlayingTrack; personalSubject?: string; personalCommitmentId?: string; personalProjectId?: string } = {}) {
+async function generatedRemark(event: string, detail = '', options: { target?: bigint; placement?: number; interactionGeneration?: number; interactionDevelopment?:string; developer?: boolean; song?:PlayingTrack; personalSubject?: string; personalCommitmentId?: string; personalProjectId?: string } = {}) {
   let reportRevision = behaviorCollectionRevision;
   const waiting = (reason: string) => { if (reportRevision === behaviorCollectionRevision) lastDialogueOutcome = `${event}: waiting (${reason})`; };
   const direct = cognitiveRuntime.isDirect(event,!!options.developer);
@@ -1697,32 +1637,33 @@ async function generatedRemark(event: string, detail = '', options: { target?: b
   const sceneRevision = conversationScene.snapshot().revision;
   const physicalState = physicalSignature();
   const valid = () => cognitiveRuntime.executionRevision() === cognitiveRevision && collection === behaviorCollectionRevision && revision === placementRevision
-    && (options.developer||['pat','poke','pickup','personal_followup'].includes(event)||physicalState === physicalSignature())
+    && (options.developer||['pat','poke','pickup','putdown','placed_window','personal_followup'].includes(event)||physicalState === physicalSignature())
     && (options.placement === undefined || options.placement === placementRevision)
     && sceneRevision === conversationScene.snapshot().revision
     && (!target || !!trackedWindowFor(target) && observedWindow(target).title === observed?.title && observedWindow(target).process === observed?.process);
   const base = { kind: 'trigger' as const, event, detail, direct, context: { perceptionFingerprint: life.ledger.semanticFingerprint(observed?.title??''), developer: options.developer, personalSubject: options.personalSubject } };
   if (!behaviorAllowed(base)) return waiting('current focus, visibility or conversation state');
   if (behavior.diagnostics().privateExchange) return waiting('off-the-record exchange');
+  if(!cognitiveRuntime.admitDialogue(event,event,!!options.developer,options.interactionDevelopment))return waiting('routine or already considered interaction; physical expression retained');
   if (!direct && !behavior.canInitiate(base)) return waiting('core initiative gate');
   if (event === 'inspect') lastInspection = null;
-  const budget = ['pat','poke','pickup','own_panel'].includes(event) ? 'interaction' as const : event === 'placed_window' ? 'placement' as const : 'ambient' as const;
+  const budget = ['pat','poke','pickup','own_panel'].includes(event) ? 'interaction' as const : ['placed_window','putdown'].includes(event) ? 'placement' as const : 'ambient' as const;
   const online = s.ai.provider !== 'offline';
-  if(online&&!behavior.canReserve(budget))return waiting('shared request allowance');
+  if(online&&!behavior.canReserve(budget,!!options.interactionDevelopment))return waiting('shared request allowance');
   // Reserve only after capture and duplicate checks: unavailable/unchanged pixels cost no model attempt.
   const outingCollection=!direct&&cognitiveRuntime.nestedReasoningAllowed();
   if(!direct&&!outingCollection&&agency&&!cognitiveRuntime.claim('behavior'))return waiting('attention arbiter is occupied');
   let acceptedReading = false;
-  if (!direct && !options.developer) { optionalObservationTarget = target; optionalObservationActive = true; }
+  if (!direct && !options.developer) { optionalObservationTarget = options.interactionDevelopment ? null : target; optionalObservationActive = true; }
   memoryLearner.pause();
   behaviorCollecting = true;
   try {
-  const semanticFingerprint=observed?life.ledger.semanticFingerprint(observed.title):'';
+  const semanticFingerprint=observed?life.ledger.semanticFingerprint(observed.title)+':'+(cognitiveRuntime.dialogue.snapshot().evidence?.findLast(e=>e.role==='user')?.id??''):'';
   if(!direct&&event==='inspect'&&observed&&behavior.perceptionSaturated(observed.process.slice(0,80),observed.title.slice(0,180),semanticFingerprint)){acceptedReading=true;return waiting('same semantic subject already investigated; wait for a meaningful development');}
   let observation: WindowObservation | undefined, song: PlayingTrack | null = options.song??null;
   const isYouTube=!!observed&&dialogueSurface(observed)==='youtube';
   const video=isYouTube?await youtubeMetadata(observed!):null;
-  const videoKey=isYouTube?JSON.stringify([observed!.title,video?.channel??'']):'';
+  const videoKey=isYouTube?JSON.stringify([observed!.title,video?.channel??'',cognitiveRuntime.dialogue.snapshot().evidence?.findLast(e=>e.role==='user')?.id??'']):'';
   if(isYouTube&&!direct&&Date.now()-(youtubeComments.get(videoKey)??-Infinity)<2*3600000)return waiting('same YouTube creator and title already commented on');
   if (!song&&observed && s.dialogue.spotifyBanter && dialogueSurface(observed) === 'spotify' && songBanter.eligible(Date.now()) && s.ai.provider !== 'offline') {
     songBanter.probe(Date.now());
@@ -1734,8 +1675,8 @@ async function generatedRemark(event: string, detail = '', options: { target?: b
   if (!valid() || sceneRevision !== conversationScene.snapshot().revision || !behaviorAllowed(base)) return waiting('target, exchange or eligibility changed during collection');
   if (!direct && event === 'inspect' && !observation && !song&&!isYouTube) return waiting('no exposed visual preview available; metadata was noticed locally');
   const fingerprint = observation ? createHash('sha256').update(observation.jpegBase64).digest('hex') : undefined;
-  if (!direct && observed && fingerprint && environmentalCuriosity.unchanged(explorationKey(observed), fingerprint, Date.now())) { acceptedReading = true; return waiting('the exposed image is unchanged; keep the existing reading'); }
-  if (online && !behavior.reserve(budget)) return waiting('shared request allowance');
+  if (!direct && !cognitiveRuntime.dialogueEngaged() && observed && fingerprint && environmentalCuriosity.unchanged(explorationKey(observed), fingerprint, Date.now())) { acceptedReading = true; return waiting('the exposed image is unchanged; keep the existing reading'); }
+  if (online && !behavior.reserve(budget,!!options.interactionDevelopment)) return waiting('shared request allowance');
   const fact: Observation | undefined = observed && target ? { id: newId('observation'), at: Date.now(), target: String(target), title: observed.title.slice(0,180), process: observed.process.slice(0,80),
     evidence: observation ? 'visual' : 'metadata', detail: isYouTube?`YouTube title: ${video?.title??observed.title}. Creator/channel: ${video?.channel??'unknown; do not guess'}. Prefer a creator/title-based opinion over parsing frames. Unseen contents remain unknown.`.slice(0,400):song ? `Playing track: ${song.title}, artist: ${song.artist}`.slice(0,400) : observation ? `Exposed target screenshot captured for this decision. Capture ${fingerprint?.slice(0,16)}.` : 'Window metadata only; unseen contents are unknown.' } : undefined;
   const result = await behavior.dispatch({ ...base, observation: fact, jpegBase64: observation?.jpegBase64,
@@ -1744,7 +1685,7 @@ async function generatedRemark(event: string, detail = '', options: { target?: b
       youtube:isYouTube?{title:video?.title??observed!.title,channel:video?.channel??null,basis:'The user prefers creator then title/topic. Do not interpret frames or invent a creator.'}:null,
       previousLines: recentRemarks.slice(-6), outing: outings.snapshot().outing },
     budget, budgetReserved: online,
-    timeoutMs: ['pat','poke','pickup'].includes(event) ? detail.includes('immediate')?12000:7000 : event === 'greeting' ? 5500 : 18000,
+    timeoutMs: ['pat','poke','pickup'].includes(event) ? 12000 : event === 'greeting' ? 5500 : 18000,
     valid,
     revalidate: async () => {
       if (target && observation) {
@@ -2083,32 +2024,51 @@ function ownHandles(): bigint[] {
     return [charWin, panelWin, developerWin, bubble?.window, taskbar?.window, opening?.window, ...(trail?.windows ?? []), theatre?.window].filter((w): w is BrowserWindow => !!w && !w.isDestroyed()).map((w) => handleToBigint(w.getNativeWindowHandle()));
 }
 function isFullscreenNow() { return settings.get().character.hideOnFullscreen && win32Status() === 'active' && isOtherAppFullscreen(ownHandles()); }
+/** Explicit user placement may occupy the chosen video window, while automated
+ * travel retains its viewing-area protection. Occlusion and avoidance still win. */
+function safeForDrop(bounds:DRect,w:PerchWindow) {
+  return !company.avoiding(String(w.handle)) && exposedBody(bounds,blockersFor(w.handle),displayFor(w.rect,displaysNow()).workArea);
+}
+function manualLowerRest(rect:DRect,anchor:NonNullable<typeof lowerAnchor>) {
+  const bounds=attachToWindow(herBounds(),{...rect,y:rect.y+rect.height},SEAT_RATIO,anchor.fraction).bounds;
+  return safeForDrop(bounds,{handle:anchor.handle,rect})?{bounds,fraction:anchor.fraction}:null;
+}
+function dropLower(b=herBounds()) {
+  const seat=b.y+b.height*SEAT_RATIO, center=b.x+b.width/2;
+  return windowsForPlacement().map(w=>({w,bounds:{...b,y:Math.round(w.rect.y+w.rect.height-b.height*SEAT_RATIO)}}))
+    .filter(({w,bounds})=>center>=w.rect.x && center<=w.rect.x+w.rect.width && Math.abs(seat-w.rect.y-w.rect.height)<=Math.min(88,Math.max(56,b.height*.22))
+      && restSupport(bounds,displayFor(w.rect,displaysNow()).workArea,null,[w.rect],r=>!blockersFor(w.handle).some(o=>intersects(r,o))).sit && safeForDrop(bounds,w))
+    .sort((a,c)=>Math.abs(seat-a.w.rect.y-a.w.rect.height)-Math.abs(seat-c.w.rect.y-c.w.rect.height))[0];
+}
 function dropPerch(b = herBounds()) {
   return snapWindow(windowsForPlacement(), b, SEAT_RATIO, Math.min(88, Math.max(56, b.height * .22)),
-    rect => displayFor(rect, displaysNow()).workArea.y, w => safeForTarget(placement(w).bounds, w.handle));
+    rect => displayFor(rect, displaysNow()).workArea.y, w => safeForDrop(placement(w).bounds, w));
 }
 function perchTick() {
   if (drag?.active && charWin) {
-    const b = herBounds(), target = drag.moved ? dropPerch(b) : null;
+    const b = herBounds(), top = drag.moved ? dropPerch(b) : null, lower=drag.moved?dropLower(b):undefined;
+    const feet=b.y+b.height*SEAT_RATIO;
+    const bottom=!!lower && (!top || Math.abs(feet-lower.w.rect.y-lower.w.rect.height)<Math.min(Math.abs(feet-top.rect.y),placement(top).mode==='inverted'?Math.abs(b.y+b.height*INVERTED_SEAT_RATIO-top.rect.y):Infinity));
+    const target=bottom?lower!.w:top;
     const left = target ? Math.max(8, target.rect.x - b.x, b.width * .25) : 0;
     const right = target ? Math.min(b.width - 8, target.rect.x + target.rect.width - b.x, b.width * .75) : 0;
-    cue({ type: 'dropHint', edge: target ? { x: left, y: target.rect.y - b.y, width: Math.max(0, right - left) } : null });
+    cue({ type: 'dropHint', edge: target ? { x: left, y: target.rect.y + (bottom?target.rect.height:0) - b.y, width: Math.max(0, right - left) } : null });
     return;
   }
   if(agency?.active('stay_at_window').length)return;
   if(lowerAnchor&&charWin&&!teleporter.active&&!drag.active&&!developer.active){
     const anchor=lowerAnchor,rect=attachedWindowFor(anchor.handle);
-    const rest=rect&&lowerWindowRest(herBounds(),rect,blockersFor(anchor.handle),displayFor(rect,displaysNow()).workArea,screen.getCursorScreenPoint(),anchor.fraction);
+    const rest=rect&&(anchor.manual?manualLowerRest(rect,anchor):lowerWindowRest(herBounds(),rect,blockersFor(anchor.handle),displayFor(rect,displaysNow()).workArea,screen.getCursorScreenPoint(),anchor.fraction));
     if(!rest){if(!rect){lowerAnchor=null;loungeUntil=0;sendSurface(true);fallFromLostPerch();}return;}
     const b=herBounds();if(Math.abs(b.x-rest.bounds.x)>1||Math.abs(b.y-rest.bounds.y)>1){
-      if(!movementClear(rest.bounds))return;
+      if(!anchor.manual&&!movementClear(rest.bounds))return;
       const held=TEST?!!(globalThis as any).__capriWindowHeld:leftButtonDown();
       if(held)return;
       const revision=placementRevision;
       void teleporter.jumpTo(()=>{
-        const latest=attachedWindowFor(anchor.handle),p=latest&&lowerWindowRest(herBounds(),latest,blockersFor(anchor.handle),displayFor(latest,displaysNow()).workArea,screen.getCursorScreenPoint(),anchor.fraction);
+        const latest=attachedWindowFor(anchor.handle),p=latest&&(anchor.manual?manualLowerRest(latest,anchor):lowerWindowRest(herBounds(),latest,blockersFor(anchor.handle),displayFor(latest,displaysNow()).workArea,screen.getCursorScreenPoint(),anchor.fraction));
         return p?{...p.bounds,kind:'spot' as const}:null;
-      },undefined,()=>placementRevision!==revision).then(ok=>{if(ok){lowerAnchor=anchor;sendSurface(true);}});
+      },undefined,()=>placementRevision!==revision,anchor.manual?r=>{const rect=attachedWindowFor(anchor.handle);return !!rect&&safeForDrop(r,{handle:anchor.handle,rect});}:undefined).then(ok=>{if(ok){lowerAnchor=anchor;sendSurface(true);}});
       return;
     }
   }
@@ -2129,7 +2089,7 @@ function perchTick() {
     const rect = attachedWindowFor(handle);
     if (!rect) return null;
     const placed = placement({ handle, rect }, fraction);
-    return safeForTarget(placed.bounds, handle) ? { rect, placed } : null;
+    return (pinned ? safeForDrop(placed.bounds,{handle,rect}) : safeForTarget(placed.bounds, handle)) ? { rect, placed } : null;
   };
   const plan = landing();
   if (!plan) return; // No departure effects or repeated attempts at a covered/protected edge.
@@ -2150,7 +2110,7 @@ function perchTick() {
     pendingPerch = { handle, rect: latest.rect };
     pendingPerchFraction = latest.placed.fraction; pendingPerchMode = latest.placed.mode;
     return { ...latest.placed.bounds, kind: 'perch' as const };
-  }, quickRelease ? undefined : 'perch_glitch', () => !landing()).finally(() => {
+  }, quickRelease ? undefined : 'perch_glitch', () => !landing(), pinned ? r=>{const rect=attachedWindowFor(handle);return !!rect&&safeForDrop(r,{handle,rect});}:undefined).finally(() => {
     pendingPerch = null; pendingPerchFraction = undefined; pendingPerchMode = undefined;
     if (perchHandle === handle) { perchPinned = pinned; perchMotionPhase = null; cue({ type: 'perchMotion', phase: null }); }
   });
@@ -2185,14 +2145,7 @@ let cursorReturn: CursorReturn;
 let lastAbsenceWasSleep = false;
 let devAbsence: { kind: 'idle' | 'sleep'; armAt: number; armed: boolean; point: { x: number; y: number }; lastIdle: number } | null = null;
 let returningToCursor = false;
-let lastReturnMessageAt=0;
-function announceReturn(from:'idle'|'sleep'){
-  if(Date.now()-lastReturnMessageAt<15000||ambientBlocked()||company.focused()||bubble.state.composer||!settings.get().voice.interactionLines)return false;
-  const context:DialogueContext={event:'return',waking:from==='sleep',recent:recentRemarks};
-  const text=companionDialogue.choose(context,{required:true,remember:false});
-  if(!text||!presentRemark(text,true,false,context))return false;
-  lastReturnMessageAt=Date.now();return true;
-}
+function announceReturn(_from:'idle'|'sleep'){ return false; }
 async function returnToCursor(from: 'idle' | 'sleep' = lastAbsenceWasSleep ? 'sleep' : 'idle') {
   // Compatibility entry for explicit developer checks. Ordinary AFK return is
   // emitted by PresencePolicy; both entries require the same execution lease.
@@ -2662,7 +2615,7 @@ function presenceTick() {
     busy:ambientBlocked()||company.blocked()||bubble.state.composer||behavior.busy||behaviorCollecting||!!devAbsence,
     movementBusy:tourRunning||localVisitActive||curiosityActive||returningToCursor||perchMoving||teleporter.active||loungeHeld()&&!lowerAnchor,
     pointerProtected:pointerProtected(),
-    enabled:{context:s.dialogue.localContext,speech:s.behavior.idleRemarks&&s.voice.interactionLines&&pendingSpokenRemarks.size===0&&companionDialogue.proactiveWaitSeconds()===0&&ambientRequestWaitSeconds()===0,
+    enabled:{context:s.dialogue.localContext,speech:s.behavior.idleRemarks&&s.voice.interactionLines&&pendingSpokenRemarks.size===0&&ambientRequestWaitSeconds()===0,
       activities:s.behavior.smallActivities,movement:(!TEST||!!(globalThis as any).__capriAutoVisits)&&now-lastInteraction>=12000,exploration:s.behavior.explore||s.behavior.mode==='explore',newWindows:s.behavior.newWindowVisits,cursor:s.behavior.cursorVisits,
       inspect:s.actions.policies.read_screen==='allow'&&['codex','gemini','openai'].includes(s.ai.provider),
       theatre:(!TEST||!!(globalThis as any).__capriAutoTheatre)&&theatreAllowed()&&now-lastInteraction>=30000&&s.character.animationIntensity>0&&!currentPoseSupport.tight,

@@ -153,12 +153,42 @@ describe('authoritative cognitive event sequences, real SQLite and XState',()=>{
     const message={id:'user:1',role:'user' as const,content:'Actually, use the blue swatch.',ts:f.at};
     f.runtime.preempt(message.id);f.runtime.observeMessage(message);core.userInput(message.content,message.id);
     expect(f.runtime.snapshot().interaction).toBe(message.id);expect(f.runtime.snapshot().dialogue.changes.at(-1)?.messageId).toBe(message.id);
-    expect(core.canInitiate()).toBe(false);
+    expect(core.canInitiate()).toBe(true); // A completed direct exchange has no arbitrary cooldown.
     expect(f.runtime.reasoningState(core.snapshot())).toEqual(core.snapshot());
   });
   it('revokes source-derived opportunities and clears private history without removing explicit intentions',async()=>{
     const f=fixture();await f.agency.submit('commitment',{text:'A direct promise'},{id:'promise'});
     f.runtime.offer(f.opportunity());f.runtime.invalidate('chrome');expect(f.runtime.decide()).toBeUndefined();expect(f.runtime.snapshot().subjects).toEqual([]);
     f.runtime.clear();expect(f.store.load('cognitive-runtime-v1')).toBeUndefined();expect(f.agency.active('commitment')).toHaveLength(1);
+  });
+  it('admits one contextual contact or panel thought per user development, keeping routine actions physical',()=>{
+    const f=fixture();
+    for(const event of ['pat','poke','own_panel','pickup','putdown','placed_window','greeting','return','mute'])expect(f.runtime.admitDialogue(event)).toBe(false);
+    f.runtime.observeMessage({id:'u1',role:'user',content:'I want to keep the new movement while changing when you speak.',ts:f.at});
+    expect(f.runtime.admitDialogue('pat')).toBe(true);
+    expect(f.runtime.admitDialogue('pat')).toBe(false);
+    expect(f.runtime.admitDialogue('own_panel')).toBe(true);
+    f.advance(1000);
+    f.runtime.observeMessage({id:'a1',role:'assistant',content:'I prefer having room to move.',ts:f.at});
+    expect(f.runtime.admitDialogue('own_panel')).toBe(false);
+    f.advance(1000);
+    f.runtime.observeMessage({id:'u2',role:'user',content:'Yes, keep that freedom of movement and let the words follow your thoughts.',ts:f.at});
+    expect(f.runtime.admitDialogue('pat')).toBe(true);
+    f.advance(601000);expect(f.runtime.admitDialogue('poke')).toBe(false);
+  });
+  it('allows fresh discussion without a speech timer while retaining attention, composer and audio ownership',()=>{
+    const f=fixture();f.runtime.offer(f.opportunity());f.runtime.decide();expect(f.runtime.claim('behavior')).toBe(true);
+    expect(f.runtime.mayPresent({direct:false,composer:false,pendingAudio:0,waitSeconds:120})).toBe(true);
+    expect(f.runtime.mayPresent({direct:false,composer:true,pendingAudio:0,waitSeconds:0})).toBe(false);
+    expect(f.runtime.mayPresent({direct:false,composer:false,pendingAudio:1,waitSeconds:0})).toBe(false);
+    f.availability({quiet:true});expect(f.runtime.mayPresent({direct:false,composer:false,pendingAudio:0,waitSeconds:0})).toBe(false);
+  });
+  it('admits developing physical interaction without requiring a prior verbal conversation',()=>{
+    const f=fixture();
+    expect(f.runtime.admitDialogue('pat','pat',false,'bout1:3')).toBe(true);
+    expect(f.runtime.admitDialogue('pat','pat',false,'bout1:3')).toBe(false);
+    expect(f.runtime.admitDialogue('pat','pat',false,'bout1:6')).toBe(true);
+    expect(f.runtime.admitDialogue('putdown','putdown',false,'same-window:2')).toBe(true);
+    expect(f.runtime.admitDialogue('placed_window','placed_window',false,'new-window:3')).toBe(true);
   });
 });

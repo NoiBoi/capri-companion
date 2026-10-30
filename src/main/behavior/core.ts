@@ -98,7 +98,7 @@ Null interest retains existing interests. Latest user statements outrank all ten
 New interesting evidence can create an interest without speech. Defer to a later opportunity when busy.
 Silence is a complete decision. Repeated evidence is not a reason to repeat a remark. An important deferred request can merit one concise notice when the user becomes available; do not hide it merely because it arrived during an earlier quiet period. Already addressed or irrelevant requests stay closed.
 For a personal_followup, respond to the sourced user situation or eligible intention, without narrating your current pose or physical surroundings. A routine pose change does not alter that conversational subject.
-Pats, pokes, being picked up, being moved, an outing and an interesting screenshot can all invite spoken reactions. Do not default to silence merely because the event is small or visual. Contact is happening to YOU: let enjoyment, surprise, a playful objection, a demand, or your interrupted thought come through. Repeated handling can change your attitude; it need not trigger the same reward or joke. A move can provoke a spontaneous choice about the new spot or a continuation of what you were saying.
+Speak for a specific new thought, changed position, useful connection or interesting development in the ongoing exchange. Routine contact, settings navigation and movement are usually expressed physically. Repeated handling can change the exchange, but acknowledgement alone is not a thought. Keep your own perspective through interruptions. Do not repeat a verdict as elaboration, manufacture sass, complain about autonomy by habit, or end with an obligatory question. Engaged discussion can continue across fresh observations; silence needs no apology.
 For screenshots, put literal descriptions in facts. In speech, react to what catches YOUR eye: take a side, develop an unreasonable favorite, wonder about a specific oddity, connect it to our actual exchange, or want to try something. You are in this desktop scene, not reviewing an uploaded image for a customer. A short immediate reaction can be enough; it does not need an analytical explanation, useful advice, or a question. Let curiosity, delight, cheek, impatience and sudden plainness vary with the moment. Do not read the facts field aloud, praise a generic aesthetic, or tack the same question onto every observation. Gestures and silence remain choices when they fit, not the preferred outcome for every event.
 Host delivery.speechAllowed=false means use a gesture, investigation or silence. New windows deserve attention, not an automatic greeting. A specific detail, your own preference, a physical interaction or a useful continuation can be enough reason to speak. Never repeat the same question, paraphrase the last aside, or manufacture interest from a title.
 An investigate decision requests only a harmless glance at the existing target, never computer control.
@@ -169,8 +169,8 @@ export class BehaviorCore {
   get busy() { return !!this.active; }
   diagnostics() { return { busy: this.busy, privateExchange: this.privateExchange, saturated:this.state.saturation.length, retrySeconds: this.d.cognition.waitSeconds(), failure: this.failure }; }
   perceptionSaturated(process:string,title:string,fingerprint=''){const key=createHash('sha256').update(JSON.stringify([process,title,fingerprint])).digest('hex');return this.state.saturation.some(s=>s.key===key&&this.now()-s.at<2*3600000);}
-  canReserve(budget:'ambient'|'placement'|'interaction'){return (this.budget.snapshot().find(b=>b.purpose===budget)?.retrySeconds??1)===0;}
-  reserve(budget: 'ambient' | 'placement' | 'interaction') { return this.budget.reserve(budget); }
+  canReserve(budget:'ambient'|'placement'|'interaction',physicalDevelopment=false){return this.budget.canReserve(budget,physicalDevelopment||this.d.cognition.dialogueEngaged());}
+  reserve(budget: 'ambient' | 'placement' | 'interaction',physicalDevelopment=false) { return this.budget.reserve(budget,physicalDevelopment||this.d.cognition.dialogueEngaged()); }
   resumeInitiative() { this.d.cognition.resume(); if (this.state.quiet) { this.state.quiet = false; this.save(); } }
   cancel() { this.active?.abort(); this.active = null; this.revision++; }
   clear() { this.cancel(); this.sourceDependencies.clear(); this.state = fresh(); this.failure = null;
@@ -178,7 +178,7 @@ export class BehaviorCore {
   privacyChanged() { this.cancel(); if (this.d.persistent?.() === false) this.clear(); }
   /** Chat remains with Conversation; it informs and preempts this same situation without a second model call. */
   userInput(text: string, id = newId('user')) {
-    this.cancel(); this.d.cognition.preempt(id);
+    this.cancel(); this.d.cognition.preempt(id,0);
     this.privateExchange = /\b(off the record|don['’]?t (?:save|remember) (?:this|anything)|do not (?:save|remember) (?:this|anything))\b/i.test(text);
     if (this.privateExchange) { this.clear(); return true; }
     this.d.continuity?.reconcileUser(text, id, this.now(), this.state.interests.map(i => i.topic).join(' '));
@@ -300,7 +300,6 @@ export class BehaviorCore {
     if (this.active) return this.record(event, 'defer', 'decision already in flight');
     const perceptionKey=event.kind==='trigger'&&event.event==='inspect'&&event.observation?createHash('sha256').update(JSON.stringify([event.observation.process,event.observation.title,(event.context as {perceptionFingerprint?:string}|undefined)?.perceptionFingerprint??''])).digest('hex'):undefined;
     if(perceptionKey&&event.kind==='trigger'&&!event.direct&&this.state.saturation.some(s=>s.key===perceptionKey&&this.now()-s.at<2*3600000))return this.record(event,'silent','semantic observation already investigated; wait for meaningful evidence');
-    if (event.kind === 'trigger') { const gap = (event.direct ? ['pat','poke','pickup','placed_window','putdown'].includes(event.event) ? 15000 : 30000 : this.d.initiativeGapMs?.() ?? 30000); this.d.cognition?.cooldown(gap); }
     const fallback = (reason = 'provider unavailable; physical response retained') => {
       if (event.kind === 'trigger' && event.valid?.() === false || this.d.allowed?.(event) === false) return this.record(event, 'silent', 'suppressed');
       const e = this.d.fallback?.(event);
@@ -312,7 +311,7 @@ export class BehaviorCore {
     if (opportunity && !this.opportunityReady()) return this.record(event, 'defer', 'this interest already had an opportunity; wait for new evidence');
     const provider = typeof this.d.provider === 'function' ? this.d.provider() : this.d.provider;
     if (provider.name === 'offline') { if (opportunity) this.state.opportunityKey = this.opportunityKey(); return fallback(); }
-    if (event.kind !== 'interact' && !(event.kind === 'trigger' && event.budgetReserved) && !this.budget.reserve(event.kind === 'trigger' ? event.budget ?? 'ambient' : 'ambient')) return this.record(event, 'defer', 'background budget');
+    if (event.kind !== 'interact' && !(event.kind === 'trigger' && event.budgetReserved) && !this.budget.reserve(event.kind === 'trigger' ? event.budget ?? 'ambient' : 'ambient',this.d.cognition.dialogueEngaged())) return this.record(event, 'defer', 'background budget');
     if (event.kind === 'interact' && event.contact && !this.budget.reserve('interaction')) return this.record(event, 'gesture', 'rapid contact; no model request');
     const admittedOpportunity = opportunity ? this.opportunityKey() : undefined;
     const ctrl = this.active = new AbortController(), revision = this.revision;

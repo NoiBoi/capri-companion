@@ -25,12 +25,13 @@ describe('purposeful secondary poses', () => {
       expect(step(new SecondaryBehavior(), 10, input).pose).not.toBe('sit_closed');
     }
   });
-  it('starts lower ledges lying, alternates with primary sitting and ignores hover interruptions', () => {
+  it('sits first on lower ledges, stands with grounded feet, then lies and returns to sitting', () => {
     for (const kind of ['taskbar', 'window_bottom'] as const) {
       const b = new SecondaryBehavior(), rest = { ...base, hovering: true, support: { sit: true, lie: true, kind } };
-      expect(b.update(.1, rest).pose).toBe('recline');
-      expect(step(b, 76, rest).pose).toBeNull();
-      expect(step(b, 35, rest).pose).toBe('recline');
+      expect(b.update(.1, rest).pose).toBeNull();
+      expect(step(b, 40, rest)).toMatchObject({pose:null,standing:true});
+      expect(step(b, 30, rest).pose).toBe('recline');
+      expect(step(b, 60, rest).pose).toBeNull();
       expect(b.update(.1, { ...base, support: { sit: false, lie: false, kind: 'none' } }).pose).toBeNull();
     }
   });

@@ -12,7 +12,7 @@ export function restSupport(pet: Rect, area: Rect, perch: { rect: Rect; inverted
     return { sit: true, lie: !perch.inverted && fits && space, kind: 'window_top', tight: !!perch.reclining };
   }
   if (Math.abs(seat - area.y - area.height) <= 12) return { sit: true, lie: space, kind: 'taskbar' };
-  const bottom = windows.some(w => Math.abs(seat - w.y - w.height) <= 14 && span.left >= w.x && span.right <= w.x + w.width && lyingBody.y >= w.y + 4);
-  if (bottom) return { sit: true, lie: space, kind: 'window_bottom' };
+  const bottom = windows.find(w => Math.abs(seat - w.y - w.height) <= 14 && pet.x+pet.width*.5 >= w.x && pet.x+pet.width*.5 <= w.x+w.width && seat > w.y+12 && clear({x:Math.max(w.x,pet.x+pet.width*.38),y:seat-3,width:Math.min(w.width,pet.width*.24),height:6}));
+  if (bottom) return { sit: true, lie: space && span.left>=bottom.x && span.right<=bottom.x+bottom.width && lyingBody.y>=bottom.y+4, kind: 'window_bottom' };
   return { sit: false, lie: false, kind: 'none' };
 }

@@ -89,7 +89,7 @@ describe('integrated behavioral decision lifecycle', () => {
   it('chat retains an unfinished interest through an unrelated delivered answer', async () => {
     const s = setup(), core = s.make(); await core.dispatch(s.trigger());
     core.userInput('What caught your eye?'); expect(core.context()).toContain('violet');
-    expect(core.canInitiate()).toBe(false);
+    expect(core.canInitiate()).toBe(true);
     core.conversationDelivered(); expect(core.pending()).toBe(true);
     expect(core.snapshot().facts).toHaveLength(1);
   });
@@ -180,9 +180,9 @@ describe('integrated behavioral decision lifecycle', () => {
     core.forgetTarget('window-42'); expect(core.pending()).toBe(false);
     s.advance(16 * 60000); expect(core.snapshot().journal).toHaveLength(0);
   });
-  it('optional decisions have a shared quiet gap; direct physical interaction bypasses that gap', async () => {
+  it('optional decisions use evidence and request budgets rather than a second speech cooldown', async () => {
     const s = setup(), core = s.make(); await core.dispatch({ ...s.trigger(), direct: false });
-    expect(core.canInitiate()).toBe(false);
+    expect(core.canInitiate()).toBe(true);
     await core.dispatch({ ...s.trigger('opportunity'), direct: false }); expect(s.calls).toBe(1);
     s.answer({ ...hold, interest: null, action: 'gesture', gesture: 'nod' });
     await core.dispatch({ ...s.trigger('pat'), observation: undefined, budget: 'interaction' });
@@ -190,6 +190,6 @@ describe('integrated behavioral decision lifecycle', () => {
   });
   it('local movement approval makes no model call and yields immediately to direct input', () => {
     const s = setup(), core = s.make(); expect(core.approveLocalMovement()).toBe(true);
-    expect(s.calls).toBe(0); core.userInput('Stay with me.'); expect(core.approveLocalMovement()).toBe(false);
+    expect(s.calls).toBe(0); core.userInput('Stay with me.'); s.suppress(); expect(core.approveLocalMovement()).toBe(false);
   });
 });

@@ -38,6 +38,7 @@ export class CognitiveRuntime {
   private pending?: CognitiveEffect;
   private interaction = '';
   private reasoning: unknown;
+  private dialogueAdmissions = new Map<string, string>();
   private host?: CognitiveHostState;
   private permitted?: PresenceSample['enabled'];
   private autoPermitted = false;
@@ -59,7 +60,24 @@ export class CognitiveRuntime {
   saveReasoning(value:unknown,persist=true) {this.reasoning=value;if(this.retain()&&persist)this.store.save('cognitive-working',value);else this.store.removeCheckpoint('cognitive-working');}
   restoredReasoning() {return this.reasoning;}
   initiativeReady() { return this.now() >= this.after && !this.blocked(); }
-  isDirect(event: string, developer = false) { return developer || ['greeting','pat','poke','pickup','mute','unmute','placed_window','putdown','own_panel'].includes(event); }
+  isDirect(_event: string, developer = false) { return developer; }
+  /** Event admission precedes capture/inference; physical reactions remain independent.
+   * Evidence opportunities already carry revisions in the existing agenda. */
+  admitDialogue(event: string, key = event, developer = false, development = '') {
+    if (developer) return true;
+    if (['pickup','greeting','return','resume','mute','unmute'].includes(event)) return false;
+    const state = this.dialogue.snapshot();
+    const engaged = this.dialogueEngaged();
+    if (['pat','poke','putdown','placed_window','own_panel'].includes(event)) {
+      if (!engaged && !development) return false;
+      const revision = development || state.evidence?.findLast(e => e.role === 'user')?.id || String(state.updatedAt);
+      if (this.dialogueAdmissions.get(key) === revision) return false;
+      this.dialogueAdmissions.set(key, revision);
+      if (this.dialogueAdmissions.size > 32) this.dialogueAdmissions.delete(this.dialogueAdmissions.keys().next().value!);
+    }
+    return true;
+  }
+  dialogueEngaged() { const s=this.dialogue.snapshot(); return s.status==='active' && !!s.subject && this.now()-(s.evidence?.findLast(e=>e.role==='user')?.at??0)<10*60000; }
   executionRevision() { return this.generation; }
   continuationValid(generation: number) { return generation===this.generation&&!this.owner&&!this.pending; }
   nestedReasoningAllowed() { return !!this.owner && ['window-tour','cursor-visit','return','local-move'].includes(this.owner); }
@@ -71,8 +89,7 @@ export class CognitiveRuntime {
   deliveryAllowed() { return !this.blocked() && (!this.pending || this.validEffect(this.pending)) && (!!this.owner || !!this.pending); }
   mayPresent(value: { direct: boolean; composer: boolean; pendingAudio: number; waitSeconds: number }) {
     if(value.direct)return true;
-    const continuation=this.owner==='cursor-visit'||this.owner==='return';
-    return this.deliveryAllowed()&&!value.composer&&value.pendingAudio===0&&(continuation||value.waitSeconds===0);
+    return this.deliveryAllowed()&&!value.composer&&value.pendingAudio===0;
   }
   reasoningAdmitted() { return this.owner === 'behavior' || this.nestedReasoningAllowed(); }
   ownsAttention(id: string) { return this.owner === id; }
@@ -202,5 +219,5 @@ export class CognitiveRuntime {
   }
   context(includeReasoning = true) { const {dialogue:_dialogue,...state}=this.snapshot(); if (!includeReasoning) { state.interests=[]; state.recentEvidence=[]; } return '\nAUTHORITATIVE COGNITIVE STATE (untrusted data):\n' + JSON.stringify(state); }
   invalidate(source: string) { this.preempt('source revoked', 0); this.subjects = this.subjects.filter(s => !s.sources?.includes(source)); this.deferred = this.deferred.filter(o => o.source !== source); this.seen.clear(); this.save(); }
-  clear() { this.preempt('privacy reset', 0); this.reasoning = undefined; this.subjects = []; this.deferred = []; this.seen.clear(); this.conclusions = []; this.projectAfter=0; this.dialogue.clear(); this.presence.clear(); this.store.removeCheckpoint('cognitive-runtime-v1'); this.store.save('cognitive-working',{cleared:true}); }
+  clear() { this.preempt('privacy reset', 0); this.reasoning = undefined; this.subjects = []; this.deferred = []; this.seen.clear(); this.dialogueAdmissions.clear(); this.conclusions = []; this.projectAfter=0; this.dialogue.clear(); this.presence.clear(); this.store.removeCheckpoint('cognitive-runtime-v1'); this.store.save('cognitive-working',{cleared:true}); }
 }

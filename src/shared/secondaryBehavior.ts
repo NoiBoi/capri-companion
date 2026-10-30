@@ -8,7 +8,7 @@ export class SecondaryBehavior {
   private rest = 0;
   private rub = 0;
   private supportKind: PoseSupport['kind'] = 'none';
-  update(dt: number, input: SecondaryInput): { pose: 'sit_closed' | 'recline' | null; closed: boolean; reason: string } {
+  update(dt: number, input: SecondaryInput): { pose: 'sit_closed' | 'recline' | null; standing?: boolean; closed: boolean; reason: string } {
     if (input.support.kind !== this.supportKind) { this.rest = this.rub = 0; this.supportKind = input.support.kind; }
     if (!input.enabled || input.blocked) {
       this.rest = this.rub = 0;
@@ -29,9 +29,11 @@ export class SecondaryBehavior {
     const lounge = input.support.sit && input.support.lie && !input.inverted
       && (input.support.kind === 'taskbar' || input.support.kind === 'window_bottom');
     this.rest = lounge ? this.rest + dt : 0;
-    if(lounge&&input.support.sustainedRest)return {pose:'recline',closed:false,reason:'chosen long rest'};
-    // Begin lying immediately, then use the original side-sitting strip between rests.
-    if (lounge && this.rest % 110 < 75) return { pose: 'recline', closed: false, reason: 'lower ledge rest' };
+    // A lower edge is a place to linger, not a command to lie down.
+    // Reuse the existing physical pose clock; no speech or model requests.
+    const beat=this.rest % (input.support.sustainedRest ? 210 : 140);
+    if(lounge && beat>=35 && beat<55)return {pose:null,standing:true,closed:false,reason:'standing on lower ledge'};
+    if(lounge && beat>=55 && beat<(input.support.sustainedRest?180:120))return {pose:'recline',closed:false,reason:'lower ledge rest'};
     return { pose: null, closed: false, reason: 'primary' };
   }
 }

@@ -14,14 +14,15 @@ export class BackgroundBudget {
   private factor() { const value = this.multiplier(); return Number.isFinite(value) ? Math.min(8, Math.max(1, Math.floor(value))) : 1; }
   private rule(purpose: Purpose) { const factor = this.factor(); return { limit: RULES[purpose].limit * factor, gap: Math.max(1000, RULES[purpose].gap / factor) }; }
   private live(at: number) { return this.attempts.filter(a => a.at > at - 600000 && a.at <= at); }
-  private available(purpose: Purpose, at: number) {
+  private available(purpose: Purpose, at: number, engaged = false) {
     const live = this.live(at), lane = live.filter(a => a.purpose === purpose), rule = this.rule(purpose), last = lane.at(-1);
-    return lane.length < rule.limit && (!last || at - last.at >= rule.gap)
+    return lane.length < rule.limit && (!last || engaged && purpose !== 'memory' || at - last.at >= rule.gap)
       && (purpose === 'placement' || purpose === 'interaction' || live.filter(a => a.purpose === 'ambient' || a.purpose === 'memory').length < 8 * this.factor());
   }
-  reserve(purpose: Purpose) {
+  canReserve(purpose: Purpose, engaged = false) { return this.available(purpose,this.now(),engaged); }
+  reserve(purpose: Purpose, engaged = false) {
     const now = this.now(); this.attempts = this.live(now);
-    if (!this.available(purpose, now)) return false;
+    if (!this.available(purpose, now, engaged)) return false;
     this.attempts.push({ at: now, purpose });
     if (this.file) try { writeJsonAtomic(this.file, this.attempts); } catch { /* in-process ceiling remains */ }
     return true;

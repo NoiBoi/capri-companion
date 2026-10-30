@@ -9,6 +9,13 @@ import { arrivalLine } from '../../src/shared/arrival';
 import { companyControl } from '../../src/shared/company';
 import type { MemoryItem } from '../../src/shared/ipc';
 describe('activity, grounded context and background economy', () => {
+  it('lets engaged discussion use its remaining allowance without a timer, preserving hard caps',()=>{
+    const b=new BackgroundBudget(undefined,()=>1000000);
+    expect(b.reserve('ambient')).toBe(true);expect(b.reserve('ambient')).toBe(false);
+    for(let i=0;i<5;i++)expect(b.reserve('ambient',true)).toBe(true);
+    expect(b.canReserve('ambient',true)).toBe(false);expect(b.reserve('ambient',true)).toBe(false);
+    expect(b.reserve('memory',true)).toBe(true);expect(b.reserve('memory',true)).toBe(false);
+  });
   it('allows a correction batch after one minute while retaining the total background ceiling', () => {
     let now = 1000000; const b = new BackgroundBudget(undefined, () => now);
     expect(b.reserve('memory')).toBe(true); expect(b.reserve('memory')).toBe(false);

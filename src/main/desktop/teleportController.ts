@@ -71,7 +71,7 @@ export class TeleportController {
 
   /** Fly straight to a spot (computer control: she follows what she's working on). Skips if she's mid-move. */
   /** Teleport (glitch out, reappear) to an exact spot: she follows what she's working on. Skips if busy. */
-  async jumpTo(dest: Destination | (() => Destination | null), animation?: 'perch_glitch', cancelled?: () => boolean) {
+  async jumpTo(dest: Destination | (() => Destination | null), animation?: 'perch_glitch', cancelled?: () => boolean, canOccupy = this.d.canOccupy) {
     if (this.busy) return false;
     this.busy = true;
     const revision = this.revision;
@@ -83,11 +83,11 @@ export class TeleportController {
       let target: Destination | undefined;
       if (revision === this.revision && !cancelled?.()) {
         target = (typeof dest === 'function' ? dest() : dest) ?? undefined;
-        if (target && this.d.canOccupy?.(target) === false) target = undefined;
+        if (target && canOccupy?.(target) === false) target = undefined;
         if (target) { await this.d.prepareFlight?.('teleport'); if(revision!==this.revision||cancelled?.())target=undefined; }
         // Resolve moving supports after pose release as well as after departure FX.
         if (target && typeof dest === 'function') target = dest() ?? undefined;
-        if (target && this.d.canOccupy?.(target) === false) target = undefined;
+        if (target && canOccupy?.(target) === false) target = undefined;
         if (target) { this.d.move(target, 'teleport'); this.d.moved?.(target, 'teleport'); }
       }
       const arrival = this.waitAck(id, 'in', fx ? 1800 : 400);
