@@ -26,8 +26,10 @@ async function boot() {
     g.__capriWindowInfo = { '17': { title: 'Document', process: 'fixture.exe' }, '19': { title: 'Other', process: 'fixture.exe' } };
     g.__capriWindowsOverride = [{ handle: 17n, rect: { x: area.x + 100, y: area.y + 380, width: 850, height: 350 } }];
     // Sample teleport starts, rather than relying on the final position alone.
-    g.__departures = 0; const cue = a.teleporter.d.cue;
-    a.teleporter.d.cue = (c: any) => { if (c.type === 'teleport' && c.phase === 'out') g.__departures++; cue(c); };
+    g.__departures = 0; g.__perchCues = []; const emit = a.teleporter.d.cue;
+    a.teleporter.d.cue = (c: any) => { if (c.type === 'teleport' && c.phase === 'out') g.__departures++; emit(c); };
+    const send = a.charWin.webContents.send.bind(a.charWin.webContents);
+    a.charWin.webContents.send = (channel: string, ...args: any[]) => { if (args[0]?.type === 'perchMotion') g.__perchCues.push(args[0].phase); send(channel, ...args); };
   });
   // Allow startup position restoration to finish before placing the body.
   await char.waitForTimeout(600);
@@ -40,18 +42,34 @@ async function perch(a: ElectronApplication) {
   }, SEAT_RATIO);
 }
 
-it('waits for a small window move to settle, relocates once, then stays still', async () => {
+it('waits for release, immediately interrupts falling, teleports once, then stays still', async () => {
   const { a, char } = await boot(); await perch(a);
   const before = await a.evaluate(() => (globalThis as any).__capri.charWin.getBounds());
   await a.evaluate(() => { const g = globalThis as any, w = g.__capriWindowsOverride[0]; g.__capriWindowHeld = true; w.rect = { ...w.rect, x: w.rect.x + 24, y: w.rect.y + 12 }; g.__capri.perchTick(); });
   expect(await a.evaluate(() => (globalThis as any).__capri.charWin.getBounds())).toEqual(before);
-  await a.evaluate(() => { (globalThis as any).__capriWindowHeld = false; });
+  const released = await a.evaluate(() => {
+    const g = globalThis as any; g.__capriWindowHeld = false; g.__capri.perchTick();
+    return { departures: g.__departures, phases: g.__perchCues };
+  });
+  expect(released.departures).toBe(1); expect(released.phases).toContain('dangle'); expect(released.phases.at(-1)).toBeNull();
   await expect.poll(() => a.evaluate(() => (globalThis as any).__departures)).toBe(1);
   await expect.poll(() => a.evaluate(() => (globalThis as any).__capri.teleporter.active)).toBe(false);
   const landed = await a.evaluate(() => (globalThis as any).__capri.charWin.getBounds());
   expect(landed.x - before.x).toBe(24); expect(landed.y - before.y).toBe(12);
   await char.waitForTimeout(1300);
   expect(await a.evaluate(() => (globalThis as any).__departures)).toBe(1);
+});
+
+it('retains falling then floating while held, without carrying the body with the window', async () => {
+  const { a, char } = await boot(); await perch(a);
+  const before = await a.evaluate(() => (globalThis as any).__capri.charWin.getBounds());
+  await a.evaluate(() => { const g = globalThis as any, w = g.__capriWindowsOverride[0]; g.__capriWindowHeld = true; w.rect = { ...w.rect, x: w.rect.x + 90 }; g.__capri.perchTick(); });
+  await expect.poll(() => char.evaluate(() => (window as any).__capriDebug.model.activeClip)).toBe('dangle');
+  await char.waitForTimeout(2500);
+  const held = await a.evaluate(() => { const g = globalThis as any; return { bounds: g.__capri.charWin.getBounds(), phases: g.__perchCues, departures: g.__departures }; });
+  expect(held.bounds).toEqual(before); expect(held.phases).toContain('stand'); expect(held.departures).toBe(0);
+  await a.evaluate(() => { const g = globalThis as any; g.__capriWindowHeld = false; g.__capri.perchTick(); });
+  await expect.poll(() => char.evaluate(() => (window as any).__capriDebug.attachment)).toBe('perch');
 });
 
 it('does not teleport in place when only the bottom edge is resized', async () => {

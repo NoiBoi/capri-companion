@@ -3,6 +3,7 @@ import type { CharacterCue } from '../../shared/ipc';
 import type { Logger } from '../log';
 import type { DisplayLike, Rect } from './displays';
 import { chooseDestination, type Destination, type TeleportTarget } from './teleport';
+import { traversalPlan, traversalPoint } from './spatial';
 
 export interface TeleportDeps {
   settings(): Settings;
@@ -24,7 +25,7 @@ export interface TeleportDeps {
   /** After every move: lets the app work out where she now stands (taskbar / window / air / edge). */
   moved?(d: Destination, how: 'teleport' | 'glide'): void;
   /** Release supported poses before the first flight frame. */
-  prepareFlight?(): Promise<void>;
+  prepareFlight?(how?: 'teleport' | 'glide'): Promise<void>;
   arrived?(d: Destination, reason: 'manual' | 'auto' | 'ai' | 'direct'): void;
   log: Logger;
 }
@@ -83,7 +84,9 @@ export class TeleportController {
       if (revision === this.revision && !cancelled?.()) {
         target = (typeof dest === 'function' ? dest() : dest) ?? undefined;
         if (target && this.d.canOccupy?.(target) === false) target = undefined;
-        if (target) { await this.d.prepareFlight?.(); if(revision!==this.revision||cancelled?.())target=undefined; }
+        if (target) { await this.d.prepareFlight?.('teleport'); if(revision!==this.revision||cancelled?.())target=undefined; }
+        // Resolve moving supports after pose release as well as after departure FX.
+        if (target && typeof dest === 'function') target = dest() ?? undefined;
         if (target && this.d.canOccupy?.(target) === false) target = undefined;
         if (target) { this.d.move(target, 'teleport'); this.d.moved?.(target, 'teleport'); }
       }
@@ -95,7 +98,7 @@ export class TeleportController {
     } finally { this.busy = false; }
   }
 
-  async flyTo(dest: Destination, options: { gentle?: boolean; cancelled?: () => boolean; canOccupy?: (r: Rect) => boolean; silent?: boolean; curve?: number; pace?: number } = {}) {
+  async flyTo(dest: Destination, options: { gentle?: boolean; cancelled?: () => boolean; canOccupy?: (r: Rect) => boolean; silent?: boolean; curve?: number; pace?: number; hop?: boolean } = {}) {
     if (this.busy) return false;
     this.busy = true;
     const revision=this.revision;
@@ -103,16 +106,20 @@ export class TeleportController {
   }
 
   /** Glide across the desktop (B 4:03 dash): the window slides, hair streams behind her. */
-  private async glide(dest: Destination, options: { gentle?: boolean; cancelled?: () => boolean; canOccupy?: (r: Rect) => boolean; curve?: number; pace?: number } = {}): Promise<boolean> {
+  private async glide(dest: Destination, options: { gentle?: boolean; cancelled?: () => boolean; canOccupy?: (r: Rect) => boolean; curve?: number; pace?: number; hop?: boolean } = {}): Promise<boolean> {
     if(options.cancelled?.())return false;
-    await this.d.prepareFlight?.();
+    await this.d.prepareFlight?.('glide');
     if(options.cancelled?.())return false;
     const cur = this.d.bounds();
     if (!cur) return false;
     const dx = dest.x - cur.x, dy = dest.y - cur.y;
     const distance = Math.hypot(dx, dy);
     if (distance < 2) return true;
-    const dur = (options.gentle ? Math.min(3800, Math.max(800, distance / .32)) : Math.min(2400, Math.max(520, distance / .72))) * Math.max(.6, Math.min(1.6, options.pace ?? 1));
+    const safe = (r: Rect) => this.d.canOccupy?.(r) !== false && options.canOccupy?.(r) !== false;
+    const plan = traversalPlan(cur, dest, this.d.displays(), safe, options.hop);
+    if (!plan) return false;
+    const length = plan.points.reduce((n, p, i) => n + Math.hypot(p.x - (plan.points[i - 1] ?? cur).x, p.y - (plan.points[i - 1] ?? cur).y), 0);
+    const dur = (plan.kind === 'hop' ? Math.max(400, length / .55) : options.gentle ? Math.min(3800, Math.max(800, length / .32)) : Math.min(2400, Math.max(520, length / .72))) * Math.max(.6, Math.min(1.6, options.pace ?? 1));
     this.d.cue({ type: 'dash', dir: dx < 0 ? -1 : 1 });
     const t0 = Date.now();
     const complete = await new Promise<boolean>((resolve) => {
@@ -121,9 +128,9 @@ export class TeleportController {
         const u = Math.min(1, (Date.now() - t0) / dur);
         // Minimum-jerk timing: zero velocity AND acceleration at takeoff and contact.
         const e = u * u * u * (10 + u * (-15 + 6 * u));
-        const bend = Math.sin(Math.PI * e) * Math.max(-distance * .15, Math.min(distance * .15, options.curve ?? 0)), length = Math.max(1, distance);
-        const step = { ...dest, x: Math.round(cur.x + dx * e - dy / length * bend), y: Math.round(cur.y + dy * e + dx / length * bend) };
-        if (this.d.canOccupy?.(step) === false || options.canOccupy && !options.canOccupy(step)) { clearInterval(timer); resolve(false); return; }
+        const point = traversalPoint(cur, plan, e);
+        const step = { ...dest, x: Math.round(point.x), y: Math.round(point.y) };
+        if (!safe(step)) { clearInterval(timer); resolve(false); return; }
         this.d.move(step, 'glide');
         if (u >= 1) { clearInterval(timer); resolve(true); }
       };
@@ -152,7 +159,7 @@ export class TeleportController {
     const revision = this.revision;
     // Local travel keeps visible continuity; distant/cross-monitor travel teleports.
     const near = Math.hypot(dest.x - cur.x, dest.y - cur.y) < 900 && this.d.displays().some((x) => x.workArea.x <= cur.x + cur.width / 2 && cur.x + cur.width / 2 < x.workArea.x + x.workArea.width && x.workArea.x <= dest.x + dest.width / 2 && dest.x + dest.width / 2 < x.workArea.x + x.workArea.width);
-    if (how === 'glide' || (how === 'either' && near)) {
+    if (dest.kind !== 'perch' && (how === 'glide' || (how === 'either' && near))) {
       try {
         const completed = await this.glide(dest, { cancelled: () => revision !== this.revision || reason === 'auto' && !!this.automaticBlock() });
         if (!completed) return { ok: false, detail: this.automaticBlock() ?? 'Automatic movement interrupted.' };
@@ -178,7 +185,7 @@ export class TeleportController {
         await restored;
         return { ok: false, detail: blocked };
       }
-      await this.d.prepareFlight?.();
+      await this.d.prepareFlight?.('teleport');
       if(revision!==this.revision || reason==='auto' && this.automaticBlock()) {
         const restored=this.waitAck(id,'in',fx?1800:400);this.d.cue({type:'teleport',phase:'in',id,effects:fx});await restored;
         return {ok:false,detail:'Movement cancelled by a newer instruction.'};

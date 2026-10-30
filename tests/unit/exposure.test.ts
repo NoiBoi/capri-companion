@@ -1,5 +1,6 @@
+import { tourPlan } from '../../src/main/desktop/spatial';
 import { describe, expect, it } from 'vitest';
-import { helperWindow, exposedRegions, exposedBody, bodyFootprint, intersects, tourPlan } from '../../src/main/desktop/exposure';
+import { helperWindow, exposedRegions, exposedBody, bodyFootprint, intersects } from '../../src/main/desktop/exposure';
 import { visitAside } from '../../src/shared/visitDialogue';
 import { DialogueDirector } from '../../src/shared/dialogue';
 describe('visible window tours', () => {

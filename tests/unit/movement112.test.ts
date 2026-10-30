@@ -45,3 +45,9 @@ it('accepts a vanished landing without producing a fake move receipt', async () 
   expect(await r.t.jumpTo(() => null)).toBe(false);
   expect(r.move).not.toHaveBeenCalled(); expect(r.moved).not.toHaveBeenCalled();
 });
+it('resolves the actual snapped edge again after releasing the pose', async () => {
+  let latest = destination;
+  const r = rig(async () => { latest = { ...destination, x: 520 }; });
+  expect(await r.t.jumpTo(() => latest)).toBe(true);
+  expect(r.move).toHaveBeenCalledWith(expect.objectContaining({ x: 520 }), 'teleport');
+});

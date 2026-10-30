@@ -1,5 +1,4 @@
 import type { Rect } from './displays';
-import { windowAttachment } from './perch';
 import { SEAT_RATIO } from '../../shared/framing';
 import { restSupport } from './restSupport';
 export function helperWindow(info: { title: string; process: string; className?: string }) {
@@ -38,41 +37,6 @@ export function lowerWindowRest(pet: Rect, window: Rect, blockers: Rect[], area:
     const clear = (r: Rect) => !blockers.some(b => intersects(r,b));
     if (restSupport(bounds,area,null,[window],clear).lie && exposedBody(bounds,blockers,area)
       && Math.hypot(bounds.x+pet.width*.5-cursor.x,bounds.y+pet.height*.4-cursor.y)>130) return { bounds, fraction:f };
-  }
-  return null;
-}
-export function tourPlan(pet: Rect, window: Rect, blockers: Rect[], area: Rect, cursor: { x: number; y: number }, random = Math.random, sidesOnly = false) {
-  // Treat the viewing center as occupied, so routing, inspection and landing share one rule.
-  if (sidesOnly) blockers = [...blockers, { x: window.x + window.width * .25, y: window.y + window.height * .12, width: window.width * .50, height: window.height * .78 }];
-  const regions = exposedRegions(window, blockers).map(r => intersection(r, area)).filter((r): r is Rect => !!r).sort((a, b) => b.width * b.height - a.width * a.height);
-  const points: Rect[] = [];
-  for (const r of regions) {
-    const body = bodyFootprint(pet); if (r.width < body.width + 12 || r.height < body.height + 12) continue;
-    const side = random() < .5 ? 1 : -1, center = .3 + random() * .4;
-    const samples = Array.from({ length: 4 }, (_, i) => {
-      const angle = (i * .55 + random() * .35) * Math.PI * side;
-      return [Math.max(.08, Math.min(.92, center + Math.cos(angle) * (.15 + random() * .2))), Math.max(.08, Math.min(.88, .42 + Math.sin(angle) * .3 + (random() - .5) * .16))];
-    });
-    for (const [fx, fy] of samples) {
-      const p = { ...pet, x: Math.round(r.x + (r.width - body.width) * fx - pet.width * .02), y: Math.round(r.y + (r.height - body.height) * fy - pet.height * .10) };
-      const b = bodyFootprint(p);
-      if (exposedBody(p, blockers, area) && Math.hypot(b.x + b.width / 2 - cursor.x, b.y + b.height / 2 - cursor.y) > 130) points.push(p);
-    }
-    if (points.length) break; // One convex exposed region keeps the flight between its points clear.
-  }
-  const fractions = (sidesOnly ? [.08, .92] : [.18, .38, .62, .82]).sort((a, b) => Math.abs(window.x + b * window.width - cursor.x) - Math.abs(window.x + a * window.width - cursor.x));
-  for (const fraction of fractions) {
-    const perch = windowAttachment(pet, window, SEAT_RATIO, area.y, fraction);
-    const seat = { x: perch.bounds.x + pet.width * .4, y: window.y + 2, width: pet.width * .2, height: 6 };
-    if (exposedBody(perch.bounds, blockers, area) && !blockers.some(b => intersects(seat, b))) {
-      if (!points.length) {
-        for (const dx of [-65, 65, 0]) {
-          const p = { ...perch.bounds, x: perch.bounds.x + dx, y: perch.bounds.y + (perch.mode === 'inverted' ? 70 : -35) };
-          if (exposedBody(p, blockers, area)) points.push(p);
-        }
-      }
-      if (points.length) return { points, perch };
-    }
   }
   return null;
 }

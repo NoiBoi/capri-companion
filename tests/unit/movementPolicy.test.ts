@@ -1,7 +1,7 @@
 import {describe,it,expect} from 'vitest';
 import {Company,companyControl} from '../../src/shared/company';
 import {clearVideo,videoWindow,resolveWindow} from '../../src/main/desktop/movementPolicy';
-import {tourPlan} from '../../src/main/desktop/exposure';
+import {tourPlan} from '../../src/main/desktop/spatial';
 
 describe('requested stays and window boundaries',()=>{
   it.each(['stay here for 5 minutes','sit here for 5 mins','stay here for five minutes','Capri, could you please stay here for 5 minutes?'])('parses timed request %s',text=>expect(companyControl(text)).toEqual({kind:'stay',minutes:5}));

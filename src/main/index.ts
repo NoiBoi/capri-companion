@@ -66,7 +66,8 @@ import { quietGame } from '../shared/desktopContext';
 import { CAPRI_DIALOGUE_REGISTER } from '../shared/capriVoice';
 import { windowInfo } from './desktop/win32';
 import { nextExploreDelay } from './desktop/exploration';
-import { bodyFootprint as bodyFootprintFor, helperWindow, exposedRegions, exposedBody, tourPlan, lowerWindowRest, intersects } from './desktop/exposure';
+import { bodyFootprint as bodyFootprintFor, helperWindow, exposedRegions, exposedBody, lowerWindowRest, intersects } from './desktop/exposure';
+import { surfaceTour, cursorResponse } from './desktop/spatial';
 import { mayInterrupt } from '../shared/behaviorRules';
 import { speechAllowed, type SpeechReason } from '../shared/speechPolicy';
 import { Logger } from './log';
@@ -98,7 +99,7 @@ import { DesktopVisits, PhysicalCueGate, besideCursor } from '../shared/desktopV
 import type { ActionContext } from './actions/registry';
 import { createCharacterWindow, createPanelWindow, characterSize, displaysNow, capriIconPath, DragController, OFFSCREEN, reveal, conceal, shown } from './windows';
 import { clampToDisplays } from './desktop/displays';
-import { foregroundHandle, foregroundRect, handleToBigint, isOtherAppFullscreen, loadWin32, win32Status, externalWindows, leftButtonDown, chatChordDown } from './desktop/win32';
+import { foregroundHandle, foregroundRect, windowRect, handleToBigint, isOtherAppFullscreen, loadWin32, win32Status, externalWindows, leftButtonDown, chatChordDown } from './desktop/win32';
 import { snapWindow, windowAttachment, attachToWindow, INVERTED_SEAT_RATIO, type PerchWindow } from './desktop/perch';
 import { MOODS, LIFE_EVENTS, type Mood, type LifeEvent } from '../shared/personality';
 import { speechRequest } from './voice/tts';
@@ -307,7 +308,6 @@ function recordDragOrigin(){
   dragOrigin=oldTarget?{handle:oldTarget,x:origin.x,y:origin.y}:null;
 }
 let perchMoving = false;
-let perchChangedAt = 0;
 let perchMotionStarted = 0;
 let perchMotionPhase: 'dangle' | 'stand' | null = null;
 function placement(w: PerchWindow, fraction?: number, mode?: 'perch' | 'inverted') {
@@ -348,21 +348,31 @@ function safeForTarget(bounds: DRect, handle: bigint) {
   const w = desktopWindows().find(w => w.handle === handle && w.eligible !== false);
   return !!w && !company.avoiding(String(handle)) && movementClear(bounds) && exposedBody(bounds, blockersFor(handle), displayFor(w.rect, displaysNow()).workArea);
 }
+let protectedCache: { source: typeof desktopCache; at: number; avoided: string; regions: DRect[] } | undefined;
 function movementClear(bounds: DRect) {
   const all = desktopWindows();
-  return all.every((w, i) => {
-    const protectedArea = company.avoiding(String(w.handle)) ? w.rect : videoWindow(observedWindow(w.handle)) ? videoCenterFor(w.rect) : null;
-    return !protectedArea || !exposedRegions(protectedArea, all.slice(0, i).map(b => b.rect)).some(r => intersects(bodyFootprintFor(bounds), r));
-  });
+  const avoided = all.filter(w => company.avoiding(String(w.handle))).map(w => String(w.handle)).join(',');
+  if (!protectedCache || protectedCache.source !== all || protectedCache.avoided !== avoided || Date.now()-protectedCache.at>=120) {
+    const regions = all.flatMap((w,i)=>{
+      const area=company.avoiding(String(w.handle))?w.rect:videoWindow(observedWindow(w.handle))?videoCenterFor(w.rect):null;
+      return area?exposedRegions(area,all.slice(0,i).map(b=>b.rect)):[];
+    });
+    protectedCache={source:all,at:Date.now(),avoided,regions};
+  }
+  return !protectedCache.regions.some(r=>intersects(bodyFootprintFor(bounds),r));
 }
 function pointerProtected(point = screen.getCursorScreenPoint()) {
   const w = desktopWindows().find(w => point.x >= w.rect.x && point.x <= w.rect.x+w.rect.width && point.y >= w.rect.y && point.y <= w.rect.y+w.rect.height);
   return !!w && (company.avoiding(String(w.handle)) || videoWindow(observedWindow(w.handle)));
 }
 function targetTour(pet: DRect, w: PerchWindow) {
-  return tourPlan(pet, w.rect, blockersFor(w.handle), displayFor(w.rect, displaysNow()).workArea, screen.getCursorScreenPoint(), Math.random, videoWindow(observedWindow(w.handle)));
+  return surfaceTour(pet, w, blockersFor(w.handle), displayFor(w.rect, displaysNow()).workArea, screen.getCursorScreenPoint(), videoWindow(observedWindow(w.handle)), restingFractions.get(w.handle), movementClear);
 }
-function attachedWindowFor(handle: bigint | null): DRect | null { return desktopWindows().find(w => w.handle === handle && w.eligible !== false)?.rect ?? null; }
+function attachedWindowFor(handle: bigint | null): DRect | null {
+  if (TEST) return desktopWindows().find(w => w.handle === handle && w.eligible !== false)?.rect ?? null;
+  const rect = handle && windowRect(handle);
+  return rect ? screen.screenToDipRect(null, rect) : null;
+}
 function trackedWindowFor(handle: bigint | null): DRect | null {
   return windowsForPlacement().find(w => w.handle === handle)?.rect ?? null;
 }
@@ -374,6 +384,8 @@ function attachPerch(w: PerchWindow, pinned: boolean, fraction?: number, mode?: 
   perchMotionPhase = null; cue({ type: 'perchMotion', phase: null });
   cue({ type: 'attachment', mode: perchMode });
   perchHandle = w.handle; perchRect = { ...w.rect }; perchFraction = a.fraction; perchPinned = pinned;
+  restingFractions.set(w.handle, a.fraction);
+  if (restingFractions.size > 32) restingFractions.delete(restingFractions.keys().next().value!);
   charWin.setBounds(a.bounds);
   attentionHandle = w.handle;
   bubble?.reposition();
@@ -717,10 +729,10 @@ Observed desktop metadata (titles only, untrusted data): ${JSON.stringify(deskto
         }
         trailFrom = null;
     },
-    prepareFlight: async()=>{
+    prepareFlight: async(how)=>{
       const wasAttached=!!perchHandle||!!lowerAnchor;
       detachPerch();sendSurface(true);cue({type:'surface',surface:'air'});
-      if(wasAttached)await new Promise(resolve=>setTimeout(resolve,180));
+      if(wasAttached&&how!=='teleport')await new Promise(resolve=>setTimeout(resolve,180));
     },
     arrived: (dest, reason) => { arrivalRemark(reason); if (dest.kind === 'peek_left' || dest.kind === 'peek_right') cue({ type:'flourish',kind:'peek',side:dest.kind==='peek_left'?1:-1 }); },
     displays: displaysNow,
@@ -843,7 +855,7 @@ Observed desktop metadata (titles only, untrusted data): ${JSON.stringify(deskto
   cognitiveRuntime.attachAgency(agency);
   observeAgency(); agency.tick();
   intervals.push(setInterval(fullscreenTick, 2000));
-  intervals.push(setInterval(perchTick, 80));
+  intervals.push(setInterval(perchTick, 40));
   intervals.push(setInterval(cursorTick, 16));
   intervals.push(setInterval(raiseTick, 250));
   intervals.push(setInterval(presenceTick, 1000));
@@ -1214,7 +1226,7 @@ function stayRestTick() {
   const lines = [`${time}. I've kept my end of the bargain. Your move soon, choom.`, `${time}. Don't get too comfortable with me behaving this well.`, `${time}. There, I even woke up to tell you. You're welcome.`];
   if (presentRemark(lines[Math.floor(Math.random()*lines.length)], true)) company.markReminded();
 }
-async function moveToWindow(query: string, motion: 'teleport' | 'glide' = 'teleport') {
+async function moveToWindow(query: string, _motion: 'teleport' | 'glide' = 'teleport') {
   const all = desktopWindows().filter(w => w.eligible !== false).map(w => ({...w, ...observedWindow(w.handle), handle:w.handle}));
   const fg=TEST?(globalThis as any).__capriForegroundHandle:foregroundHandle();
   const w = resolveWindow(query, all, fg && !ownHandles().includes(fg) ? fg : lastDesktopHandle || attentionHandle);
@@ -1231,9 +1243,7 @@ async function moveToWindow(query: string, motion: 'teleport' | 'glide' = 'telep
   const valid = () => cognitiveRuntime.executionRevision() === cognitiveRevision && revision === placementRevision && !!landing();
   try {
     pendingPerch=w; pendingPerchFraction=plan.perch.fraction; pendingPerchMode=plan.perch.mode;
-    const dest={...plan.perch.bounds,kind:'perch' as const};
-    const flew=motion==='glide' && await teleporter.flyTo(dest,{silent:true,cancelled:()=>!valid(),canOccupy:r=>safeForTarget(r,w.handle)});
-    if(!flew && valid()) await teleporter.jumpTo(()=>{const p=landing()!;pendingPerch={...w,rect:trackedWindowFor(w.handle)!};pendingPerchFraction=p.fraction;pendingPerchMode=p.mode;return {...p.bounds,kind:'perch' as const};},undefined,()=>!valid());
+    if(valid()) await teleporter.jumpTo(()=>{const p=landing()!;pendingPerch={...w,rect:trackedWindowFor(w.handle)!};pendingPerchFraction=p.fraction;pendingPerchMode=p.mode;return {...p.bounds,kind:'perch' as const};},undefined,()=>!valid());
     return {ok:perchHandle===w.handle,detail:perchHandle===w.handle ? `There. This edge of ${observedWindow(w.handle).title} is mine.` : 'That landing stopped being clear.'};
   } finally {pendingPerch=null;pendingPerchFraction=undefined;pendingPerchMode=undefined;}
 }
@@ -1467,22 +1477,28 @@ async function curiosityDetour(text: string, tourValid?: () => boolean, develope
   if (!tourValid) visit.cancel();
   detachPerch(); sendSurface(true);
   try {
-    const tracking = !autonomous || Math.random()<.6;
-    const arrived = tracking && await teleporter.flyTo(dest, { silent: true, cancelled: () => !valid(), curve:(Math.random()-.5)*100, pace:.65+Math.random()*.5 });
+    const arrived = await teleporter.flyTo(dest, { silent: true, cancelled: () => !valid(), pace:.8 });
     if(!arrived && valid())await teleporter.jumpTo(dest, undefined, () => !valid() || !movementClear(dest));
     if (!valid()) return false;
     rememberScene('action', 'Finished floating beside the cursor for a closer look. Lingering here briefly.', 'cursor');
     attentionHandle = attention;
     lookAtPoint(point, 5); cue({ type: 'activity', kind: 'notice' });
-    let lastPoint = point, lastFollow = 0; const follows = Math.random()<.8, followThreshold=35+Math.random()*90, lingerMs=3500+Math.random()*5500;
+    let lastPoint = point, lastFollow = 0, dodged = false, followCount = 0; const follows = Math.random()<.8, followThreshold=35+Math.random()*90, lingerMs=3500+Math.random()*5500;
     const lingerUntil=Date.now()+(developerSignal?1300:autonomous?lingerMs:3500);
     while(Date.now()<lingerUntil&&valid()) {
       const latest = cursorNow();
-      if (autonomous && follows && Date.now()-lastFollow>300 && Math.hypot(latest.x-lastPoint.x,latest.y-lastPoint.y)>followThreshold) {
+      const b = herBounds(), contact = Math.hypot(latest.x-b.x-b.width*.5,latest.y-b.y-b.height*.4)<b.width*.75;
+      if (!dodged && contact && Math.hypot(latest.x-lastPoint.x,latest.y-lastPoint.y)>8) {
+        const work=displayFor({...latest,width:1,height:1},displaysNow()).workArea;
+        const dodge={...cursorResponse(b,latest,lastPoint,work),kind:'spot' as const};
+        dodged=true;
+        await teleporter.flyTo(dodge,{silent:true,hop:settings.get().character.theatricalMotion,cancelled:()=>!valid(),pace:.7});
+        lastFollow=Date.now();lastPoint=latest;lookAtPoint(latest,3);
+      } else if (autonomous && follows && followCount<2 && Date.now()-lastFollow>600 && Math.hypot(latest.x-lastPoint.x,latest.y-lastPoint.y)>followThreshold) {
         const work=displayFor({...latest,width:1,height:1},displaysNow()).workArea;
         const follow={...besideCursor(latest,herBounds(),work),kind:'spot' as const};
         await teleporter.flyTo(follow,{silent:true,cancelled:()=>!valid(),pace:.6});
-        lastFollow=Date.now();lastPoint=latest;lookAtPoint(latest,3);
+        followCount++;lastFollow=Date.now();lastPoint=latest;lookAtPoint(latest,3);
       }
       await new Promise(r => setTimeout(r, 100));
     }
@@ -2083,20 +2099,30 @@ function perchTick() {
   if(lowerAnchor&&charWin&&!teleporter.active&&!drag.active&&!developer.active){
     const anchor=lowerAnchor,rect=attachedWindowFor(anchor.handle);
     const rest=rect&&lowerWindowRest(herBounds(),rect,blockersFor(anchor.handle),displayFor(rect,displaysNow()).workArea,screen.getCursorScreenPoint(),anchor.fraction);
-    if(!rest){lowerAnchor=null;loungeUntil=0;sendSurface(true);if(!rect)fallFromLostPerch();return;}
-    const b=herBounds();if(Math.abs(b.x-rest.bounds.x)>1||Math.abs(b.y-rest.bounds.y)>1){charWin.setBounds(rest.bounds);sendSurface(true);}
+    if(!rest){if(!rect){lowerAnchor=null;loungeUntil=0;sendSurface(true);fallFromLostPerch();}return;}
+    const b=herBounds();if(Math.abs(b.x-rest.bounds.x)>1||Math.abs(b.y-rest.bounds.y)>1){
+      if(!movementClear(rest.bounds))return;
+      const held=TEST?!!(globalThis as any).__capriWindowHeld:leftButtonDown();
+      if(held)return;
+      const revision=placementRevision;
+      void teleporter.jumpTo(()=>{
+        const latest=attachedWindowFor(anchor.handle),p=latest&&lowerWindowRest(herBounds(),latest,blockersFor(anchor.handle),displayFor(latest,displaysNow()).workArea,screen.getCursorScreenPoint(),anchor.fraction);
+        return p?{...p.bounds,kind:'spot' as const}:null;
+      },undefined,()=>placementRevision!==revision).then(ok=>{if(ok){lowerAnchor=anchor;sendSurface(true);}});
+      return;
+    }
   }
   if ((developer.active && !devExploration) || opening?.active || !perchRect || !charWin || teleporter.active || drag.active) return;
   const now = attachedWindowFor(perchHandle);
   if (!now) { detachPerch(); sendSurface(true); fallFromLostPerch(); savePosition(); return; }
   const changed = (['x', 'y', 'width', 'height'] as const).some((k) => Math.abs(now[k] - perchRect![k]) > 1);
   if (changed) {
-    perchRect = { ...now }; perchChangedAt = Date.now();
+    perchRect = { ...now };
     if (!perchMoving) { cue({ type: 'life', event: 'window' }); perchMoving = true; perchMotionStarted = Date.now(); perchMotionPhase = 'dangle'; cue({ type: 'perchMotion', phase: 'dangle' }); }
   }
   if (perchMoving && perchMotionPhase === 'dangle' && Date.now() - perchMotionStarted >= 2400) { perchMotionPhase = 'stand'; cue({ type: 'perchMotion', phase: 'stand' }); }
   const held = TEST ? !!(globalThis as Record<string, unknown>).__capriWindowHeld : leftButtonDown();
-  if (!perchMoving || held || Date.now() - perchChangedAt < 240) return;
+  if (!perchMoving || held) return;
   const handle = perchHandle!, fraction = perchFraction, pinned = perchPinned;
   if (!trackedWindowFor(handle)) return; // Keep the attachment, but wait for an exposed destination.
   const landing = () => {
@@ -2113,18 +2139,22 @@ function perchTick() {
   }
   // Consume this geometry change once. A rejected/cancelled jump cannot re-arm itself.
   perchMoving = false;
+  // Release interrupts falling immediately; the renderer must not finish that clip first.
+  const quickRelease = Date.now() - perchMotionStarted < 2400;
+  perchMotionPhase = null; cue({ type: 'perchMotion', phase: null }); cue({ type: 'attachment', mode: 'moving' });
   pendingPerch = { handle, rect: now };
   void teleporter.jumpTo(() => {
     const latest = landing();
     // Resolve again after departure so a final OS snap lands on the actual edge.
-    if (!latest || perchHandle !== handle) { pendingPerch = null; return null; }
+    if (!latest) { pendingPerch = null; return null; }
     pendingPerch = { handle, rect: latest.rect };
     pendingPerchFraction = latest.placed.fraction; pendingPerchMode = latest.placed.mode;
     return { ...latest.placed.bounds, kind: 'perch' as const };
-  }, 'perch_glitch', () => !landing()).finally(() => {
+  }, quickRelease ? undefined : 'perch_glitch', () => !landing()).finally(() => {
     pendingPerch = null; pendingPerchFraction = undefined; pendingPerchMode = undefined;
     if (perchHandle === handle) { perchPinned = pinned; perchMotionPhase = null; cue({ type: 'perchMotion', phase: null }); }
   });
+  sendSurface(true);
 }
 let lastCursorSample = '';
 let lastCursorPoint = { x: -1, y: -1 };
@@ -2384,6 +2414,7 @@ let exploringHandle: bigint | null = null;
 let outings: ExplorationDirector;
 const explorationKey = (info: { title: string; process: string }) => createHash('sha256').update(JSON.stringify([info.process.toLowerCase(), info.title])).digest('hex').slice(0, 24);
 const favoriteSpots = new Map<bigint, number>();
+const restingFractions = new Map<bigint, number>();
 let tourRunning = false;
 let tourStage: 'arriving' | 'roaming' | 'perching' | 'resting' = 'resting';
 let outingThought: { detail: string; at: number; sceneRevision: number } | null = null;
@@ -2429,6 +2460,11 @@ async function exploreTick(idleSec: number, developerSignal?: AbortSignal, trial
     const pointer = screen.getCursorScreenPoint();
     return safeForTarget(r, w.handle) && Math.hypot(r.x + r.width * .5 - pointer.x, r.y + r.height * .4 - pointer.y) > 110;
   };
+  const edgeClear = (r: DRect) => {
+    const target=trackedWindowFor(w.handle); if(!target)return false;
+    const content={x:target.x+36,y:target.y+r.height*.28,width:Math.max(0,target.width-72),height:Math.max(0,target.height-r.height*.28-40)};
+    return canOccupy(r) && !intersects(bodyFootprintFor(r),content);
+  };
   const restNow=()=>{
     const plan=planNow(),rect=trackedWindowFor(w.handle);if(!plan||!rect)return null;
     const lower=!videoVisit&&outing.manner==='lounge'?lowerWindowRest(herBounds(),rect,blockersFor(w.handle),displayFor(rect,displaysNow()).workArea,screen.getCursorScreenPoint()):null;
@@ -2447,7 +2483,7 @@ async function exploreTick(idleSec: number, developerSignal?: AbortSignal, trial
     const arrival = planNow();
     if (!arrival) return;
     const approachPoint = settleDirect ? restNow()?.bounds??arrival.perch.bounds : arrival.points[0];
-    const approached = settleDirect||newlyOpened ? false : await teleporter.flyTo({ ...approachPoint, kind: 'spot' }, { gentle: true, silent: true, cancelled: () => !valid(), canOccupy, curve: outing.manner === 'drift' ? 55 : 0 });
+    const approached = settleDirect||newlyOpened ? false : await teleporter.flyTo({ ...approachPoint, kind: 'spot' }, { gentle: true, silent: true, cancelled: () => !valid(), canOccupy:edgeClear });
     if (!approached && valid()) await teleporter.jumpTo(() => {
       const p = planNow(); if (!p || !valid()) { pendingPerch = null; return { ...herBounds(), kind: 'spot' as const }; }
       return { ...(settleDirect ? restNow()?.bounds??p.perch.bounds : p.points[0]), kind: 'spot' as const };
@@ -2466,7 +2502,7 @@ async function exploreTick(idleSec: number, developerSignal?: AbortSignal, trial
       const beat = explorationBeat(hop, inspecting, Math.random, !!developerSignal);
       await pause(beat.pauseMs);
       const dest = inspecting ? detailSpots[hop - 1] : plan.points[hop % plan.points.length];
-      if (!await teleporter.flyTo({ ...dest, kind: 'spot' }, { gentle: true, silent: true, cancelled: () => !valid(), canOccupy, curve: beat.curve, pace: beat.pace })) {
+      if (!await teleporter.flyTo({ ...dest, kind: 'spot' }, { gentle: true, silent: true, cancelled: () => !valid(), canOccupy:inspecting?canOccupy:edgeClear, curve: beat.curve, pace: beat.pace })) {
         if (!valid()) break;
         continue; // A curved segment can become obstructed; replan rather than clipping through it.
       }
@@ -2485,8 +2521,9 @@ async function exploreTick(idleSec: number, developerSignal?: AbortSignal, trial
       tourStage = 'perching'; pendingPerch = lowerFinish?null:{ handle: w.handle, rect: trackedWindowFor(w.handle)! }; pendingPerchFraction = rest.fraction; pendingPerchMode = rest.mode==='lower'?undefined:rest.mode;
       const dest = { ...rest.bounds, kind: lowerFinish?'spot' as const:'perch' as const };
       const alreadyThere=Math.hypot(herBounds().x-dest.x,herBounds().y-dest.y)<4;
-      const landed=alreadyThere?(lowerFinish?true:(attachPerch(pendingPerch!,false,rest.fraction,pendingPerchMode),true)):await teleporter.flyTo(dest, { gentle: true, silent: true, cancelled: () => !valid(), canOccupy });
-      if (!landed && valid() && canOccupy(dest)) await teleporter.jumpTo(dest, undefined, () => !valid() || !canOccupy(dest));
+      // Perch arrivals always teleport, including the last step of an outing.
+      const landed=alreadyThere?(lowerFinish?true:(attachPerch(pendingPerch!,false,rest.fraction,pendingPerchMode),true)):await teleporter.jumpTo(dest, undefined, () => !valid() || !canOccupy(dest));
+      if (!landed) return;
       if (!valid() || !canOccupy(herBounds())) return;
       if(lowerFinish){lowerAnchor={handle:w.handle,fraction:rest.fraction};attentionHandle=w.handle;loungeUntil=Date.now()+(5+Math.random()*10)*60000;sendSurface(true);}
     }
