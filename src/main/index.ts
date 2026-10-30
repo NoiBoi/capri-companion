@@ -98,7 +98,7 @@ import { DesktopVisits, PhysicalCueGate, besideCursor } from '../shared/desktopV
 import type { ActionContext } from './actions/registry';
 import { createCharacterWindow, createPanelWindow, characterSize, displaysNow, capriIconPath, DragController, OFFSCREEN, reveal, conceal, shown } from './windows';
 import { clampToDisplays } from './desktop/displays';
-import { foregroundHandle, foregroundRect, windowRect, handleToBigint, isOtherAppFullscreen, loadWin32, win32Status, externalWindows, leftButtonDown, chatChordDown } from './desktop/win32';
+import { foregroundHandle, foregroundRect, windowRect, handleToBigint, isOtherAppFullscreen, loadWin32, win32Status, externalWindows, leftButtonDown, chatChordDown, activateChatWindow, restoreChatFocus } from './desktop/win32';
 import { snapWindow, windowAttachment, attachToWindow, INVERTED_SEAT_RATIO, type PerchWindow } from './desktop/perch';
 import { MOODS, LIFE_EVENTS, type Mood, type LifeEvent } from '../shared/personality';
 import { speechRequest } from './voice/tts';
@@ -151,6 +151,7 @@ let cognitiveRuntime: CognitiveRuntime;
 let agencyHost: AgencyHost;
 let suspended = false;
 let agencyTargetRect = '';
+let handlingTimer: NodeJS.Timeout | null = null;
 
 const chatEvidence = new RequestEvidence();
 const ambientEvidence = new RequestEvidence();
@@ -865,7 +866,7 @@ Observed desktop metadata (titles only, untrusted data): ${JSON.stringify(deskto
   else if (!TEST && process.argv.includes('--minimize-capri')) setTimeout(() => taskbar?.command('minimize'), 800);
   else if (!TEST && process.argv.includes('--replay-intro')) setTimeout(() => { if (!opening.active) playOpening(); }, 800);
   if(TEST)(globalThis as any).__capriVisits={desktopVisits,physicalCues,taskbarVisit,adjustWithinWindow,recordDragOrigin,musicChanges,get lowerAnchor(){return lowerAnchor;},get localVisitActive(){return localVisitActive;}};
-  if (TEST) (globalThis as Record<string, unknown>).__capri = { cognitiveRuntime, modelSessions, performanceDirector, performanceFeedback, dialogueCognition, agency, agencyHost, observeAgency, maintainAgency, cognitiveStore, get landingRest() { return landingRest; }, get falling() { return !!fallTimer; }, get theatre() { return theatre; }, runTheatre, theatreFrame, get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, honcho, life, relationship, personalContext, retiredLines, memoryLearner, conversationScene, get behavior() { return behavior; }, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, get developerWin() { return developerWin; }, bubble, get startupMs() { return startupMs; }, get speakCount() { return speakCount; }, generatedRemark, captureWindowObservation, visibleObservationWindows, sharedSceneContext, reactToOwnPanel, dropPerch, dropLower, placement, environmentalCuriosity, get lastInspection() { return lastInspection; }, get lastDialogueOutcome() { return lastDialogueOutcome; }, scenes, presentRemark, curiosityDetour, get curiosityActive() { return curiosityActive; }, outings, companionDialogue, interaction, pickupReaction, localDialogueContext, localActivity, gameActive, raiseTick, get exploringHandle() { return exploringHandle; }, get tourStage() { return tourStage; }, desktopWindows, safeForTarget, setNextVisit() { nextWindowVisit = 0; }, presenceTick, settleAfterDrop, throwCharacter, useComputer, exploreTick, get throwing() { return !!throwTimer; }, get attentionHandle() { return attentionHandle; }, get perchMode() { return perchMode; }, get nextWindowVisit() { return nextWindowVisit; }, systemIdleSec, perchTick, activities, favoriteSpots, cursorReturn, returnToCursor, setCursorIdle: (seconds: number) => { lastCursorMovedAt = Date.now() - seconds * 1000; }, pendingConfirms, log, get opening() { return opening; }, get taskbar() { return taskbar; }, playOpening, minimizeCapri, restoreCapri, company, visit, applyCompanyControl, presenceDebug: () => ({ target: String(lastDesktopHandle), desktop: lastDesktop, tracked: !!trackedWindowFor(lastDesktopHandle), request: !!behavior?.busy, revision: placementRevision, watched: String(watchedHandle), encounter: encounters.current }) };
+  if (TEST) (globalThis as Record<string, unknown>).__capri = { activateChatWindow, openLongTermChat, openCompanion, cognitiveRuntime, modelSessions, performanceDirector, performanceFeedback, dialogueCognition, agency, agencyHost, observeAgency, maintainAgency, cognitiveStore, get landingRest() { return landingRest; }, get falling() { return !!fallTimer; }, get theatre() { return theatre; }, runTheatre, theatreFrame, get teleporter() { return teleporter; }, get monitor() { return monitor; }, settings, convo, history, memory, honcho, life, relationship, personalContext, retiredLines, memoryLearner, conversationScene, get behavior() { return behavior; }, notes, reminders, secrets, get charWin() { return charWin; }, get panelWin() { return panelWin; }, get developerWin() { return developerWin; }, bubble, get startupMs() { return startupMs; }, get speakCount() { return speakCount; }, generatedRemark, captureWindowObservation, visibleObservationWindows, sharedSceneContext, reactToOwnPanel, dropPerch, dropLower, placement, environmentalCuriosity, get lastInspection() { return lastInspection; }, get lastDialogueOutcome() { return lastDialogueOutcome; }, scenes, presentRemark, curiosityDetour, get curiosityActive() { return curiosityActive; }, outings, companionDialogue, interaction, pickupReaction, localDialogueContext, localActivity, gameActive, raiseTick, get exploringHandle() { return exploringHandle; }, get tourStage() { return tourStage; }, desktopWindows, safeForTarget, setNextVisit() { nextWindowVisit = 0; }, presenceTick, settleAfterDrop, throwCharacter, useComputer, exploreTick, get throwing() { return !!throwTimer; }, get attentionHandle() { return attentionHandle; }, get perchMode() { return perchMode; }, get nextWindowVisit() { return nextWindowVisit; }, systemIdleSec, perchTick, activities, favoriteSpots, cursorReturn, returnToCursor, setCursorIdle: (seconds: number) => { lastCursorMovedAt = Date.now() - seconds * 1000; }, pendingConfirms, log, get opening() { return opening; }, get taskbar() { return taskbar; }, playOpening, minimizeCapri, restoreCapri, company, visit, applyCompanyControl, presenceDebug: () => ({ target: String(lastDesktopHandle), desktop: lastDesktop, tracked: !!trackedWindowFor(lastDesktopHandle), request: !!behavior?.busy, revision: placementRevision, watched: String(watchedHandle), encounter: encounters.current }) };
 }
 
 // ---------------------------------------------------------------- desktop-pet handling: drop onto a ledge, throw
@@ -906,6 +907,7 @@ function settleAfterDrop() {
   const movedAside=!!dragOrigin&&dragOrigin.handle===targetHandle&&Math.hypot(b.x-dragOrigin.x,b.y-dragOrigin.y)>35;
   const fromHandle=dragOrigin?.handle;dragOrigin=null;
   if(movedAside)rememberScene('action','The user moved Capri to a different spot within the same window, making room around her previous position.','same_window');
+  finishAgencyHandling();
   reactToPlacement(targetHandle,movedAside,fromHandle);
 }
 let throwTimer: NodeJS.Timeout | null = null;
@@ -971,10 +973,11 @@ function createCharacter() {
     if (moved) {
       detachPerch();
       settleAfterDrop(); // she stays where you let go (no flinging)
-    } else { lastInteraction = Date.now(); cue({ type: 'react', reaction: 'happy' }); interaction('poke'); }
+    } else { finishAgencyHandling(); lastInteraction = Date.now(); cue({ type: 'react', reaction: 'happy' }); interaction('poke'); }
   }, () => {
     recordDragOrigin();
-    agency?.cancelWhere(i=>['stay_at_window','hold_position'].includes(i.skill),'user dragged Capri');teleporter.cancel();
+    if(handlingTimer)clearTimeout(handlingTimer);handlingTimer=null;
+    agency?.beginHandling();teleporter.cancel();
     stopFall(); loungeUntil = loungeStartedAt = 0;
     visit.cancel(); placementRevision++; cancelBehavior();
     if (placementTimer) clearTimeout(placementTimer);
@@ -1058,7 +1061,29 @@ function openDeveloper() {
   const win = developerWin = createPanelWindow(charWin?.getBounds() ?? screen.getPrimaryDisplay().workArea, preloadPath(), log, 'developer');
   win.on('closed', () => { if (developerWin === win) developerWin = null; void developer.stop(); });
 }
-function openPanel(tab: string = 'chat') {
+let panelPreviousFocus=0n;
+function openLongTermChat() {
+  const previous=foregroundHandle();
+  if(previous&&!ownHandles().includes(previous))panelPreviousFocus=previous;
+  const active=fgRectDip();
+  const display=active?screen.getDisplayMatching(active):screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  openPanel('chat',display.workArea);
+  const win=panelWin;if(!win||win.isDestroyed())return;
+  const area=display.workArea,b=win.getBounds(),width=Math.min(b.width,area.width),height=Math.min(b.height,area.height);
+  if(win.isMaximized())win.unmaximize();
+  win.setBounds({x:Math.round(area.x+(area.width-width)/2),y:Math.round(area.y+(area.height-height)/2),width,height});
+  const focus=()=>{if(win.isDestroyed()||panelWin!==win)return;if(!OFFSCREEN){win.show();win.setBounds({x:Math.round(area.x+(area.width-width)/2),y:Math.round(area.y+(area.height-height)/2),width,height});win.focus();win.webContents.focus();activateChatWindow(win.getNativeWindowHandle());}win.webContents.send('panel:tab','chat');};
+  if(win.webContents.isLoadingMainFrame())win.webContents.once('did-finish-load',focus);else focus();
+}
+function closePanel(win:BrowserWindow|undefined|null) {
+  const previous=win===panelWin?panelPreviousFocus:0n;panelPreviousFocus=0n;
+  const restore=!!win?.isFocused();win?.close();
+  if(restore&&!OFFSCREEN&&previous){
+    const owned=BrowserWindow.getAllWindows().find(w=>!w.isDestroyed()&&handleToBigint(w.getNativeWindowHandle())===previous);
+    if(owned){owned.focus();owned.webContents.focus();}restoreChatFocus(previous);
+  }
+}
+function openPanel(tab: string = 'chat',desiredNear?:DRect) {
   if (tab === 'developer') { openDeveloper(); return; }
   desktopContext(); // Capture the external window before this panel takes keyboard focus.
   panelTab = tab;
@@ -1074,7 +1099,7 @@ function openPanel(tab: string = 'chat') {
       return;
     }
   }
-  const near = charWin?.getBounds() ?? screen.getPrimaryDisplay().workArea;
+  const near = desiredNear ?? charWin?.getBounds() ?? screen.getPrimaryDisplay().workArea;
   panelReady = false; panelFailed = false; panelStartedAt = Date.now();
   const win = panelWin = createPanelWindow(near, preloadPath(), log, panelTab);
   let retries = 0;
@@ -1144,10 +1169,23 @@ function agencyWindow(target:Target|undefined) {
   // HWND alone is not an identity. Never match a recycled handle to another title/app.
   return target?agencyWindows().find(w=>String(w.handle)===target.handle&&w.process===target.process&&(target.pid!==undefined?w.pid===target.pid:w.title===target.title)):undefined;
 }
+function refreshAgencyTarget(input:SkillInput) {
+  if(agencyWindow(input.target))return;
+  const old=input.target;if(!old)return;
+  // Recreated windows require a unique app AND exact title, never just an HWND
+  // or a newly foreground application. Missing/ambiguous matches fail safely.
+  const matches=agencyWindows().filter(w=>w.process===old.process&&w.title===old.title);
+  if(matches.length===1){const w=matches[0];input.target={handle:String(w.handle),process:w.process,title:w.title,pid:w.pid};}
+}
 function agencyLanding(input:SkillInput) {
   const w=agencyWindow(input.target);if(!w)return null;
   const area=displayFor(w.rect,displaysNow()).workArea,b=herBounds();
-  const lower=input.posture==='lie'?lowerWindowRest(b,w.rect,blockersFor(w.handle),area,{x:-100000,y:-100000}):null;
+  if(input.anchor){
+    const a=input.anchor;
+    const rest=a.edge==='lower'?lowerWindowRest(b,w.rect,blockersFor(w.handle),area,{x:-100000,y:-100000},a.fraction):placement(w,a.fraction,a.edge);
+    if(rest&&safeForTarget(rest.bounds,w.handle))return {w,...rest,lower:a.edge==='lower',mode:a.edge==='lower'?'perch' as const:a.edge};
+  }
+  const lower=input.posture!=='sit'?lowerWindowRest(b,w.rect,blockersFor(w.handle),area,{x:-100000,y:-100000}):null;
   if(lower&&safeForTarget(lower.bounds,w.handle))return {w,bounds:lower.bounds,fraction:lower.fraction,lower:true,mode:'perch' as const};
   const top=targetTour(b,w)?.perch;
   return top&&safeForTarget(top.bounds,w.handle)?{w,...top,lower:false}:null;
@@ -1158,6 +1196,14 @@ async function placeAgencyWindow(input:SkillInput,signal:AbortSignal):Promise<Re
   const revision=placementRevision;
   const abort=()=>teleporter.cancel();signal.addEventListener('abort',abort,{once:true});
   try {
+    // Bounded recovery only after a native change, using the existing heartbeat.
+    // Never expose a window by activating or restoring another application.
+    for(let attempt=0;attempt<3;attempt++) {
+      refreshAgencyTarget(input);
+      if(agencyLanding(input))break;
+      if(attempt===2||signal.aborted)throw Error('That exact window is unavailable or has no safe exposed edge. The stay could not be maintained.');
+      await new Promise<void>(resolve=>{const done=()=>{clearTimeout(timer);signal.removeEventListener('abort',done);resolve();};const timer=setTimeout(done,(attempt+1)*1500);signal.addEventListener('abort',done,{once:true});});
+    }
     for(let n=0;n<60&&teleporter.active&&!signal.aborted;n++)await new Promise(r=>setTimeout(r,50));
     const valid=()=>!signal.aborted&&revision===placementRevision&&agencyHost.canMove()&&!!agencyLanding(input);
     if(teleporter.active||!valid())throw Error('That exact window has no safe, exposed perch. Place me manually or expose an edge and retry.');
@@ -1170,7 +1216,7 @@ async function placeAgencyWindow(input:SkillInput,signal:AbortSignal):Promise<Re
     if(!valid()||!landed)throw Error('Placement was interrupted before arrival.');
     const plan=landed as NonNullable<ReturnType<typeof agencyLanding>>;
     if(plan.lower){detachPerch();lowerAnchor={handle:plan.w.handle,fraction:plan.fraction};loungeUntil=Date.now()+86400000;sendSurface(true);cue({type:'clip',name:'recline'});}
-    const receipt:Receipt={id:newId('placement'),at:Date.now(),verified:true,detail:plan.lower?'Verified lower-edge arrival.':'Verified supported perch arrival.',target:input.target,position:{x:herBounds().x,y:herBounds().y}};
+    const receipt:Receipt={id:newId('placement'),at:Date.now(),verified:true,detail:plan.lower?'Verified lower-edge arrival.':'Verified supported perch arrival.',target:input.target,position:{x:herBounds().x,y:herBounds().y},anchor:{fraction:plan.fraction,edge:plan.lower?'lower':plan.mode}};
     if(!verifyAgencyPlacement(input,receipt))throw Error('Native arrival could not be verified. No stay was activated.');
     agencyTargetRect=JSON.stringify(plan.w.rect);return receipt;
   } finally {signal.removeEventListener('abort',abort);pendingPerch=null;pendingPerchFraction=undefined;pendingPerchMode=undefined;}
@@ -1187,11 +1233,29 @@ function observeAgency(){
 }
 function maintainAgency() {
   performanceFeedback?.prune();
+  if(drag?.active||agency.handling()||!agencyHost.canMove()||teleporter.active||throwTimer||fallTimer)return;
   for(const i of agency.active('stay_at_window'))if(i.state==='active') {
     const w=agencyWindow(i.input.target),r=i.receipts.filter(r=>r.verified&&r.position).at(-1);
     if(!w||JSON.stringify(w.rect)!==agencyTargetRect||!r||!verifyAgencyPlacement(i.input,r))agency.recover(i.id);
   }
 
+}
+function finishAgencyHandling() {
+  if(!agency)return;
+  if(handlingTimer)clearTimeout(handlingTimer);
+  // Wait through the whole movement burst before returning to an assigned window.
+  handlingTimer=setTimeout(()=>{
+    handlingTimer=null;if(drag.active)return;
+    for(const i of agency.active('stay_at_window')) {
+      const b=herBounds(),receipt:Receipt={id:newId('manual-rest'),at:Date.now(),verified:true,detail:'Accepted user resting position on the assigned window.',target:i.input.target,position:{x:b.x,y:b.y}};
+      if(verifyAgencyPlacement(i.input,receipt)){
+        const w=agencyWindow(i.input.target)!;
+        receipt.anchor={fraction:Math.max(0,Math.min(1,(b.x+b.width/2-w.rect.x)/w.rect.width)),edge:lowerAnchor?.handle===w.handle?'lower':perchMode};
+        agency.acceptRest(i.id,receipt);agencyTargetRect=JSON.stringify(agencyWindow(i.input.target)?.rect);
+      }
+    }
+    agency.endHandling();maintainAgency();agency.tick();
+  },1800);
 }
 function stayRestTick() {
   const state = company.stayState();
@@ -1262,6 +1326,7 @@ let watchedHandle: bigint | null = null;
 let watchUntil = 0;
 let watchedPoint: { x: number; y: number; until: number } | null = null;
 let touchCount = 0, lastTouchAt = 0, touchStartedAt = 0;
+let touchPats=0,touchPokes=0;
 let lastTouchKind:'pat'|'poke'|null=null;
 let touchBurstTimer:NodeJS.Timeout|null=null;
 function watchWindow(handle: bigint | null, seconds = 12) {
@@ -1299,7 +1364,8 @@ function interaction(kind: 'pat' | 'poke') {
   if (!developer.active && !devAbsence) conversationScene.record({ id: newId('touch'), role: 'user', text: kind === 'pat' ? '[The user pats Capri.]' : '[The user pokes Capri.]', at: Date.now(), event: kind });
   lastInteraction = Date.now(); cue({ type: 'life', event: kind });
   cue({ type: 'attention', point: null, seconds: 0 }); watchedHandle = null; watchedPoint = null;
-  touchCount = kind!==lastTouchKind||Date.now() - lastTouchAt > 15000 ? 1 : touchCount + 1; lastTouchAt = Date.now();lastTouchKind=kind;
+  if(Date.now()-lastTouchAt>15000){touchCount=touchPats=touchPokes=0;}
+  touchCount++;if(kind==='pat')touchPats++;else touchPokes++;lastTouchAt = Date.now();lastTouchKind=kind;
   if(touchCount===1)touchStartedAt=lastTouchAt;
   // Coalesce sustained handling; an engaged exchange can also color a single touch.
   if (touchCount < 3 && !cognitiveRuntime.dialogueEngaged() || !settings.get().voice.interactionLines) return;
@@ -1307,7 +1373,7 @@ function interaction(kind: 'pat' | 'poke') {
   touchBurstTimer=setTimeout(()=>{
     touchBurstTimer=null;
     if(touchCount!==count||lastTouchKind!==kind||convo.busy)return;
-    void generatedRemark(kind,`The user has ${kind==='pat'?'patted':'poked'} Capri ${count} times in this interaction. This is actual contact history, not proof of affection, teasing or annoyance. Let your reaction develop from the handling, your current activity and prior words, without resetting your opinion or repeating an acknowledgement. A playful objection, enjoyment or a new thought can fit; silence is also a choice.`,{interactionGeneration:generation,interactionDevelopment:`${touchStartedAt}:${Math.floor(count/3)}`});
+    void generatedRemark(kind,`This ongoing contact sequence contains ${touchPats} pats and ${touchPokes} pokes; latest contact: ${kind}. Counts and timing are internal context, not something to recite. This is actual contact history, not proof of affection, teasing or annoyance. Let your reaction develop from the handling, your current activity and prior words, without resetting your opinion or repeating an acknowledgement. A playful objection, enjoyment or a new thought can fit; silence is also a choice.`,{interactionGeneration:generation,interactionDevelopment:`${touchStartedAt}:${Math.floor(count/3)}`});
   },900);
 }
 let behavior: BehaviorCore;
@@ -1536,9 +1602,9 @@ function reactToPlacement(handle: bigint | null, movedAside = false, fromHandle?
     placementTimer=null;
     if(revision!==placementRevision||handle&&!trackedWindowFor(handle))return;
     void generatedRemark(different?'placed_window':'putdown',
-      `User placement complete: ${movedAside?'moved aside within the same window':different?'transported to a different window':handle?'repositioned on the same window':'returned to the desktop'}. ${moves} placements in the last two minutes. Previous support: ${fromHandle?String(fromHandle):'desktop or unrecorded'}. Let the actual destination, interrupted activity and accumulating handling affect your own reaction. Do not assume a motive, greet every window or repeat your last objection. One fresh reaction or silence.`,
+      `User placement complete: ${movedAside?'moved aside within the same window':different?'transported to a different window':handle?'repositioned on the same window':'returned to the desktop'}. ${moves} placements in the last two minutes, for internal context only; do not recite statistics. Previous support: ${fromHandle?String(fromHandle):'desktop or unrecorded'}. Let the actual destination, interrupted activity and accumulating handling affect your own reaction. Do not assume a motive, greet every window or repeat your last objection. One fresh reaction or silence.`,
       {target:handle??undefined,placement:revision,interactionGeneration:generation,interactionDevelopment:signature+':'+moves});
-  },1100);
+  },1800);
 }
 
 let lastDialogueOutcome = 'No contextual request yet';
@@ -1746,6 +1812,7 @@ function rememberScene(kind: 'said' | 'action', text: string, surface?: string, 
       conversationScene.record({ id, role: 'assistant', text, at, event: surface ?? 'desktop',contextSources });
       const message:ChatMessage={id,role:'assistant',content:text,ts:at,meta:{speech,provider:'companion',contextSources,private:behavior?.diagnostics().privateExchange??false}};
       history.append(message);toPanel('chat:message',{message});
+      cognitiveRuntime.observeMessage(message);
     }
   }
 }
@@ -2183,7 +2250,7 @@ function beginCharacterDrag() {
 }
 let chatChordHeld=false;
 function cursorTick() {
-  if(!OFFSCREEN){const down=chatChordDown();if(down&&!chatChordHeld){if(userHidden)toggleHidden();openCompanion();}chatChordHeld=down;}
+  if(!OFFSCREEN){const down=chatChordDown();if(down&&!chatChordHeld)openLongTermChat();chatChordHeld=down;}
   if ((TEST && process.env.CAPRI_NATIVE_POINTER_TEST !== '1') || !charWin || charWin.isDestroyed() || userHidden || fullscreenHidden) return;
   const c = screen.getCursorScreenPoint(), b = charWin.getBounds();
   const down = leftButtonDown() === true;
@@ -2768,10 +2835,11 @@ function summonNearCursor() {
   const far = Math.hypot(c.x - (b.x + b.width / 2), c.y - (b.y + b.height / 2)) > 1100 || screen.getDisplayNearestPoint(c).id !== screen.getDisplayMatching(b).id;
   if (far && !pointerProtected(c)) void teleporter.go('near_cursor', 'manual');
 }
-const shortcutStatus: Record<string, string> = {'Jump to chat':'Ctrl+Space+C'};
+const shortcutStatus: Record<string, string> = {'Long-term chat':'Ctrl+C+Space'};
 function registerShortcuts() {
   // [preferred, fallback] — another app may already own the preferred combo
   const map: [string[], string, () => void][] = [
+    [['Control+Shift+Space'], 'Quick chat', () => { if(userHidden)toggleHidden(); openCompanion(); }],
     [['Control+Alt+Space', 'Control+Alt+K'], 'Open chat', () => { summonNearCursor(); openCompanion(); }],
     [['Control+Alt+T', 'Control+Alt+Y'], 'Push-to-talk', () => (recording ? stopRecording() : startRecording())],
     [['Control+Alt+H', 'Control+Alt+J'], 'Hide / show', toggleHidden],
@@ -3229,7 +3297,7 @@ function registerIpc() {
     return r.canceled ? null : r.filePaths[0] ?? null;
   });
   handle('panel:open', 'any', str(30).optional(), (tab) => openPanel(tab || 'chat'));
-  handle('panel:close', 'panel', none, (_arg, event) => BrowserWindow.fromWebContents(event.sender)?.close());
+  handle('panel:close', 'panel', none, (_arg, event) => closePanel(BrowserWindow.fromWebContents(event.sender)));
   handle('panel:viewed','panel',str(30),(tab,event)=>{if(event.sender.id===developerWin?.webContents.id){reactToOwnPanel('developer');return;}panelTab=tab;reactToOwnPanel(tab);});
   handle('panel:ready', 'panel', none, (_arg,event) => { if(event.sender.id===developerWin?.webContents.id)return; panelReady = true; if (panelWatchdog) clearTimeout(panelWatchdog); panelWatchdog = null; panelWin?.webContents.send('panel:tab', panelTab); });
   handle('voice:ptt', 'any', z.enum(['start', 'stop', 'cancel']), (cmd) => { if (cmd === 'start') startRecording(); else stopRecording(cmd === 'cancel'); });
@@ -3333,6 +3401,7 @@ let cleanedUp = false;
 function cleanup() {
   if (cleanedUp) return;
   cleanedUp = true;
+  if(handlingTimer)clearTimeout(handlingTimer);handlingTimer=null;
   musicWatcher.stop();
   void developer.stop();
   stopFall();

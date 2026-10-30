@@ -4,7 +4,7 @@ import type { Checkpoints } from '../../core/contracts';
 import type { Company, CompanyControl } from '../../shared/company';
 import { TypedCapabilityExecutor } from '../../core/capabilities';
 
-const inputSchema=z.object({target:z.object({handle:z.string(),process:z.string(),title:z.string(),pid:z.number().int().positive().optional()} ).optional(),query:z.string().max(300).optional(),posture:z.enum(['lie','sit']).optional(),quiet:z.boolean().optional(),position:z.object({x:z.number().finite(),y:z.number().finite()}).optional(),text:z.string().max(300).optional()});
+const inputSchema=z.object({target:z.object({handle:z.string(),process:z.string(),title:z.string(),pid:z.number().int().positive().optional()} ).optional(),query:z.string().max(300).optional(),posture:z.enum(['lie','sit']).optional(),quiet:z.boolean().optional(),position:z.object({x:z.number().finite(),y:z.number().finite()}).optional(),anchor:z.object({fraction:z.number().finite().min(0).max(1),edge:z.enum(['lower','perch','inverted'])}).optional(),text:z.string().max(300).optional()});
 export interface AgencyHost {
   place(input:SkillInput,signal:AbortSignal):Promise<Receipt>;
   hold(input:SkillInput,signal:AbortSignal):Promise<Receipt>;
@@ -69,7 +69,8 @@ export async function agencyControl(runtime:AgencyRuntime,host:AgencyHost,contro
   if(control.kind==='move_window'){cancel(i=>['stay_at_window','hold_position'].includes(i.skill),'user requested movement');host.stopMovement();return null;}
   const durationMs='minutes'in control&&control.minutes!==undefined?control.minutes*60000:control.kind==='timer'?control.seconds*1000:undefined;
   let skill:SkillName='quiet',input:SkillInput={};
-  if(control.kind==='stay'){skill=control.target?'stay_at_window':'hold_position';input={query:control.target,posture:control.posture??'sit',quiet:control.quiet,target:control.target?host.resolve(control.target):undefined};}
+  if(control.kind==='stay'){cancel(i=>['stay_at_window','hold_position'].includes(i.skill),'new window instruction');host.stopMovement();}
+  if(control.kind==='stay'){skill=control.target?'stay_at_window':'hold_position';input={query:control.target,posture:control.posture,quiet:control.quiet,target:control.target?host.resolve(control.target):undefined};}
   if(control.kind==='avoid'){skill='avoid_window';input={target:host.resolve(control.target)};cancel(i=>['stay_at_window','hold_position'].includes(i.skill),'user requested avoidance');}
   if(control.kind==='timer'){skill='timer';input={text:control.label??'Timer'};}
   if(control.kind==='commitment'){skill='commitment';input={text:control.text};}

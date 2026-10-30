@@ -29,3 +29,20 @@ describe('durable agency',()=>{
   it('clears conversation-related activity while preserving explicit timers',async()=>{const f=fixture(),a=f.make();await a.submit('timer',{text:'Fixture timer'},{id:'timer',durationMs:60000});await a.submit('stay_at_window',{}, {id:'stay'});a.clearHistory();expect(a.list().map(i=>i.id)).toEqual(['timer']);expect(a.movementHeld()).toBe(false);a.stop();const b=f.make();b.tick();await new Promise(r=>setTimeout(r,0));expect(b.get('timer')?.state).toBe('active');b.stop();});
   it('rejects invalid deadlines before any effect',async()=>{const f=fixture(),a=f.make();await expect(a.submit('timer',{}, {durationMs:NaN})).rejects.toThrow('duration');expect(f.runs()).toBe(0);a.stop();});
 });
+
+it('maintains an accelerated twenty-minute bargain through handling, same-window rest and restart',async()=>{
+ const f=fixture(),a=f.make(),target={handle:'42',process:'Discord.exe',title:'Discord',pid:4};
+ const i=await a.submit('stay_at_window',{target},{id:'twenty',durationMs:20*60000});
+ a.beginHandling();f.advance(3*60000);a.tick();expect(a.get(i.id)?.state).toBe('active');expect(f.runs()).toBe(1);
+ expect(a.acceptRest(i.id,{id:'manual',at:181000,verified:true,detail:'verified same-window rest',target,position:{x:400,y:200}})).toBe(true);
+ a.endHandling();a.stop();const b=f.make();b.tick();await new Promise(r=>setTimeout(r,0));
+ expect(b.get(i.id)?.deadline).toBe(i.deadline);expect(b.get(i.id)?.input.position).toEqual({x:400,y:200});
+ b.beginHandling();f.advance(17*60000);b.tick();expect(b.get(i.id)?.state).toBe('completed');b.endHandling();b.stop();
+});
+it('aborts interrupted placement while preserving the intention and blocks return until handling ends',async()=>{
+ const f=fixture(),a=f.make();let aborted=false;
+ f.setExecute(async(_input,signal)=>new Promise((_resolve,reject)=>{signal.addEventListener('abort',()=>{aborted=true;reject(Error('interrupted'));});}));
+ const pending=a.submit('stay_at_window',{}, {id:'carry',durationMs:60000});await new Promise(r=>setTimeout(r,0));
+ a.beginHandling();await pending;expect(aborted).toBe(true);a.tick();expect(a.get('carry')?.state).toBe('recovering');
+ f.setExecute(async()=>({id:'restored',at:1000,verified:true,detail:'verified'}));a.endHandling();a.tick();await new Promise(r=>setTimeout(r,0));expect(a.get('carry')?.state).toBe('active');a.stop();
+});

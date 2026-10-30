@@ -170,9 +170,12 @@ export function leftButtonDown(): boolean | null {
   try { return ((api.GetAsyncKeyState(0x01) as number) & 0x8000) !== 0; } catch { return null; }
 }
 /** Only sample the requested chord. No key history or typed text is collected. */
+let chatChordPrimed=false;
 export function chatChordDown():boolean{
   if(!api)return false;
-  try{return [0x11,0x20,0x43].every(key=>((api!.GetAsyncKeyState(key) as number)&0x8000)!==0);}catch{return false;}
+  // Sample every requested key each frame. The pressed bit also catches a
+  // complete quick chord between frames; short-circuiting leaves stale bits.
+  try{const states=[0x11,0x20,0x43].map(key=>api!.GetAsyncKeyState(key) as number);const mask=chatChordPrimed?0x8001:0x8000;chatChordPrimed=true;return states.every(state=>(state&mask)!==0);}catch{return false;}
 }
 /** Explicit user activation only. Release the temporary input-queue link immediately. */
 export function activateChatWindow(handle:Buffer):boolean{

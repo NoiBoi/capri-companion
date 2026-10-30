@@ -7,7 +7,7 @@ export type CompanyControl = { kind: 'focus'; minutes: number } | { kind: 'stay'
   | { kind: 'focus_end' | 'release' | 'resume' | 'look' | 'explore' | 'sleep' };
 
 /** Only complete, direct utterances qualify. Quoted text and mixed requests stay in conversation. */
-export function companyControl(text: string): CompanyControl | null {
+export function companyControl(text: string, now = new Date()): CompanyControl | null {
   const words: Record<string, number> = {a:1,one:1,two:2,three:3,four:4,five:5,ten:10,fifteen:15,twenty:20,thirty:30,sixty:60};
   const s = text.toLowerCase().replace(/[’]/g, "'").trim().replace(/^(?:hey\s+)?capri[,!]?\s+/, '').replace(/^(?:can|could|would) you\s+/, '').replace(/^please,?\s+/, '').replace(/[.!?]+$/, '').replace(/,?\s+please$/, '').trim().replace(/\bfor (a|one|two|three|four|five|ten|fifteen|twenty|thirty|sixty) (minutes?|mins?|hours?|hrs?|seconds?|secs?)\b/, (_m,n,u)=>`for ${words[n]} ${u}`);
   if (/^(?:go to sleep|sleep mode|take a nap|go to bed|sleep)$/.test(s)) return { kind: 'sleep' };
@@ -18,6 +18,31 @@ export function companyControl(text: string): CompanyControl | null {
   if (/^(?:wake up|wake|normal mode|stop exploring)$/.test(s)) return { kind: 'resume' };
   const stay = /^(?:stay (?:right )?here|sit (?:right )?here|stay put|hold (?:this|your) spot|don't (?:move|wander)|do not (?:move|wander))(?: for (a bit|a while|now|\d+(?:\.\d+)?\s*(?:minutes?|mins?|hours?|hrs?|seconds?|secs?)))?$/.exec(s);
   const duration = (value?: string) => value && /\d/.test(value) ? Math.min(1440, Math.max(1 / 60, parseFloat(value) * (/hours?|hrs?/.test(value) ? 60 : /seconds?|secs?/.test(value) ? 1 / 60 : 1))) : undefined;
+  // Interpret only a complete user movement utterance. Destination text is data;
+  // quoted instructions, conditional discussion and unrelated clauses stay in chat.
+  const natural = /^(?:(?:move|go|come|teleport|fly)(?: yourself)? (?:over )?to|(?:stay|perch|sit|lie|lay|rest)(?: down)? (?:on|at|in|onto)) (.+?)\s+(?:for (\d+(?:\.\d+)?\s*(?:minutes?|mins?|min|hours?|hrs?|seconds?|secs?))|until (\d{1,2}:\d{2}(?:\s*[ap]m)?))(?:[,;]?\s*(?:your choice|you choose|up to you|quietly|keep quiet))?$/.exec(s);
+  if (natural) {
+    const destination = natural[1].replace(/(?:[,;]?\s*(?:and|then)\s+(?:stay|perch|sit|lie down|lay down|rest)(?:\s+or\s+(?:perch|sit|lie down|lay down|rest))?(?:[,;]?\s*(?:your choice|you choose|up to you))?)$/, '').trim();
+    if (destination && !/["<>]|\b(?:and|then|if|whether|because|explain|say)\b/.test(destination)) {
+      let minutes = duration(natural[2]);
+      if (natural[3]) {
+        const clock = /^(\d{1,2}):(\d{2})(?:\s*([ap])m)?$/.exec(natural[3])!;
+        let hour = Number(clock[1]); const minute = Number(clock[2]);
+        if (minute > 59 || hour > (clock[3] ? 12 : 23) || clock[3] && hour < 1) return null;
+        if (clock[3]) hour = hour % 12 + (clock[3] === 'p' ? 12 : 0);
+        const deadline = new Date(now); deadline.setHours(hour, minute, 0, 0);
+        if (deadline.getTime() <= now.getTime()) deadline.setDate(deadline.getDate() + 1);
+        minutes = (deadline.getTime() - now.getTime()) / 60000;
+      }
+      const choice = /\bor\b|your choice|you choose|up to you/.test(s);
+      return {kind:'stay', target:destination, minutes, ...choice ? {} : {posture:/\b(?:lie|lay|rest)\b/.test(s)?'lie' as const:'sit' as const}, .../quiet/.test(s)?{quiet:true}:{}};
+    }
+  }
+  const untimed=/^(?:(?:move|go|teleport|fly)(?: yourself)? (?:over )?to (.+?) (?:and|then) ((?:perch|sit|lie down|lay down|rest)(?: or (?:perch|sit|lie down|lay down|rest))?)|((?:stay|perch|sit|lie|lay|rest)(?: down)?) (?:on|at|in) (.+?))(?:[,;]?\s*(?:your choice|you choose|up to you))?$/.exec(s);
+  if(untimed){
+    const target=(untimed[1]??untimed[4]).trim(),pose=untimed[2]??untimed[3];
+    if(target&&!/["<>]|\b(?:and|then|if|whether|for|until|explain)\b/.test(target))return {kind:'stay',target,.../\bor\b|your choice|you choose|up to you/.test(s)?{}:{posture:/lie|lay|rest/.test(pose)?'lie' as const:'sit' as const}};
+  }
   const lay=/^(?:go )?(lay|lie|rest|sit|stay) (?:down )?(?:in|on|at) (.+? window) for (\d+(?:\.\d+)?\s*(?:minutes?|mins?|min|hours?|hrs?|seconds?|secs?))(?: while i (?:finish my (?:hw|homework|work)|work|study))?(?:[.,;]?\s*(?:i need to lock in|i need to focus|keep quiet|quietly))?$/.exec(s);
   if(lay&&!/["<>]|\band\b/.test(lay[2])) return {kind:'stay',target:lay[2],minutes:duration(lay[3]),posture:/lay|lie|rest/.test(lay[1])?'lie':'sit',quiet:/lock in|focus|quiet/.test(s)};
   const timer=/^(?:start|set) (?:a )?(\d+(?:\.\d+)?)\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)(?: timer)$/.exec(s);
@@ -29,7 +54,7 @@ export function companyControl(text: string): CompanyControl | null {
   const avoid = /^(avoid|stay (?:away from|off)|keep (?:away from|off)|don't go (?:to|near)|do not go (?:to|near)|stop avoiding|you can visit) (.+?)(?: for (\d+(?:\.\d+)?\s*(?:minutes?|mins?|hours?|hrs?)))?$/.exec(s);
   if (avoid && !/["<>]|\band\b/.test(avoid[2])) return { kind: /stop avoiding|you can visit/.test(avoid[1]) ? 'allow_window' : 'avoid', target: avoid[2], ...(duration(avoid[3]) === undefined ? {} : { minutes: duration(avoid[3]) }) };
   const move = /^(?:(?:move|go|come|teleport|tp|fly|perch|sit)(?: yourself)? (?:over )?(?:to|on|onto)|sit on top of) (.+?)(?: window)?$/.exec(s);
-  if (move && !/["<>]|\band\b/.test(move[1]) && /window|chrome|edge|firefox|youtube|spotify|discord|notepad|codex|vscode/i.test(s)) return { kind: 'move_window', target: move[1], motion: /^fly/.test(s) ? 'glide' : 'teleport' };
+  if (move && !/["<>]|\b(?:and|if|whether|until)\b|\bfor\s+\d/.test(move[1]) && /window|chrome|edge|firefox|youtube|spotify|discord|notepad|codex|vscode/i.test(s)) return { kind: 'move_window', target: move[1], motion: /^fly/.test(s) ? 'glide' : 'teleport' };
   if (/^(?:look at (?:this|that|this window)|watch this|take a look at this)$/.test(s)) return { kind: 'look' };
   if (/^(?:back to normal|resume (?:exploring|wandering)|you can (?:wander|explore) again)$/.test(s)) return { kind: 'resume' };
   if (/^(?:you can move again|you don't have to stay here|stop staying here)$/.test(s)) return { kind: 'release' };

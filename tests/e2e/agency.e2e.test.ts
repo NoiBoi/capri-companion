@@ -31,10 +31,11 @@ it('executes the acceptance command offline with native arrival, quiet ownership
     });
     expect(moved.state).toBe('active');expect(moved.deadline).toBe(arrival.deadline);expect(moved.bounds.x).not.toBe(arrival.bounds.x);
     const failed=await first.evaluate(async()=>{
-      const g=globalThis as any,a=g.__capri;g.__capriWindowsOverride=[];a.maintainAgency();a.agency.tick();await new Promise(r=>setTimeout(r,100));
+      const g=globalThis as any,a=g.__capri;g.__capriWindowsOverride=[];a.maintainAgency();a.agency.tick();
+      for(let n=0;n<120&&a.agency.active('stay_at_window').length;n++)await new Promise(r=>setTimeout(r,50));
       return {held:a.company.staying,state:a.agency.list().find((i:any)=>i.skill==='stay_at_window').state,reply:a.history.recent(1)[0].content};
     });
-    expect(failed.held).toBe(false);expect(failed.state).toBe('failed');expect(failed.reply).toMatch(/exact window|exposed perch/);
+    expect(failed.held).toBe(false);expect(failed.state).toBe('failed');expect(failed.reply).toMatch(/exact window|exposed edge/);
     const retry=await first.evaluate(async()=>{
       const g=globalThis as any,a=g.__capri;g.__capriWindowsOverride=[{handle:8001n,rect:{x:160,y:200,width:1000,height:550},eligible:true}];
       const i=a.agency.list().find((i:any)=>i.skill==='stay_at_window');await a.agency.retry(i.id);return a.agency.get(i.id).state;
@@ -63,10 +64,16 @@ it('restores a stay against the same real external window after a full Capri res
     const env:NodeJS.ProcessEnv={...process.env,CAPRI_USER_DATA:path.join(dir,'helper-profile')};delete env.ELECTRON_RUN_AS_NODE;const fixtureExe=path.resolve(__dirname,'../../node_modules/electron/dist/electron.exe');helper=spawn(fixtureExe,[script],{env,windowsHide:true,stdio:'ignore'});
     await expect.poll(()=>fs.existsSync(ready),{timeout:15000}).toBe(true);await new Promise(r=>setTimeout(r,300));
     const before=await first.evaluate(async()=>{const a=(globalThis as any).__capri;const reply=await a.applyCompanyControl({kind:'stay',target:'Capri Persistent Native Fixture',minutes:30,posture:'lie',quiet:true});const i=a.agency.active('stay_at_window')[0];if(!i)throw Error(reply);return i;});
-    expect(before?.state).toBe('active');await closeIsolatedApp(app);app=undefined;
+    expect(before?.state).toBe('active');
+    await first.evaluate(()=>{const g=globalThis as any,a=g.__capri;a.agency.beginHandling();g.__capriVisits.recordDragOrigin();const b=a.charWin.getBounds();a.charWin.setBounds({...b,x:b.x+50});a.settleAfterDrop();});
+    await expect.poll(()=>first.evaluate(()=>(globalThis as any).__capri.agency.handling()),{timeout:5000}).toBe(false);
+    const manual=await first.evaluate(()=>{const a=(globalThis as any).__capri;return {i:a.agency.active('stay_at_window')[0],b:a.charWin.getBounds()};});
+    expect(manual.i.receipts.at(-1).detail).toContain('Accepted user resting');
+    await closeIsolatedApp(app);app=undefined;
     const second=await boot();await expect.poll(()=>second.evaluate(()=>{const a=(globalThis as any).__capri;return a.agency.active('stay_at_window')[0]?.state;}),{timeout:10000}).toBe('active');
     const after=await second.evaluate(()=>{const a=(globalThis as any).__capri;return {i:a.agency.active('stay_at_window')[0],quiet:a.company.focused(),bounds:a.charWin.getBounds()};});
     expect(after.i.id).toBe(before.id);expect(after.i.deadline).toBe(before.deadline);expect(after.i.input.target.pid).toBe(before.input.target.pid);expect(after.quiet).toBe(true);expect(after.i.receipts.length).toBeGreaterThan(before.receipts.length);
+    expect(after.i.input.anchor).toEqual(manual.i.input.anchor);expect(Math.abs(after.bounds.x-manual.b.x)).toBeLessThanOrEqual(3);
   }finally{
     await closeIsolatedApp(app);
     if(helper?.pid&&helper.exitCode===null){try{execFileSync('taskkill',['/PID',String(helper.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});}catch{}}

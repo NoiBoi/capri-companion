@@ -341,7 +341,7 @@ api.on('action:result', (p) => { const r = p as ActionResult; if (!r.ok) toast(r
 api.on('transcript', (p) => { const t = p as { text: string }; if (t.text) toast(`Heard: “${t.text}”`); });
 api.on('reminder:fired', (p) => { const r = p as Reminder; toast(r.text); });
 api.on('settings:changed', (s) => { S = s as Settings; if (tab === 'chat') { renderPhase(); const b = view.querySelector<HTMLButtonElement>('[aria-label="Mute Capri"], [aria-label="Unmute Capri"]'); if (b) { b.textContent = S.voice.ttsEnabled ? 'Mute' : 'Unmute'; b.setAttribute('aria-label', S.voice.ttsEnabled ? 'Mute Capri' : 'Unmute Capri'); b.setAttribute('aria-pressed', String(!S.voice.ttsEnabled)); } } });
-api.on('panel:tab', (t) => { const target = ALIASES[String(t)] ?? String(t); if (!booted) tab = target; else if (target !== tab) go(target); });
+api.on('panel:tab', (t) => { const target = ALIASES[String(t)] ?? String(t); if (!booted) tab = target; else if (target !== tab) go(target); else if(target==='chat')view.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus(); });
 api.on('memory:changed', () => { if (tab === 'memory') go('memory'); });
 
 // ---------------------------------------------------------------- model
@@ -1128,8 +1128,10 @@ document.getElementById('closeBtn')!.append(icon('close'));
 // startup.ts owns the native close button, including when the bridge is unavailable.
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
+  if(e.defaultPrevented)return;
+  e.preventDefault();
   if (phase === 'thinking' || phase === 'speaking') void api.invoke('chat:stop');
-  else void flushSettings().then(()=>api.invoke('panel:close'));
+  void flushSettings().then(()=>api.invoke('panel:close'));
 });
 async function startPanel() {
   const deadline = <T>(promise: Promise<T>) => new Promise<T>((resolve, reject) => {

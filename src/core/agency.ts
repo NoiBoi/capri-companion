@@ -6,8 +6,9 @@ export type IntentionSource = 'command' | 'proposal' | 'curiosity' | 'background
 export type SkillName = 'stay_at_window' | 'hold_position' | 'quiet' | 'avoid_window' | 'timer' | 'commitment';
 export type IntentionState = 'pending'|'executing'|'recovering'|'active'|'completed'|'cancelled'|'failed';
 export interface Target { handle: string; process: string; title: string; pid?:number }
-export interface SkillInput { target?: Target; query?: string; posture?: 'lie' | 'sit'; quiet?: boolean; position?: {x:number;y:number}; text?: string }
-export interface Receipt { id: string; at: number; verified: boolean; detail: string; target?: Target; position?: {x:number;y:number} }
+export interface RestAnchor {fraction:number;edge:'lower'|'perch'|'inverted'}
+export interface SkillInput { target?: Target; query?: string; posture?: 'lie' | 'sit'; quiet?: boolean; position?: {x:number;y:number}; anchor?:RestAnchor; text?: string }
+export interface Receipt { id: string; at: number; verified: boolean; detail: string; target?: Target; position?: {x:number;y:number}; anchor?:RestAnchor }
 export interface DurableIntention {
   id: string; source: IntentionSource; objective: string; expectedOutcome: string;
   priority: number; interruption: 'user' | 'preemptible'; entity?: string;
@@ -48,7 +49,7 @@ const intentionMachine=setup({
   on:{CANCEL:{target:'.cancelled'},COMPLETE:{target:'.completed'}},
   states:{
     pending:{on:{START:'executing',RECOVER:'recovering'}},
-    executing:{invoke:{src:'execute',onDone:{target:'active',actions:assign({receipt:({event})=>event.output,error:undefined})},onError:{target:'failed',actions:assign({error:({event})=>String(event.error instanceof Error?event.error.message:event.error)})}}},
+    executing:{on:{RECOVER:'recovering'},invoke:{src:'execute',onDone:{target:'active',actions:assign({receipt:({event})=>event.output,error:undefined})},onError:{target:'failed',actions:assign({error:({event})=>String(event.error instanceof Error?event.error.message:event.error)})}}},
     recovering:{on:{RETRY:'executing'}},
     active:{on:{RECOVER:'recovering'}},failed:{on:{RETRY:'executing'}},
     completed:{type:'final'},cancelled:{type:'final'},
@@ -76,6 +77,7 @@ export class AgencyRuntime {
   readonly deadlines=createActor(deadlineLogic).start();
   private stopped=false;
   private sequence=0;
+  private carried=false;
   constructor(private store:Checkpoints,private executor:SkillExecutor,private now=Date.now,private changed:()=>void=()=>{}) {
     const saved=store.load<SavedAgency>('agency-v1');
     if(saved && saved.version!==1) throw Error('Unsupported agency checkpoint; preserved.');
@@ -96,10 +98,13 @@ export class AgencyRuntime {
     actor.subscribe({next:s=>{
       if(this.stopped)return;
       i.state=String(s.value) as IntentionState;
-      if(s.context.receipt && !i.receipts.some(r=>r.id===s.context.receipt!.id)) i.receipts=[...i.receipts,s.context.receipt].slice(-8);
+      if(s.context.receipt && !i.receipts.some(r=>r.id===s.context.receipt!.id)) {
+        i.receipts=[...i.receipts,s.context.receipt].slice(-8);
+        if(i.state==='active' && s.context.receipt.target)i.input.target=s.context.receipt.target;
+        if(i.state==='active' && s.context.receipt.position)i.input.position=s.context.receipt.position;
+        if(i.state==='active' && s.context.receipt.anchor)i.input.anchor=s.context.receipt.anchor;
+      }
       if(s.context.error && i.receipts.at(-1)?.detail!==s.context.error)i.receipts=[...i.receipts,{id:`${i.id}:failed:${i.generation}`,at:this.now(),verified:false,detail:s.context.error}].slice(-8);
-      if(i.state==='active' && s.context.receipt?.target)i.input.target=s.context.receipt.target;
-      if(i.state==='active' && s.context.receipt?.position)i.input.position=s.context.receipt.position;
       this.refreshPhysical();this.persist();this.changed();
     },error:error=>{throw error;}});actor.start();
   }
@@ -137,12 +142,21 @@ export class AgencyRuntime {
   }
   retry(id:string){const i=this.intentions.find(i=>i.id===id);if(!i||!['failed','recovering'].includes(i.state))return; i.attempts=i.state==='recovering'?1:i.attempts+1;i.generation++;this.actors.get(id)?.send({type:'RETRY'});return this.settle(id);}
   recover(id:string){const i=this.intentions.find(i=>i.id===id);if(i&&i.state==='active'){i.generation++;i.failureNotified=false;this.actors.get(id)?.send({type:'RECOVER'});}}
+  /** Carrying suspends native enforcement, not the user's absolute deadline. */
+  beginHandling(){this.carried=true;for(const i of this.intentions.filter(i=>i.state==='executing'&&['stay_at_window','hold_position'].includes(i.skill))){i.generation++;this.actors.get(i.id)?.send({type:'RECOVER'});}}
+  endHandling(){this.carried=false;}
+  handling(){return this.carried;}
+  acceptRest(id:string,receipt:Receipt){
+    const i=this.intentions.find(i=>i.id===id&&i.state==='active');
+    if(!i||!receipt.verified||!receipt.position||receipt.target?.handle!==i.input.target?.handle)return false;
+    i.input.position=receipt.position;if(receipt.anchor)i.input.anchor=receipt.anchor;i.receipts=[...i.receipts,receipt].slice(-8);this.persist();return true;
+  }
   tick(){
     if(this.stopped)return;
     this.deadlines.send({type:'RECONCILE',at:this.now()});
     for(const i of this.intentions.filter(live)) {
       if((i.deadline??Infinity)<=this.now() || (i.expiresAt??Infinity)<=this.now()) {this.actors.get(i.id)?.send({type:'COMPLETE'});continue;}
-      if(i.state==='recovering' && this.availability.getSnapshot().context.mode!=='suspended')void this.retry(i.id);
+      if(i.state==='recovering' && !this.carried && this.availability.getSnapshot().context.mode!=='suspended')void this.retry(i.id);
     }
   }
   acknowledge(id:string){const i=this.intentions.find(i=>i.id===id);if(i){i.acknowledged=true;this.persist();}}

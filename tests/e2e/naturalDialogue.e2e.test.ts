@@ -18,7 +18,7 @@ it('keeps routine contact physical and admits one contextual thought without a p
   });
   await char.waitForTimeout(1100);
   expect(await app.evaluate(()=>({calls:(globalThis as any).__naturalCalls,physical:(globalThis as any).__physical,lines:(globalThis as any).__capri.scenes.recent().filter((s:any)=>s.kind==='said').length}))).toMatchObject({calls:0,lines:0});
-  await app.evaluate(()=>{const a=(globalThis as any).__capri;a.interaction('pat');a.interaction('pat');});
+  await app.evaluate(()=>{const a=(globalThis as any).__capri;a.interaction('poke');a.interaction('pat');});
   await char.waitForTimeout(1300);
   expect(await app.evaluate(()=>(globalThis as any).__naturalCalls)).toBe(1);
   await app.evaluate(async()=>{
@@ -37,6 +37,7 @@ it('keeps routine contact physical and admits one contextual thought without a p
   });
   await char.waitForTimeout(1300); await app.evaluate(()=>(globalThis as any).__capri.presenceTick()); await char.waitForTimeout(1800);
   expect(await app.evaluate(()=>(globalThis as any).__naturalCalls)).toBe(3); // One final decision for the settled relocation burst, without prior chat.
-  expect(await app.evaluate(()=>(globalThis as any).__capri.lastDialogueOutcome)).toContain('putdown: speak');
+  await expect.poll(()=>app!.evaluate(()=>(globalThis as any).__capri.lastDialogueOutcome),{timeout:5000}).toContain('putdown: speak');
+  expect(await app.evaluate(()=>(globalThis as any).__capri.dialogueCognition.context())).toContain('Leave me this corner');
  }finally{await closeIsolatedApp(app);fs.rmSync(dir,{recursive:true,force:true,maxRetries:8,retryDelay:100});}
 });

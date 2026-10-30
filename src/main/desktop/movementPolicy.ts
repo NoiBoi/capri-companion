@@ -13,7 +13,9 @@ export function clearVideo(pet: Rect, window: Rect) { return !intersects(bodyFoo
 
 /** Exact title/app first, then a unique partial match. Ambiguity never picks an arbitrary window. */
 export function resolveWindow<T extends { handle: bigint; title: string; process: string }>(query: string, windows: T[], current?: bigint | null): T | null {
-  const q = query.toLowerCase().replace(/^(?:the|my)\s+/, '').replace(/\s+window$/, '').trim();
+  let q = query.toLowerCase().replace(/^(?:the|my)\s+/, '').replace(/\s+window$/, '').trim();
+  const aliases:Record<string,string>={'google chrome':'chrome','microsoft edge':'msedge',edge:'msedge','visual studio code':'code',vscode:'code','vs code':'code','discord app':'discord'};
+  q = aliases[q] ?? q;
   if (/^(?:this|that|current|active)(?: window)?$/.test(q)) return windows.find(w => w.handle === current) ?? null;
   if (!q) return null;
   const app = (w: T) => w.process.toLowerCase().replace(/\.exe$/, '');
