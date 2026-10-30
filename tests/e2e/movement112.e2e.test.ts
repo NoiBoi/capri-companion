@@ -42,6 +42,18 @@ async function perch(a: ElectronApplication) {
   }, SEAT_RATIO);
 }
 
+it('keeps the exposed ledge after a single-window visit instead of falling back to the monitor corner',async()=>{
+  const {a}=await boot();
+  const result=await a.evaluate(async()=>{
+    const g=globalThis as any,a=g.__capri;g.__cornerRequests=0;a.settings.update({behavior:{quietHours:{enabled:false}}});
+    const go=a.teleporter.go.bind(a.teleporter);a.teleporter.go=(target:string,...args:any[])=>{if(target==='corner')g.__cornerRequests++;return go(target,...args);};
+    a.outings.choose=(places:any[])=>({key:places[0].key,goal:'somewhere to settle',manner:'settle',hops:1,pauseMs:0});
+    await a.exploreTick(0,undefined,undefined,17n,true);
+    return {corners:g.__cornerRequests,target:String(a.attentionHandle)};
+  });
+  expect(result).toEqual({corners:0,target:'17'});
+});
+
 it('lets explicit feet placement catch a YouTube top while autonomous video avoidance stays active',async()=>{
   const {a,char}=await boot();
   await a.evaluate((_e,ratio)=>{

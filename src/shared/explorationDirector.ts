@@ -60,6 +60,7 @@ export class ExplorationDirector {
       const seen = this.state.visits.find(v => v.key === p.key);
       return (seen ? Math.min(15, (now - seen.at) / 60000) / (1 + seen.count) : 25)
         + Math.max(0, Math.min(12, p.interest ?? 0))
+        + (p.interestAt===undefined?4:0) // Modest preference for a place never inspected; no rotation quota.
         + (goal === 'somewhere to settle' ? Math.min(10, p.favorite ?? 0) : 0);
     };
     candidates.sort((a, b) => score(b) - score(a));

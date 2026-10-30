@@ -168,6 +168,8 @@ export class CognitiveRuntime {
   release(id: string, generation = this.generation) { if (generation !== this.generation) return; this.agency?.release(id); if (this.owner === id) this.owner = null; }
   preempt(id: string, delay = 45000) {
     if (this.owner) this.release(this.owner); this.generation++; this.pending = undefined;
+    // User interruption invalidates stale physical offers, not unrelated evidence.
+    this.deferred=this.deferred.filter(o=>o.action==='reason');this.presence.resetTeleport();
     this.interaction = id; this.after = this.now() + delay; this.save();
   }
   resume() { this.after = this.now(); }

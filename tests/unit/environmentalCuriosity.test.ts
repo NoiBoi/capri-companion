@@ -7,6 +7,28 @@ function dwell(c: EnvironmentalCuriosity, key: string, start: number, duration =
   for (let t = start; t <= start + duration; t += 2000) c.observe(key, t);
 }
 describe('environmental judgment over desktop events', () => {
+  it('selects an underexplored exposed background, keeps engaged attention, and ignores video frame novelty',()=>{
+    const c=new EnvironmentalCuriosity(),windows=[{id:'1',key:'chat',label:'ChatGPT'},{id:'2',key:'social',label:'Discord'},{id:'3',key:'video',label:'YouTube',video:true}];
+    c.syncWindows(windows,1000);dwell(c,'chat',1000,20000);
+    c.record('chat',{facts:['same answer'],interpretation:'',curiosity:''},21000,'chat-image',{basis:'visual',label:'ChatGPT'});
+    expect(c.choose(22000,{...allowed,windows,engaged:true}).action).toBe('quiet');
+    expect(c.choose(22000,{...allowed,windows}).target?.key).toBe('social');
+    c.record('social',{facts:['visible stream tiles'],interpretation:'',curiosity:''},22000,'discord-image',{basis:'visual',label:'Discord'});
+    expect(c.choose(23000,{...allowed,windows}).action).toBe('quiet');
+    expect(c.choose(113000,{...allowed,windows}).target?.key).toBe('video');
+    c.record('video',{facts:['creator and title'],interpretation:'',curiosity:''},113000,undefined,{basis:'metadata',label:'YouTube'});
+    expect(c.choose(204000,{...allowed,windows}).action).toBe('quiet');
+    expect(c.history('Discord',204000)[0]).toMatchObject({window:'Discord',status:'recently inspected',basis:'visual'});
+    c.syncWindows([...windows,{id:'4',key:'editor',label:'Editor'}],204000);
+    expect(c.history('Editor',204000)[0]).toMatchObject({status:'metadata detected; contents not inspected'});
+  });
+  it('suppresses minor visual noise while admitting meaningful changes, and distinguishes stale receipts',()=>{
+    const c=new EnvironmentalCuriosity();c.record('a',{facts:['old paragraph'],interpretation:'',curiosity:''},1000,'a',{basis:'visual',signature:'8888888888888888',label:'ChatGPT'});
+    expect(c.unchanged('a','new-jpeg',2000,'8888988888888888')).toBe(true);
+    expect(c.unchanged('a','new-jpeg',3000,'ffffffffffffffff')).toBe(false);
+    c.dropInterests();expect(c.history('ChatGPT',901001)[0].status).toContain('stale');
+    c.clear();expect(c.history('ChatGPT',901001)).toEqual([]);
+  });
   it('seeds startup without invented openings, then notices a new window and inspects after six settled seconds', () => {
     const c = new EnvironmentalCuriosity();
     expect(c.syncWindows([{ id: 'old', key: 'a' }], 0)).toEqual([]);

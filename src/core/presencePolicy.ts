@@ -1,4 +1,4 @@
-import { EnvironmentalCuriosity } from '../shared/curiosity';
+import { EnvironmentalCuriosity, type VisibleSubject } from '../shared/curiosity';
 import { DesktopVisits, PhysicalCueGate, WindowWatch } from '../shared/desktopVisits';
 import { ActivityDirector } from '../shared/activity';
 import { CursorReturn } from '../shared/cursorReturn';
@@ -9,7 +9,7 @@ import { ExplorationDirector } from '../shared/explorationDirector';
 
 export interface PresenceSample {
   at: number; idleSec: number; sleepAfter: number; date: string; hour: number;
-  windows: { id: string; key?: string }[]; active?: { id: string; key: string; title: string };
+  windows: { id: string; key?: string; label?:string; semantic?:string; video?:boolean }[]; engaged?:boolean; active?: { id: string; key: string; title: string };
   watched?: { id: string; key: string; video: boolean }; video?: { id: string; key: string };
   physical?: { id: string; key: string; near: boolean };
   contextCue: string; lowBattery: boolean; rest: boolean; music?: { key: string; title: string; artist: string; visible: boolean };
@@ -49,8 +49,8 @@ export class PresencePolicy {
     const returned = this.returns.observe(s.idleSec, s.at, Math.min(90,s.sleepAfter));
     if (returned && this.returns.move(s.at, blocked || s.movementBusy || s.enabled.return === false)) add('return', 'move', `return:${s.at}`, 90);
     this.curiosity.observe(s.enabled.context && s.idleSec < 60 ? s.active?.key ?? null : null, s.at);
-    const choice = this.curiosity.choose(s.at, { blocked: blocked || !s.enabled.activities || s.movementBusy, mayInspect: s.enabled.inspect && s.enabled.speech });
-    if (s.active && choice.action !== 'quiet') add(choice.action === 'inspect' ? 'inspect' : 'look', choice.action === 'inspect' ? 'reason' : 'perform', s.active.key, 40, s.active.id, choice.reason, choice.action === 'inspect' ? ++this.revision : 1);
+    const choice = this.curiosity.choose(s.at, { blocked: blocked || !s.enabled.activities || s.movementBusy, mayInspect: s.enabled.inspect && s.enabled.speech, windows:s.windows.filter((w):w is VisibleSubject=>!!w.key), engaged:s.engaged });
+    if ((choice.target??s.active) && choice.action !== 'quiet') add(choice.action === 'inspect' ? 'inspect' : 'look', choice.action === 'inspect' ? 'reason' : 'perform', (choice.target??s.active)!.key, 40, (choice.target??s.active)!.id, choice.reason, choice.action === 'inspect' ? ++this.revision : 1);
     const moveBlocked = blocked || s.movementBusy || !s.enabled.activities || !s.enabled.movement || s.idleSec >= 120;
     if (!this.autoAt) this.autoAt = s.at + s.teleport.minMs + Math.random() * (s.teleport.maxMs-s.teleport.minMs);
     if (s.teleport.auto && s.at >= this.autoAt && !blocked && !s.movementBusy && s.enabled.movement && s.idleSec<120) { add('native-auto','move',`native-auto:${s.at}`,34); this.autoAt = s.at + s.teleport.minMs + Math.random() * (s.teleport.maxMs-s.teleport.minMs); }
@@ -62,7 +62,6 @@ export class PresencePolicy {
     if (s.rest && !moveBlocked) add('rest','move',`rest:${s.date}`,28,s.active?.id);
     if (s.physical && this.physical.shift(s.physical.key,s.at,moveBlocked)) add('shift','move',s.physical.key,20,s.physical.id,s.physical.near ? 'the pointer approached her space' : 'a fresh observed view offered another detail');
     if (s.video && this.watch.videoVisit(s.video.key,s.at,moveBlocked || !s.enabled.newWindows)) add('visit','move',s.video.key,38,s.video.id);
-    if (s.watched && this.watch.inspect(s.watched.key,s.at,blocked || s.movementBusy || !s.enabled.inspect || !s.enabled.speech,this.curiosity.readAt(s.watched.key),s.watched.video)) add('inspect','reason',s.watched.key,32,s.watched.id,'Compare the actual exposed view and previous reading. An unchanged view merits silence.',++this.revision);
     this.music.observe(s.music ?? null,s.at);
     const track = this.music.take(s.at,!s.enabled.speech);
     if (track && (!s.music?.visible ? s.at-this.backgroundSongAt>=900000 : true) && track.key !== this.lastMusic) {
@@ -79,6 +78,6 @@ export class PresencePolicy {
     if (beat) add('activity','perform',`activity:${s.at}`,10,s.active?.id,beat.kind);
     if (!moveBlocked && s.enabled.exploration && s.at >= (s.explorationReadyAt??0)) add('explore','move',`explore:${Math.floor(s.at/30000)}`,5);
     if (s.enabled.speech) result.push(...s.candidates.slice(0,8));
-    return result.map(o => ({...o,change:o.event==='inspect'?'probe':o.change,targetKey:o.target===s.active?.id?s.active?.key:o.target===s.watched?.id?s.watched?.key:undefined}));
+    return result.map(o => ({...o,change:o.event==='inspect'?'probe':o.change,targetKey:o.target===s.active?.id?s.active?.key:o.target===s.watched?.id?s.watched?.key:s.windows.find(w=>w.id===o.target)?.key}));
   }
 }

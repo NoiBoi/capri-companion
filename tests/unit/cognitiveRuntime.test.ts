@@ -27,6 +27,12 @@ function fixture(){
 }
 
 describe('authoritative cognitive event sequences, real SQLite and XState',()=>{
+  it('discards stale motion offers and resets automatic movement after user interaction',()=>{
+    const f=fixture();f.runtime.offer({...f.opportunity('auto'),event:'native-auto',action:'move'});f.runtime.offer(f.opportunity('document'));
+    f.runtime.preempt('pat',0);
+    expect(f.runtime.snapshot().deferred.map(o=>o.id)).toEqual(['document']);
+    expect(f.runtime.presence.teleportStatus(true).nextAt).toBe(0);
+  });
   it('deduplicates identities and revisions, resolves and reopens only on new evidence',()=>{
     const f=fixture(),o=f.opportunity();
     expect(f.runtime.offer(o)).toBe(true);const effect=f.runtime.decide()!;f.runtime.settle(effect,'completed');
